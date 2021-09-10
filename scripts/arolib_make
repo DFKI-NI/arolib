@@ -1,0 +1,30 @@
+#!/bin/bash
+
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+
+export AROLIB_AROLIB_ROOT=${AROLIB_AROLIB_ROOT:-"$SCRIPT_DIR/.."}
+export AROLIB_AROLIB_INSTALL_PATH=${AROLIB_AROLIB_INSTALL_PATH:-"$HOME/arolib/install/arolib"}
+export AROLIB_AROLIB_BUILD_PATH=${AROLIB_AROLIB_BUILD_PATH:-"$AROLIB_AROLIB_ROOT/build"}
+
+SUDO=''
+if [ $(id -u) -ne 0 ]; then
+    SUDO='sudo'
+fi
+
+NUM_CORES=1;
+TOTAL_CORES=$(grep -c ^processor /proc/cpuinfo)
+if (( TOTAL_CORES > 2 )); then
+    NUM_CORES=$((TOTAL_CORES / 2))
+fi
+echo "NUM_CORES = $NUM_CORES"
+
+echo "##### installing arolib"
+echo "AROLIB_AROLIB_ROOT = $AROLIB_AROLIB_ROOT"
+echo "AROLIB_AROLIB_BUILD_PATH = $AROLIB_AROLIB_BUILD_PATH"
+echo "AROLIB_AROLIB_INSTALL_PATH = $AROLIB_AROLIB_INSTALL_PATH"
+echo "#####"
+[ -d $AROLIB_AROLIB_BUILD_PATH/build ] || mkdir -p $AROLIB_AROLIB_BUILD_PATH/build
+cd $AROLIB_AROLIB_BUILD_PATH/build
+cmake $AROLIB_AROLIB_ROOT -DCMAKE_INSTALL_PREFIX=$AROLIB_AROLIB_INSTALL_PATH -DCMAKE_BUILD_TYPE=Release
+make -j$NUM_CORES
+make install

@@ -1,0 +1,43 @@
+@startuml
+
+component cartography
+component components
+component geometry
+component io
+component misc
+component planning 
+component processing
+component types
+
+cartography --> types
+cartography -> geometry
+cartography --> misc
+
+components --> misc
+components --> types
+components --> geometry
+components --> planning
+components --> cartography
+components --> io
+
+planning --> geometry
+planning --> cartography
+planning --> types
+planning --> misc
+planning --> io
+
+processing --> types
+processing --> geometry
+processing --> misc
+processing --> cartography
+
+io --> types
+io --> geometry
+
+types -> misc
+' types --> geometry
+
+geometry --> types
+geometry -> misc
+
+@enduml

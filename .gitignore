@@ -1,0 +1,9 @@
+bin
+build
+install
+lib
+obj
+docs
+CMakeLists.txt.user
+.vscode
+log

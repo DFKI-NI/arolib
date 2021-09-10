@@ -1,0 +1,24 @@
+#!/bin/bash
+
+#This acripts merges origin/master with current_dev, pushed current_dev into origin/master and origin/current_dev, and updates the local master with the updated current_dev
+
+if [ "$1" != "focke" ]; then
+    echo "This script is to be used only by santiago!"
+    exit
+fi
+
+SCRIPTDIR=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )
+cd $SCRIPTDIR/..
+
+AROLIB_BRANCH_NAME="$(git -C . symbolic-ref HEAD 2>/dev/null)" ||
+AROLIB_BRANCH_NAME="master"     # detached HEAD
+AROLIB_BRANCH_NAME=${AROLIB_BRANCH_NAME##refs/heads/}
+if [ "$AROLIB_BRANCH_NAME" != "current_dev" ]; then
+   echo "The current branch ( $AROLIB_BRANCH_NAME ) is not current_dev"
+   exit
+fi
+
+echo "Updating all in git..."
+
+git remote update origin --prune && git merge origin/master -m "[merge] origin/master --> current_dev" && git push origin current_dev current_dev:master && git push . current_dev:master
+

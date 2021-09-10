@@ -1,0 +1,13 @@
+bin
+build
+install
+lib
+obj
+docs
+documentation
+CMakeLists.txt.user
+.vscode
+log
+ToDo
+.git
+CONTRIBUTING.md
