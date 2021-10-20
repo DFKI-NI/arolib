@@ -413,7 +413,6 @@ bool AroXMLInDocument::read(const AroXMLInDocument::ReadHandler &base, CompleteH
 
 }
 
-
 bool AroXMLInDocument::read(const AroXMLInDocument::ReadHandler &base, Obstacle &obs)
 {
     obs = Obstacle();

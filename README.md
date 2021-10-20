@@ -309,7 +309,7 @@ In `examples/example_harvesting` you can find a simple example demonstrating the
 
 
 
-## Used libraries
+## Used libraries and other software
 
 | Library                                                      | License                                                      |
 | ------------------------------------------------------------ | ------------------------------------------------------------ |
@@ -322,6 +322,7 @@ In `examples/example_harvesting` you can find a simple example demonstrating the
 | [Bezier](https://github.com/oysteinmyrmo/bezier)             | [MIT](https://github.com/oysteinmyrmo/bezier/blob/master/LICENSE.txt) |
 | [Clipper](http://www.angusj.com/delphi/clipper.php)          | [Boost Software License 1.0](https://www.boost.org/LICENSE_1_0.txt) |
 | [Spline](https://github.com/brainexcerpts/Spline)            | [MIT](https://github.com/brainexcerpts/Spline/blob/master/LICENSE) |
+| [cmake](https://cmake.org)                                   | [BSD 3-clause License](https://cmake.org/licensing/)         |
 
 
 

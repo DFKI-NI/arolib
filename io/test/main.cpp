@@ -19,5 +19,4 @@
 #define BOOST_TEST_MAIN
 #include <boost/test/unit_test.hpp>
 
-#include "test_io_xml.cpp"
 #include "test_mock.cpp"

@@ -20,3 +20,4 @@
 #include <boost/test/unit_test.hpp>
 
 #include "test_mock.cpp"
+#include "test_tracksconnector.cpp"

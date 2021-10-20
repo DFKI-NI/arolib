@@ -111,14 +111,14 @@ protected:
 class CustomEdgeSpeedCalculator : public IEdgeSpeedCalculator
 {
 public:
-    using CalcMassFunc = std::function< double  ( const Point&, const Point&, double, const Machine& ) >;
+    using CalcSpeedFunc = std::function< double  ( const Point&, const Point&, double, const Machine& ) >;
 
     /**
      * @brief Constructor.
      * @param _calcSpeed Function to be called when IEdgeMassCalculator::calcSpeed is called
      * @param logLevel Log level
      */
-    explicit CustomEdgeSpeedCalculator(const CalcMassFunc& _calcSpeed, const LogLevel& logLevel = LogLevel::INFO);
+    explicit CustomEdgeSpeedCalculator(const CalcSpeedFunc& _calcSpeed, const LogLevel& logLevel = LogLevel::INFO);
 
     /**
      * @brief Compute the edge speed.
@@ -127,7 +127,7 @@ public:
     virtual double calcSpeed (const Point& p0, const Point& p1, double bunker_mass, const Machine& machine) override;
 
 protected:
-    CalcMassFunc m_calcSpeed;/**< Function to be called when IEdgeMassCalculator::calcSpeed is called >*/
+    CalcSpeedFunc m_calcSpeed;/**< Function to be called when IEdgeMassCalculator::calcSpeed is called >*/
 
 };
 

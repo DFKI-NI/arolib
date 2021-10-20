@@ -303,6 +303,13 @@ public:
     bool add(const CompleteHeadland& hl, std::string tag = "");
 
 
+    /**
+     * @brief Add/write an obstacle with a given name and tag.
+     * @param obs Obstacle to be written
+     * @param tag Tag (if empty, no XML-tag will be opened)
+     * @return True on success
+     */
+    bool add(const Obstacle& obs, std::string tag = "");
 
     /**
      * @brief Add/write Obstacles with a given name and tag.
@@ -310,7 +317,6 @@ public:
      * @param tag Tag (if empty, no XML-tag will be opened)
      * @return True on success
      */
-    bool add(const Obstacle& obs, std::string tag = "");
     bool add(const std::vector<Obstacle>& obstacles, std::string tag = "");
 
 

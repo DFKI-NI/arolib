@@ -7,6 +7,9 @@ enable_testing()
 # Project name
 project (AroLib VERSION 0.1.0 LANGUAGES CXX)
 
+message(STATUS "CMAKE_C_COMPILER = ${CMAKE_C_COMPILER}")
+message(STATUS "CMAKE_CXX_COMPILER = ${CMAKE_CXX_COMPILER}")
+
 include(CheckCXXCompilerFlag)
 CHECK_CXX_COMPILER_FLAG("-std=c++11" COMPILER_SUPPORTS_CXX11)
 CHECK_CXX_COMPILER_FLAG("-std=c++0x" COMPILER_SUPPORTS_CXX0X)
@@ -133,7 +136,7 @@ include(CMakePackageConfigHelpers)
 
 # install /.../include/*.hpp
 
-# === Install the include headers to ~/arolib/install/arolib/include/ ===
+# === Install the include headers ===
 foreach(libname ${AROLIB_LIB_NAMES})
     install(
         DIRECTORY ${CMAKE_SOURCE_DIR}/${libname}/include/arolib/${libname}/
@@ -142,8 +145,7 @@ foreach(libname ${AROLIB_LIB_NAMES})
     )
 endforeach()
 
-
-# === Install the HighFive include headers to ~/arolib/install/arolib/include/highfive/ ===
+# === Install the HighFive include headers ===
 install(
     DIRECTORY ${CMAKE_SOURCE_DIR}/3rdparty/HighFive/include/
     DESTINATION include/

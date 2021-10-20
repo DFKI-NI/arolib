@@ -67,7 +67,10 @@ bool RoundtripPlanner::planTrip(const DirectedGraph::Graph &graph,
     }
 
     m_found_plan = false;
-    initState(graph, routeBase, rp_index, rp_ret_index);
+    if(!initState(graph, routeBase, rp_index, rp_ret_index)){
+        logger().printError(__FUNCTION__, "Error initializing planner state");
+        return false;
+    }
 
     if(routeBase.route_points.empty()){
         m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Harvester route is empty");
@@ -212,7 +215,7 @@ double RoundtripPlanner::getCost() const
 
 bool RoundtripPlanner::foundPlan() const {return m_found_plan;}
 
-void RoundtripPlanner::initState(const DirectedGraph::Graph& graph, const Route& routeBase, size_t rp_index, size_t rp_ret_index)
+bool RoundtripPlanner::initState(const DirectedGraph::Graph& graph, const Route& routeBase, size_t rp_index, size_t rp_ret_index)
 {
     m_state = PlanState();
 
@@ -223,9 +226,12 @@ void RoundtripPlanner::initState(const DirectedGraph::Graph& graph, const Route&
     if(rp_index < routeBase.route_points.size()){
         m_state.routePt = m_state.routeBase.route_points.at(rp_index);
         auto it_vt = graph.routepoint_vertex_map().find( m_state.routePt );
-        if(it_vt != graph.routepoint_vertex_map().end())
-            m_state.routePtVt = it_vt->second;
+        if(it_vt == graph.routepoint_vertex_map().end()){
+            logger().printError(__FUNCTION__, "Vertex corresponding to start route point not found in graph's map");
+            return false;
+        }
 
+        m_state.routePtVt = it_vt->second;
         m_state.removedVisitPeriods = m_state.graph.removeVisitPeriodsAfterTimestamp({m_machine.id}, m_state.routePt.time_stamp);
     }
 
@@ -236,8 +242,13 @@ void RoundtripPlanner::initState(const DirectedGraph::Graph& graph, const Route&
     else if(rp_ret_index < routeBase.route_points.size()){
         m_state.routePt_ret = m_state.routeBase.route_points.at(rp_ret_index);
         auto it_vt = graph.routepoint_vertex_map().find( m_state.routePt_ret );
-        if(it_vt != graph.routepoint_vertex_map().end())
-            m_state.routePtVt_ret = it_vt->second;
+        if(it_vt == graph.routepoint_vertex_map().end()){
+            logger().printError(__FUNCTION__, "Vertex corresponding to return route point not found in graph's map");
+
+            return false;
+        }
+
+        m_state.routePtVt_ret = it_vt->second;
 
         for(auto &vt_it : m_state.removedVisitPeriods){//remove for good the visiting periods of the connection between rp_index and rp_ret_index
             for(size_t i = 0 ; i < vt_it.second.size() ; ++i){
@@ -254,6 +265,8 @@ void RoundtripPlanner::initState(const DirectedGraph::Graph& graph, const Route&
 
     routeBase.copyToWithoutPoints(m_state.routeTrip, true);
     routeBase.copyToWithoutPoints(m_state.routeUpdated, true);
+
+    return true;
 
 }
 

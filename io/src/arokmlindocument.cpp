@@ -381,7 +381,6 @@ bool AroKMLInDocument::read(const AroKMLInDocument::ReadHandler &base, CompleteH
 
 }
 
-
 bool AroKMLInDocument::read(const AroKMLInDocument::ReadHandler &base, Obstacle &obs)
 {
     obs = Obstacle();

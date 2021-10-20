@@ -29,6 +29,7 @@ Harvesting process with one capacitaded harvester OR one non-capacitated harvest
 #include "arolib/components/baseroutesprocessor.h"
 #include "arolib/components/fieldprocessplanner.h"
 #include "arolib/components/graphprocessor.h"
+#include <fstream>
 
 using namespace arolib;
 
@@ -43,11 +44,12 @@ struct WorkSpace{
     OutFieldInfo outFieldInfo; //Information related to operations done outside of the field (incl. travel)
     std::map<MachineId_t, MachineDynamicInfo> machineInitialStates; //initial states of the machines
     std::shared_ptr< gridmap::GridCellsInfoManager > cellsInfoManager = std::make_shared<gridmap::GridCellsInfoManager>(gLogLevel);//cells manager used by several components to make computations in gridmaps
+    std::shared_ptr<IEdgeSpeedCalculator> speedCalculator = std::make_shared<EdgeSpeedCalculatorDef>(gLogLevel);//calculator used to compute the harvester spped while harvesting
     std::shared_ptr<IEdgeMassCalculator> massCalculator = nullptr;//calculator used to compute the amount of mass to be extracted from the field
-    std::shared_ptr<IEdgeSpeedCalculator> speedCalculator = nullptr;//calculator used to compute the speed of the harvester while harvesting
     std::shared_ptr<IEdgeCostCalculator> costCalculator = nullptr;//calculator used to compute the edge costs during path planning
     std::shared_ptr< ArolibGrid_t > massMap = nullptr;//gridmap holding the (bio)mass distribution in the field (t/ha)
     std::shared_ptr< ArolibGrid_t > massFactorMap = nullptr;//gridmap used by the mass calculator to factor the amount of mass in a specific region
+    std::shared_ptr< ArolibGrid_t > soilMap = nullptr;//gridmap holding the soil-cost values in the field
     DirectedGraph::Graph graph;//graph used in path planning
     std::vector<HeadlandRoute> baseRoutes_headland;//base-routes for the headland
     std::vector<Route> baseRoutes_innerField;//base-routes for the inner-field
@@ -59,10 +61,10 @@ struct WorkSpace{
 bool initTestField( WorkSpace & workSpace );
 bool initGridmaps( WorkSpace & workSpace );
 bool initMassCalculator( WorkSpace & workSpace );
-bool initSpeedCalculator( WorkSpace & workSpace );
-bool initCostCalculator(WorkSpace & workSpace);
+bool initCostCalculator( WorkSpace & workSpace, size_t operationType );
 bool updateMassFactorMap( WorkSpace & workSpace, const Polygon & boundary );
-bool initWorkingGroup( WorkSpace & workSpace );
+bool initWorkingGroup_cHarv( WorkSpace & workSpace );
+bool initWorkingGroup_harvTV( WorkSpace & workSpace );
 bool initMachineStates( WorkSpace & workSpace );
 bool initOutFieldInfo( WorkSpace & workSpace );
 bool planHeadland( WorkSpace & workSpace );
@@ -71,15 +73,12 @@ bool planInnerFieldBaseRoutes( WorkSpace & workSpace );
 bool preProcessBaseRoutes( WorkSpace & workSpace );
 bool generateGraph( WorkSpace & workSpace );
 bool planOperation( WorkSpace & workSpace );
-bool savePlan(WorkSpace & workSpace);
+bool savePlan( WorkSpace & workSpace, size_t operationType );
 
 
 int main()
 {
     WorkSpace workSpace;
-
-
-    std::cout << std::endl << "----- INITIALIZING ... -----" << std::endl << std::endl;
 
     // Get the test field
     if( !initTestField( workSpace ) )
@@ -93,70 +92,78 @@ int main()
     if( !initMassCalculator( workSpace ) )
         return 30;
 
-    // Initialize the speed calculator (harvester)
-    if( !initSpeedCalculator( workSpace ) )
-        return 35;
+    for(size_t operationType = 0 ; operationType < 2 ; ++operationType){
 
-    // Initialize the cost calculator
-    if( !initCostCalculator( workSpace ) )
-        return 40;
+        std::cout << std::endl << "----- PLANNING OPERATION TYPE " << operationType << " -----" << std::endl << std::endl;
 
-    // Initialize the working group of machines
-    if( !initWorkingGroup( workSpace ) )
-        return 50;
+        // Initialize the cost calculator based on the operation type
+        if( !initCostCalculator( workSpace, operationType ) )
+            return 40 + operationType;
 
-    std::cout << std::endl << "-- Working group --" << std::endl;
-    for(size_t i = 0 ; i < workSpace.workingGroup.size() ; ++i){
-        const auto& machine = workSpace.workingGroup.at(i);
-        std::cout << "   Machine # " << ( i+1 ) << std::endl
-                  << "      id = " << machine.id << std::endl
-                  << "      type = " << Machine::machineTypeToShortString3c(machine.machinetype) << std::endl
-                  << "      manufacturer = " << machine.manufacturer << std::endl
-                  << "      model = " << machine.model << std::endl
-                  << "      width [m] = " << machine.width << std::endl
-                  << "      working width [m] = " << machine.working_width << std::endl
-                  << "      mass [kg] = " << machine.weight << std::endl;
+        // Get the machines' working group based on the operation type
+        if(operationType == 0){ //capacitated harvester
+            if( !initWorkingGroup_cHarv( workSpace) )
+                return 50 + operationType;
+        }
+        else{ //non-capacitated harvester + transport vehicles
+            if( !initWorkingGroup_harvTV( workSpace ) )
+                return 50 + operationType;
+        }
+
+        std::cout << std::endl << "-- Working group --" << std::endl;
+        for(size_t i = 0 ; i < workSpace.workingGroup.size() ; ++i){
+            const auto& machine = workSpace.workingGroup.at(i);
+            std::cout << "   Machine # " << ( i+1 ) << std::endl
+                      << "      id = " << machine.id << std::endl
+                      << "      type = " << Machine::machineTypeToShortString3c(machine.machinetype) << std::endl
+                      << "      manufacturer = " << machine.manufacturer << std::endl
+                      << "      model = " << machine.model << std::endl
+                      << "      width [m] = " << machine.width << std::endl
+                      << "      working width [m] = " << machine.working_width << std::endl
+                      << "      mass [kg] = " << machine.weight << std::endl;
+        }
+        std::cout << std::endl << "-- Working group --" << std::endl << std::endl;
+
+        // Initialize the initial states of the machines
+        if( !initMachineStates( workSpace ) )
+            return 60 + operationType;
+
+        // Initialize the out-of-field information based on the working group, access points, resource points, etc.
+        if( !initOutFieldInfo( workSpace ) )
+            return 70 + operationType;
+
+        // Generate the headland geometries and headland base-routes
+        if( !planHeadland( workSpace ) )
+            return 80 + operationType;
+
+        // Generate the inner-field tracks
+        if( !generateInnerFieldTracks( workSpace ) )
+            return 90 + operationType;
+
+        // Generate the inner-field base routes
+        if( !planInnerFieldBaseRoutes( workSpace ) )
+            return 100 + operationType;
+
+        // Connect the headland and inner-field base routes
+        if( !preProcessBaseRoutes( workSpace ) )
+            return 110 + operationType;
+
+        //generate the graph
+        if( !generateGraph( workSpace ) )
+            return 120 + operationType;
+
+        //plan the routes for all machines
+        if( !planOperation( workSpace ) )
+            return 130 + operationType;
+
+        //save plan (processed field geometries, routes and some planning parameters)
+        savePlan( workSpace, operationType );
+
+
+        std::cout << std::endl << "----- FINISHED PLANNING OPERATION TYPE " << operationType << " -----" << std::endl << std::endl;
+
     }
-    std::cout << std::endl << "-- Working group --" << std::endl << std::endl;
 
-    // Initialize the initial states of the machines
-    if( !initMachineStates( workSpace ) )
-        return 60;
-
-    // Initialize the out-of-field information based on the working group, access points, resource points, etc.
-    if( !initOutFieldInfo( workSpace ) )
-        return 70;
-
-    std::cout << std::endl << "----- PLANNING ... -----" << std::endl << std::endl;
-
-    // Generate the headland geometries and headland base-routes
-    if( !planHeadland( workSpace ) )
-        return 80;
-
-    // Generate the inner-field tracks
-    if( !generateInnerFieldTracks( workSpace ) )
-        return 90;
-
-    // Generate the inner-field base routes
-    if( !planInnerFieldBaseRoutes( workSpace ) )
-        return 100;
-
-    // Connect the headland and inner-field base routes
-    if( !preProcessBaseRoutes( workSpace ) )
-        return 110;
-
-    //generate the graph
-    if( !generateGraph( workSpace ) )
-        return 120;
-
-    //plan the routes for all machines
-    if( !planOperation( workSpace ) )
-        return 130;
-
-    //save plan (processed field geometries, routes and some planning parameters)
-    savePlan( workSpace );
-
-    std::cout << std::endl << "----- FINISHED PLANNING  -----" << std::endl << std::endl;
 
     return 0;
 }
@@ -219,6 +226,7 @@ bool initGridmaps( WorkSpace & workSpace ){
 
     auto & massMap = workSpace.massMap;
     auto & massFactorMap = workSpace.massFactorMap;
+    auto & soilMap = workSpace.soilMap;
     auto & boundary = workSpace.field.outer_boundary;
     const double cellsize = 2.0; //meters
 
@@ -236,8 +244,9 @@ bool initGridmaps( WorkSpace & workSpace ){
         return false;
     }
 
-    //copy the mass gridmap to the factorMap
+    //copy the mass gridmap to the soilMap and factorMap
     massFactorMap = std::make_shared<ArolibGrid_t>( *massMap );
+    soilMap = std::make_shared<ArolibGrid_t>( *massMap );
 
     //set the cell values of the biomass gridmap
     for( size_t x = 0 ; x < massMap->getSizeX() ; x++){
@@ -254,8 +263,16 @@ bool initGridmaps( WorkSpace & workSpace ){
         }
     }
 
+    //set a circular region in the soil-cost gridmap with a value of 0.8;
+    Polygon circle = geometry::create_circle(center, 40.0, 18);
+    if( !soilMap->updatePolygonProportionally(circle, 0.8, true) ){
+        std::cerr << "-- Error creatring circular region in the soil-cost gridmap --" << std::endl;
+        return false;
+    }
+
     //set the units of the gridmaps
     massMap->setUnits(UNIT_TONS_PER_HECTARE);
+    soilMap->setUnits(UNIT_CUSTOM);
 
     return true;
 }
@@ -276,27 +293,38 @@ bool initMassCalculator( WorkSpace & workSpace ){
 }
 
 /*
- * This function creates and initializes the edge speed calculator to be used when computing the speed of the harvester during harvesting
+ * This function creates and initializes the edge cost calculator to be used in the planning process.
+ * If operationType == 0 -> Time optimization
+ * If operationType != 0 -> Soil protection
  * */
-bool initSpeedCalculator( WorkSpace & workSpace ){
-    std::shared_ptr<ESCMassBased_custom> speedCalculator = std::make_shared< ESCMassBased_custom >(gLogLevel);
-    speedCalculator->setEdgeMassCalculator( workSpace.massCalculator );
-    speedCalculator->setMassBasedSpeedFunction( [](const Machine& m, double massPerArea)->double{//example speed function based on the machine and the yield [t/ha]
-        double speed = 2.5 - 0.015 * massPerArea;
-        return std::max( 1.0, std::min( speed, std::max(m.max_speed_empty, m.max_speed_full) ) );
-    } );
-    workSpace.speedCalculator = speedCalculator;
-    return true;
-}
-
-/*
- * This function creates and initializes the edge cost calculator to be used in the planning process (in this case, time optimization).
- * */
-bool initCostCalculator( WorkSpace & workSpace ){
-    workSpace.costCalculator = std::make_shared< ECC_timeOptimization >(gLogLevel);
+bool initCostCalculator( WorkSpace & workSpace, size_t operationType ){
     IEdgeCostCalculator::GeneralParameters generalParams;
-    generalParams.crossCostMult = 25;
-    generalParams.boundaryCrossCostMult = 50;
+    if(operationType == 0){
+        generalParams.crossCostMult = 25;
+        generalParams.boundaryCrossCostMult = 50;
+        workSpace.costCalculator = std::make_shared< ECC_timeOptimization >(gLogLevel);
+    }
+    else{
+        generalParams.crossCostMult = 2.5;
+        generalParams.boundaryCrossCostMult = 10;
+
+        ECC_soilOptimization1::CostCoefficients costCoeffs;
+        costCoeffs.K_prevWeights = 0.5;
+        costCoeffs.K_bias = 0.2;
+        costCoeffs.K_soil = 3;
+        costCoeffs.Kpow_soil = 2;
+        costCoeffs.K_time = 0;
+        costCoeffs.K_prevWeights = 0.5;
+
+        std::shared_ptr<ECC_soilOptimization1> costCalculator = std::make_shared< ECC_soilOptimization1 >(gLogLevel);
+        costCalculator->setGridCellsInfoManager( workSpace.cellsInfoManager );
+        costCalculator->setCostCoefficients( costCoeffs );
+        costCalculator->setSoilCostMap( workSpace.soilMap );
+        costCalculator->setBoundary( workSpace.field.outer_boundary );
+
+        workSpace.costCalculator = costCalculator;
+    }
+
     workSpace.costCalculator->setGeneralParameters( generalParams );
     return true;
 }
@@ -331,16 +359,46 @@ bool updateMassFactorMap( WorkSpace & workSpace, const Polygon & boundary ){
 }
 
 /*
- * This function initializes the working group of machines with:
- * - One harvester without capacity
- * - Two transport (overload) vehicles
+ * This function initializes the working group of machines with:.
+ * - One capacitated harvester
  * */
-bool initWorkingGroup( WorkSpace & workSpace ){
+bool initWorkingGroup_cHarv( WorkSpace & workSpace ){
 
     workSpace.workingGroup.clear();
 
     Machine harv;
     harv.id = 0;
+    harv.machinetype = Machine::HARVESTER;
+    harv.width = 5; // m
+    harv.length = 15; // m
+    harv.working_width = 5; // m
+    harv.weight = 35000; // kg
+    harv.bunker_mass = 30000; // kg
+    harv.turning_radius = 7; // m
+    harv.max_speed_empty = 5; // m/s
+    harv.max_speed_full = 4; // m/s
+    harv.def_working_speed = 2.5; // m/s
+    harv.num_axis = 3; //
+    harv.manufacturer = "Test Company"; //
+    harv.model = "Capacitated Harvester"; //
+
+    workSpace.workingGroup.push_back(harv);
+
+
+    return true;
+}
+
+/*
+ * This function initializes the working group of machines with:
+ * - One harvester without capacity
+ * - Two transport (overload) vehicles
+ * */
+bool initWorkingGroup_harvTV( WorkSpace & workSpace ){
+
+    workSpace.workingGroup.clear();
+
+    Machine harv;
+    harv.id = 10;
     harv.machinetype = Machine::HARVESTER;
     harv.width = 3; // m
     harv.length = 7; // m
@@ -372,7 +430,7 @@ bool initWorkingGroup( WorkSpace & workSpace ){
     olv.manufacturer = "Test Company"; //
     olv.model = "Overload Vehicle"; //
 
-    for(int i = 1 ; i < 3 ; ++i){
+    for(int i = 11 ; i < 13 ; ++i){
         olv.id = i;
         workSpace.workingGroup.push_back(olv);
     }
@@ -390,7 +448,7 @@ bool initMachineStates( WorkSpace & workSpace ){
         refAccessPoint = workSpace.field.subfields.front().access_points.front();
     }
     catch(...){
-        std::cerr << "-- Error getting firts access point of the subfield --" << std::endl;
+        std::cerr << "-- Error getting first access point of the subfield --" << std::endl;
         return false;
 
     }
@@ -727,9 +785,9 @@ bool planOperation( WorkSpace & workSpace ){
 /*
  * This function saves the processed field and planned routes in '/tmp' (if possible)
  * */
-bool savePlan( WorkSpace & workSpace ){
+bool savePlan( WorkSpace & workSpace, size_t operationType ){
     const std::string baseDir = "/tmp";
-    const std::string outDir = baseDir + "/example_harvesting/plan/";
+    const std::string outDir = baseDir + "/example_harvesting/operationType_" + std::to_string(operationType) + "/";
 
     std::cout << std::endl << "-- Saving field and plan in " << outDir << "'..... --" << std::endl;
 
@@ -748,8 +806,11 @@ bool savePlan( WorkSpace & workSpace ){
         return false;
     }
 
+    std::cout << std::endl << "-- Field (KML) saved in " << outDir << "' --" << std::endl;
+
     std::map<std::string, ArolibGrid_t* > gridmaps;
     gridmaps["biomass"] = workSpace.massMap.get();
+    gridmaps["soilcost"] = workSpace.soilMap.get();
     if( !io::writePlanXML( outDir + "plan.xml",
                            workSpace.field,
                            workSpace.workingGroup,

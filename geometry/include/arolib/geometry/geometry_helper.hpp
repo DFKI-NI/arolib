@@ -36,7 +36,6 @@
 #include "arolib/types/units.hpp"
 #include "arolib/misc/basicconversions.hpp"
 
-
 namespace arolib{
 
 /**

@@ -222,7 +222,7 @@ private:
      * @param rp_index Index of the route point where the trip starts
      * @param rp_ret_index Index of the route point where the machine has to return (i.e. where the trip ends).
      */
-    void initState(const DirectedGraph::Graph &graph, const Route &routeBase, size_t rp_index, size_t rp_ret_index);
+    bool initState(const DirectedGraph::Graph &graph, const Route &routeBase, size_t rp_index, size_t rp_ret_index);
 
     /**
      * @brief Plan the route-segment to the best destination vertex

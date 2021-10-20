@@ -379,7 +379,6 @@ bool AroXMLOutDocument::add(const CompleteHeadland &hl, std::string tag)
     return ok;
 }
 
-
 bool AroXMLOutDocument::add(const Obstacle &obs, std::string tag){
     bool ok = true;
     if(!isReadyToWrite())

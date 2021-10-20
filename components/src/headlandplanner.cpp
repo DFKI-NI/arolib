@@ -32,7 +32,6 @@ HeadlandPlanner::TracksSamplingStrategy HeadlandPlanner::intToTracksSamplingStra
     throw std::invalid_argument( "The given value does not correspond to any HeadlandPlanner::TracksSamplingStrategy" );
 }
 
-
 bool HeadlandPlanner::PlannerParameters::parseFromStringMap(HeadlandPlanner::PlannerParameters &params, const std::map<std::string, std::string> &map, bool strict)
 {
     HeadlandPlanner::PlannerParameters tmp;
@@ -53,7 +52,7 @@ bool HeadlandPlanner::PlannerParameters::parseFromStringMap(HeadlandPlanner::Pla
         std::map<std::string, size_t*> uiMap = { {"numTracks" , &tmp.numTracks} };
         std::map<std::string, bool*> bMap = { {"clockwise" , &tmp.clockwise},
                                               {"sortMachinesByWidth" , &tmp.sortMachinesByWidth} };
-        std::map<std::string, int*> enumMap = { {"tracksSamplingStrategy" , &tracksSamplingStrategy}};
+        std::map<std::string, int*> enumMap = { {"tracksSamplingStrategy" , &tracksSamplingStrategy} };
 
         if( !setValuesFromStringMap( map, dMap, strict)
                 || !setValuesFromStringMap( map, uiMap, strict)

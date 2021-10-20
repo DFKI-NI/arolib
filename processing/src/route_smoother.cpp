@@ -573,6 +573,23 @@ bool RouteSmoother::smoothenRoute(const Machine &machine, Route &route, const st
 
 bool RouteSmoother::smoothenRoute(const Machine &machine, Route &route, const std::function<bool(const RoutePoint&)>& cutFunct, size_t indFrom, int indTo, const Polygon &boundary, RouteSmoother::TimeHandlingStrategy THStrategy) const
 {
+    return (machine,
+            route,
+            [&](const Route& route, size_t ind)->bool{
+                return ind >= route.route_points.size() || cutFunct( route.route_points.at(ind) );
+            },
+            indFrom, indTo,
+            boundary,
+            THStrategy);
+}
+
+bool RouteSmoother::smoothenRoute(const Machine &machine,
+                                  Route &route,
+                                  const std::function<bool (const Route&, size_t)> &cutFunct,
+                                  size_t indFrom, int indTo,
+                                  const Polygon &boundary,
+                                  RouteSmoother::TimeHandlingStrategy THStrategy) const
+{
     struct DebugFileHandler{//just to close always in return
         std::ofstream& file;
         DebugFileHandler(std::ofstream& _file) : file(_file) {}
@@ -610,7 +627,7 @@ bool RouteSmoother::smoothenRoute(const Machine &machine, Route &route, const st
         auto ind1 = ind0+1;
 
         while( ind1 <= indTo ){//search for the next cut
-            if( cutFunct( route_points.at(ind1) ) )
+            if( cutFunct( route, ind1 ) )
                 break;
             ++ind1;
         }

@@ -1787,10 +1787,17 @@ std::map<MachineId_t, Route> FieldProcessPlanner::getInitialPathToWorkingRoutes(
             continue;
         }
 
+        auto it_vt_2 = graph.routepoint_vertex_map().find( route.route_points.front() );
+        if(it_vt_2 == graph.routepoint_vertex_map().end()){
+            logger().printError(__FUNCTION__, "Vertex corresponding to start route point not found in graph's map");
+            routesInit[route.machine_id] = routeInit;
+            continue;
+        }
+
         //connect using AStar
         Astar::PlanParameters astarParams;
         astarParams.start_vt = it_vt->second;
-        astarParams.goal_vt = graph.routepoint_vertex_map().at(route.route_points.front());
+        astarParams.goal_vt = it_vt_2->second;
         astarParams.start_time = 0;
         astarParams.max_time_visit = 0;//do not drive over any of the vertices that will be worked on (except for the first one, which is the goal)
         astarParams.max_time_goal = std::numeric_limits<double>::max();//no limits, just get there

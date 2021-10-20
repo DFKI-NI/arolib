@@ -1,6 +1,5 @@
 set(AROLIB_LIB_NAME "${AROLIB_LIB_PREFIX}${AROLIB_LIB_IO}")
 
-
 add_library(${AROLIB_LIB_NAME} SHARED
     src/io_hdf5.cpp
     src/io_xml.cpp
@@ -47,6 +46,7 @@ target_link_libraries(${AROLIB_LIB_NAME}
         ${AROLIB_LIB_PREFIX}${AROLIB_LIB_PLANNING}
         ${AROLIB_LIB_PREFIX}${AROLIB_LIB_MISC}
 )
+
 
 install(TARGETS ${AROLIB_LIB_NAME}
         EXPORT ${AROLIB_LIB_NAME}_targets

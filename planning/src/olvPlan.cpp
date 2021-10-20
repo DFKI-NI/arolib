@@ -1223,7 +1223,7 @@ bool OLVPlan::planPathToAdjacentPoint(DirectedGraph::Graph &graph,
 
     adjVertexInfo = adjacents.at(best_adjacent_vt_ind);
 
-    if(!plan.route_points_.empty()){
+    if(!plan.route_points_.empty()){        
 
         if(adjVertexInfo.first == switching_vt){
             plan.route_points_.back().type = RoutePoint::OVERLOADING_START;

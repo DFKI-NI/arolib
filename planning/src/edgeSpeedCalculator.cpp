@@ -53,7 +53,7 @@ IEdgeSpeedCalculator::IEdgeSpeedCalculator(const std::string &childName, const L
 //----------------------------------------------CustomEdgeSpeedCalculator----------------------------------------------------
 
 
-CustomEdgeSpeedCalculator::CustomEdgeSpeedCalculator(const CustomEdgeSpeedCalculator::CalcMassFunc &_calcSpeed, const LogLevel &logLevel):
+CustomEdgeSpeedCalculator::CustomEdgeSpeedCalculator(const CustomEdgeSpeedCalculator::CalcSpeedFunc &_calcSpeed, const LogLevel &logLevel):
     IEdgeSpeedCalculator(__FUNCTION__, logLevel)
   , m_calcSpeed(_calcSpeed)
 {

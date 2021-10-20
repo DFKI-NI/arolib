@@ -27,7 +27,6 @@
 #include "geometry_helper.hpp"
 #include "arolib/types/pose2D.hpp"
 
-
 namespace arolib{
 
 namespace geometry{

@@ -560,7 +560,7 @@ void GraphBuilder_TracksBased::connectInnerFieldTracksToHeadland(BuilderWorkspac
                                             v_prop,
                                             v_prop.route_point,
                                             hl_vts.back(),
-                                            std::bind( isValid_trackEnds, std::placeholders::_1, v_prop, vts_ends.second),
+                                            std::bind( isValid_trackEnds, std::placeholders::_1, v_prop, vts_ends.second, 2*distComp),
                                             true,
                                             EdgeType::DEFAULT,
                                             "IFte-HL") ){
@@ -1196,7 +1196,7 @@ void GraphBuilder_TracksBased::connectResourcePointsToTracks(BuilderWorkspace &w
         int indHL = -1;
         if(ws.hasSurroundingHeadland)
             indHL = std::min(0, (int)ws.verticesHeadlandTracks.size() - 1);
-        if(indHL < 0)//no headland found -> abort
+        if(indHL < 0)//no hedland found -> abort
             continue;
 
         connectToClosestValidVertex(ws,
@@ -1422,7 +1422,7 @@ void GraphBuilder_TracksBased::connectInitialPositionsToTracks(BuilderWorkspace 
         int indHL = -1;
         if(ws.hasSurroundingHeadland)
             indHL = std::min(0, (int)ws.verticesHeadlandTracks.size() - 1);
-        if(indHL < 0)//no headland found -> abort
+        if(indHL < 0)//no hedland found -> abort
             continue;
 
         double radius = std::max(m.workingRadius(), 0.5 * ws.graph.workingWidth_HL());
@@ -1549,9 +1549,11 @@ void GraphBuilder_TracksBased::addVisitPeriods(BuilderWorkspace &ws, const std::
     }
 }
 
-bool GraphBuilder_TracksBased::isValid_trackEnds(const vertex_property &vp, const vertex_property &vp_trackEnd, const Point pPrev){
+bool GraphBuilder_TracksBased::isValid_trackEnds(const vertex_property &vp, const vertex_property &vp_trackEnd, const Point pPrev, double maxDist){
     if( vp_trackEnd.route_point.point() == pPrev )
         return true;
+    if(maxDist > 1e-6 && geometry::calc_dist(vp_trackEnd.route_point, vp.route_point) > maxDist)
+        return false;
     static const double angComp = deg2rad(45);
     double ang = geometry::get_angle(vp_trackEnd.route_point, pPrev, vp.route_point);
     return std::fabs(ang) <= angComp;
@@ -1710,6 +1712,7 @@ bool GraphBuilder_TracksBased::connectToClosestValidVertex(BuilderWorkspace &ws,
     double dist;
     double minDist = std::numeric_limits<double>::max();
     bool found = false;
+
     for(auto& vts2 : vts){
         if( findClosestValidVertex(ws, pRef, vts2, isValid, vt, vp, &dist)
                 && dist < minDist){

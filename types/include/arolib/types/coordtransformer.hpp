@@ -46,7 +46,6 @@
 
 
 #include "arolib/misc/loggingcomponent.h"
-//#include "arolib/misc/WGS84toCartesian.hpp"
 #include "point.hpp"
 
 #include <gdal/ogr_spatialref.h>

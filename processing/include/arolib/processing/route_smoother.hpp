@@ -209,6 +209,26 @@ public:
                        TimeHandlingStrategy THStrategy = RECALC_PROP_TO_LENGTH) const;
 
 
+    /**
+     * @brief Smoothen a segment of a route from a given point until a cut point.
+     * @param machine Machine
+     * @param [in/out] route Route to be smoothen.
+     * @param cutFunct function returning if a given point of the route route is the final point of the segment to be smoothen (Note: the route send as parameter to cutFunct might have already smoothen segments, hence might not be the same input route of smoothenRoute)
+     * @param indFrom Index of the first route point.
+     * @param indTo Index of the last route point (if <0 --> last route point in the route).
+     * @param boundary Boundary.
+     * @param THStrategy Strategy to deal with timestamps in the smoothen segments (and their subsequent route points)
+     * @return True on success.
+     */
+    bool smoothenRoute(const Machine& machine,
+                       Route& route,
+                       const std::function<bool (const Route&, size_t)> &cutFunct,
+                       size_t indFrom = 0,
+                       int indTo = -1,
+                       const Polygon& boundary = Polygon(),
+                       TimeHandlingStrategy THStrategy = RECALC_PROP_TO_LENGTH) const;
+
+
 
     /**
      * @brief For debugging purposes

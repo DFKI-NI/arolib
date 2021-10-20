@@ -308,9 +308,10 @@ private:
      * @param vp Vertex-property of the vertex
      * @param vp_trackEnd Vertex-property of the track-end vertex
      * @param pPrev Point in track previous to the track-end
+     * @param maxDist Maximum allowed distance bewteeen vertices
      * @param True if valid
      */
-    static bool isValid_trackEnds(const vertex_property& vp, const vertex_property& vp_trackEnd, const Point pPrev);
+    static bool isValid_trackEnds(const vertex_property& vp, const vertex_property& vp_trackEnd, const Point pPrev, double maxDist);
 
     /**
      * @brief Function used to decide whether a connection between a given HL vertex and a reference IF vertex is valid
