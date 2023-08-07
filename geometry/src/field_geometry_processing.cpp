@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -368,6 +368,388 @@ Field getFieldFromSubfields(std::vector<Subfield> const& subfields)
     f.outer_boundary.points.emplace_back( Point(minX_f, minY_f) );
 
     return f;
+
+}
+
+std::map<size_t, std::set<size_t> > getAdjacentTracksList(const std::vector<Track> &tracks, bool withRepeatedEntries)
+{
+    std::map<size_t, std::set<size_t> > ret;
+
+    for(size_t i = 0 ; i+1 < tracks.size() ; ++i){
+        for(size_t j = i+1 ; j < tracks.size() ; ++j){
+            if(areTracksAdjacent(tracks.at(i), tracks.at(j))){
+                ret[i].insert(j);
+                if(withRepeatedEntries)
+                    ret[j].insert(i);
+            }
+        }
+    }
+
+    return ret;
+
+}
+
+bool areTracksAdjacent(const std::map<size_t, std::set<size_t> > &list, size_t indTrack1, size_t indTrack2)
+{
+    if(indTrack1 == indTrack2)
+        return false;
+
+    if(indTrack1 > indTrack2)
+        std::swap(indTrack1, indTrack2);
+
+    auto it = list.find(indTrack1);
+    if(it != list.end()){
+        if( it->second.find(indTrack2) != it->second.end() )
+            return true;
+    }
+
+    it = list.find(indTrack2);
+    if(it != list.end()){
+        if( it->second.find(indTrack1) != it->second.end() )
+            return true;
+    }
+
+    return false;
+}
+
+bool areTracksAdjacent(const Track &t1, const Track &t2)
+{
+
+    if(t1.points.size() < 2 || t2.points.size() < 2)
+        return false;
+
+    if( (t1.width < 1e-9 && t1.boundary.points.size() < 4) ||
+            (t2.width < 1e-9 && t2.boundary.points.size() < 4) )
+        return false;
+
+    if( t1.boundary.points.size() > 3 && t2.boundary.points.size() > 3 ){
+        auto b1 = t1.boundary.points;
+        auto b2 = t2.boundary.points;
+
+        unsample_linestring(b1);
+        unsample_linestring(b2);
+
+        for(auto& p : b1)
+            addSampleToGeometryClosestToPoint(b2, p);
+        for(auto& p : b2)
+            addSampleToGeometryClosestToPoint(b1, p);
+
+        for(auto& p1 : b1){
+            for(auto& p2 : b2){
+                if(calc_dist(p1, p2) < 1e-2)
+                    return true;
+            }
+        }
+    }
+
+    auto pts1 = t1.points;
+    auto pts2 = t2.points;
+
+    unsample_linestring(pts1);
+    unsample_linestring(pts2);
+
+    addSampleToGeometryClosestToPoint(pts1, pts2.front());
+    addSampleToGeometryClosestToPoint(pts1, pts2.back());
+    addSampleToGeometryClosestToPoint(pts2, pts1.front());
+    addSampleToGeometryClosestToPoint(pts2, pts1.back());
+
+    std::vector<Point> compPts1, compPts2;
+
+    for(size_t t = 1 ; t <= 2 ; ++t){
+        double width = ( t == 1 ? t1.width : t2.width );
+        double width2 = ( t == 1 ? t2.width : t1.width );
+        auto& pts = ( t == 1 ? pts1 : pts2 );
+        auto& compPts = ( t == 1 ? compPts1 : compPts2 );
+        if(width < 1e-9)
+            continue;
+        double eps = 0.02 * (width2 < 1e-9 ? width : width2);
+        for(int side = 1 ; side >= -1 ; --side){
+            double ang = M_PI_2 * side;
+            for(size_t i = 0 ; i < pts.size() ; ++i){
+                Point& p1 = ( i+1 < pts.size() ? pts.at(i) : pts.back() );
+                Point& p2 = ( i+1 < pts.size() ? pts.at(i+1) : r_at(pts, 1) );
+                auto pr = rotate(p1, p2, ang);
+                compPts.push_back( getPointInLineAtDist(p1, pr, 0.5 * width + eps) );
+            }
+        }
+    }
+
+    //check if extended points are inside the boundary of the other track
+    for(size_t t = 1 ; t <= 2 ; ++t){
+        auto& boundary = ( t == 1 ? t2.boundary : t1.boundary );
+        auto& compPts = ( t == 1 ? compPts1 : compPts2 );
+        if(compPts.empty() || boundary.points.size() < 4)
+            continue;
+        if(in_polygon(compPts, boundary, false))
+            return true;
+    }
+
+    if(!compPts1.empty() && !compPts2.empty()){//compare distances between extended points
+        for(auto& p1 : compPts1){
+            for(auto& p2 : compPts2){
+                if(calc_dist(p1, p2) < 0.01)
+                    return true;
+            }
+        }
+    }
+
+
+    //check if extended points are close enough to the points the other track
+    for(size_t t = 1 ; t <= 2 ; ++t){
+        double width2 = ( t == 1 ? t2.width : t1.width );
+        auto& pts = ( t == 1 ? pts2 : pts1 );
+        auto& compPts = ( t == 1 ? compPts1 : compPts2 );
+        if(compPts.empty() || width2 < 1e-9)
+            continue;
+        for(auto& p1 : compPts){
+            for(auto& p2 : pts){
+                if(calc_dist(p1, p2) < 0.5 * width2)
+                    return true;
+            }
+        }
+    }
+
+    return false;
+
+
+
+//    const double eps = 0.01;
+//    if(t1.boundary.points.size() > 3){
+//        auto& t_ref = t1;
+//        auto& t_comp = t2;
+//        for(auto& p : t_comp.points){
+//            if( calc_dist_to_linestring(t_ref.boundary.points, p) < t_comp.width + eps )
+//                return true;
+//        }
+//        for(auto& p : t_comp.boundary.points){
+//            if( calc_dist_to_linestring(t_ref.boundary.points, p) < eps )
+//                return true;
+//        }
+//        return false;
+//    }
+//    if(t2.boundary.points.size() > 3){
+//        auto& t_ref = t2;
+//        auto& t_comp = t1;
+//        for(auto& p : t_comp.points){
+//            if( calc_dist_to_linestring(t_ref.boundary.points, p) < t_comp.width + eps )
+//                return true;
+//        }
+//        for(auto& p : t_comp.boundary.points){
+//            if( calc_dist_to_linestring(t_ref.boundary.points, p) < eps )
+//                return true;
+//        }
+//        return false;
+//    }
+
+//    for(auto& p : t1.points){
+//        if( calc_dist_to_linestring(t2.points, p) < t1.width + t2.width + eps )
+//            return true;
+//    }
+//    return false;
+
+}
+
+std::vector<size_t> getInfieldExtremaTracksIndexes(const Subfield &sf,
+                                                   const std::set<size_t> &excludeTrackIndexes)
+{
+    std::vector<size_t> ret;
+    std::vector< std::vector<double> > adjAngles( sf.tracks.size() );
+
+    for(size_t i = 0 ; i+1 < sf.tracks.size() ; ++i){
+        if(excludeTrackIndexes.find(i) != excludeTrackIndexes.end())
+            continue;
+        for(size_t j = i+1 ; j < sf.tracks.size() ; ++j){
+            if(excludeTrackIndexes.find(j) != excludeTrackIndexes.end())
+                continue;
+            if(areTracksAdjacent(sf.tracks.at(i), sf.tracks.at(j))){
+                auto dir1 = getDirectionBetweenTracks( sf.tracks.at(i).points, sf.tracks.at(j).points );
+                auto dir2 = rotate( Point(0,0), dir1, M_PI );
+                adjAngles.at(i).push_back( get_angle(Point(0,0), dir1) );
+                adjAngles.at(j).push_back( get_angle(Point(0,0), dir2) );
+            }
+        }
+    }
+
+    for(size_t i = 0 ; i < adjAngles.size() ; ++i){
+        if(excludeTrackIndexes.find(i) != excludeTrackIndexes.end())
+            continue;
+        if(adjAngles.at(i).size() < 2){
+            ret.push_back(i);
+            continue;
+        }
+        Point refDir = rotate( Point(0,0), Point(1,0), adjAngles.at(i).front() );
+        bool found = false;
+        for(size_t j = 1 ; j < adjAngles.at(i).size() ; ++j){
+            Point dir = rotate( Point(0,0), Point(1,0), adjAngles.at(i).at(j) );
+            double ang = get_angle(refDir, Point(0,0), dir);
+            if( std::fabs(ang) > M_PI_2 ){
+                found = true;
+                break;
+            }
+        }
+        if(!found)
+            ret.push_back(i);
+    }
+
+    return ret;
+}
+
+Point getDirectionBetweenTracks(std::vector<Point> trackFrom, std::vector<Point> trackTo)
+{
+    const double eps = 0.01;
+
+    geometry::unsample_linestring(trackFrom);
+    geometry::unsample_linestring(trackTo);
+
+    for(auto& p : trackFrom)
+        geometry::addSampleToGeometryClosestToPoint(trackTo, p, 1);
+
+    for(auto& p : trackTo)
+        geometry::addSampleToGeometryClosestToPoint(trackFrom, p, 1);
+
+    std::multimap<double, std::pair<size_t, size_t>> distances;
+
+    double minDist = std::numeric_limits<double>::max();
+    for( size_t i = 0 ; i < trackFrom.size() ; ++i ){
+        for( size_t j = 0 ; j < trackTo.size() ; ++j ){
+            double dist = geometry::calc_dist( trackFrom.at(i), trackTo.at(j) );
+            if(minDist > dist)
+                minDist = dist;
+            else if(dist > minDist * (1+eps))
+                continue;
+            distances.insert( std::make_pair(dist, std::make_pair(i, j)) );
+        }
+    }
+    Point dir = Point(0,0);
+    double compDist = minDist * (1+eps);
+    for(auto& it_d : distances){
+        if(it_d.first > compDist)
+            break;
+        size_t indFrom = it_d.second.first;
+        size_t indTo = it_d.second.second;
+        Point dirTmp = trackTo.at(indTo) - trackFrom.at(indFrom);
+        geometry::setVectorLength(dirTmp, 1);
+
+        dir = dir + dirTmp;
+        geometry::setVectorLength(dir, 1);
+    }
+
+    return dir;
+}
+
+bool rotateField(Field &field, double angle_rad, Point pivot)
+{
+    if(!pivot.isValid()){
+        if(!getCentroid(field.outer_boundary, pivot))
+            return false;
+    }
+
+    field.outer_boundary = rotate(pivot, field.outer_boundary, angle_rad);
+    for(auto& sf : field.subfields)
+        rotateSubfield(sf, angle_rad, pivot);
+    for(auto& road : field.external_roads)
+        road.points = rotate(pivot, road.points, angle_rad);
+
+    return true;
+}
+
+bool rotateSubfield(Subfield &sf, double angle_rad, Point pivot)
+{
+    if(!pivot.isValid()){
+        if(!getCentroid(sf.boundary_outer, pivot))
+            return false;
+    }
+
+    bool ok = true;
+
+    sf.boundary_inner = rotate(pivot, sf.boundary_inner, angle_rad);
+    sf.boundary_outer = rotate(pivot, sf.boundary_outer, angle_rad);
+    sf.reference_line_A = rotate(pivot, sf.reference_line_A, angle_rad);
+    sf.reference_line_B = rotate(pivot, sf.reference_line_B, angle_rad);
+    for(auto& rl : sf.reference_lines)
+        rl = rotate(pivot, rl, angle_rad);
+    sf.access_points = rotate(pivot, sf.access_points, angle_rad);
+    sf.resource_points = rotate(pivot, sf.resource_points, angle_rad);
+    rotateHeadlands(sf.headlands, angle_rad, pivot);
+    for(auto& track : sf.tracks)
+        ok &= rotateTrack(track, angle_rad, pivot);
+    for(auto& obs : sf.obstacles)
+        ok &= rotateObstacle(obs, angle_rad, pivot);
+
+    sf.working_direction += angle_rad;
+
+    return ok;
+}
+
+bool rotateHeadlands(Headlands &hls, double angle_rad, const Point &pivot)
+{
+    if(!pivot.isValid())
+        return false;
+
+    bool ok = true;
+
+    ok &= rotateHeadland(hls.complete, angle_rad, pivot);
+    for(auto& hl : hls.partial)
+        ok &= rotateHeadland(hl, angle_rad, pivot);
+
+    return ok;
+}
+
+bool rotateHeadland(CompleteHeadland &hl, double angle_rad, const Point &pivot)
+{
+    if(!pivot.isValid())
+        return false;
+
+    bool ok = true;
+
+    hl.boundaries = std::make_pair( rotate(pivot, hl.boundaries.first, angle_rad),
+                                    rotate(pivot, hl.boundaries.second, angle_rad));
+    hl.middle_track = rotate(pivot, hl.middle_track, angle_rad);
+    for(auto& track : hl.tracks)
+        ok &= rotateTrack(track, angle_rad, pivot);
+
+    return ok;
+
+}
+
+bool rotateHeadland(PartialHeadland &hl, double angle_rad, const Point &pivot)
+{
+    if(!pivot.isValid())
+        return false;
+
+    bool ok = true;
+
+    hl.boundary = rotate(pivot, hl.boundary, angle_rad);
+    for(auto& track : hl.tracks)
+        ok &= rotateTrack(track, angle_rad, pivot);
+
+    return ok;
+}
+
+bool rotateTrack(Track &track, double angle_rad, const Point &pivot)
+{
+    if(!pivot.isValid())
+        return false;
+
+    bool ok = true;
+
+    track.boundary = rotate(pivot, track.boundary, angle_rad);
+    track.points = rotate(pivot, track.points, angle_rad);
+
+    return ok;
+
+}
+
+bool rotateObstacle(Obstacle &obs, double angle_rad, const Point &pivot)
+{
+    if(!pivot.isValid())
+        return false;
+
+    bool ok = true;
+
+    obs.boundary = rotate(pivot, obs.boundary, angle_rad);
+
+    return ok;
 
 }
 

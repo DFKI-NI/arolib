@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -322,10 +322,9 @@ bool is_line4(const std::vector<T>& points, double tolerance, double angToleranc
 
 template< typename T, typename >
 size_t count_points_in_polygon(const std::vector<T>& points, const Polygon& polygon){
-    std::deque<Point> ring(polygon.points.begin(), polygon.points.end());
     size_t counter = 0;
     for(size_t i = 0; i < points.size(); i++){
-        bool in = boost::geometry::within(points[i], ring);
+        bool in = in_polygon(points[i], polygon);
         if(in) ++counter;
     }
     return counter;
@@ -333,7 +332,7 @@ size_t count_points_in_polygon(const std::vector<T>& points, const Polygon& poly
 
 
 template< typename T, typename >
-std::vector<Point> sample_geometry(const std::vector<T>& geometry_in, double resolution, double minDist, bool reverse){
+std::vector<Point> sample_geometry(const std::vector<T>& geometry_in, double resolution, double minDist, bool reverse, bool bisectSegment){
     std::vector<Point> geometry_out;
     resolution = fabs(resolution);
     if (resolution == 0)
@@ -349,7 +348,8 @@ std::vector<Point> sample_geometry(const std::vector<T>& geometry_in, double res
         geometry_out.push_back(p0);
         double dist = calc_dist(p0, p1);
         while(dist > resolution + minDist){
-            new_p = getPointInLineAtDist(p0, p1,resolution);
+            double d = ( bisectSegment ? std::min(resolution, 0.5 * dist) : resolution );
+            new_p = getPointInLineAtDist(p0, p1, d);
             geometry_out.push_back(new_p);
             p0 = new_p;
             dist = calc_dist(p0, p1);
@@ -469,7 +469,10 @@ bool remove_repeated_points(std::vector<T>& points, bool leaveFirst, double tole
                     break;
                 ++j;
             }
-            points.erase(points.begin() + i + leaveFirst, points.begin() + j - !leaveFirst);
+            if(i == 0 || j+1 < points.size())
+                points.erase(points.begin() + i + leaveFirst, points.begin() + j - !leaveFirst);
+            else
+                points.erase(points.begin() + i, points.begin() + j - 1);
         }
     }
     return !points.empty();
@@ -478,10 +481,96 @@ bool remove_repeated_points(std::vector<T>& points, bool leaveFirst, double tole
 
 template< typename T,  typename >
 bool unsample_linestring(std::vector<T>& points, double tolerance, double angTolerance){
+    return unsample_linestring1(points, tolerance, angTolerance);
+}
+
+template< typename T,  typename >
+bool unsample_linestring1(std::vector<T>& points, double tolerance, double angTolerance){
 
     tolerance = std::fabs(tolerance);
     angTolerance = std::fabs(angTolerance);
 
+
+    for ( size_t i = 1 ; i < points.size() ; ++i ){
+        const Point& p1 = points.at(i-1);
+
+        size_t indOK1 = points.size()-1;
+        for(size_t j = i; j < points.size() ; ++j){
+            const Point& p2 = points.at(j);
+            if( calc_dist(p1, p2) < tolerance){
+                continue;
+            }
+            indOK1 = j;
+            break;
+        }
+        if(indOK1+1 >= points.size()){
+            points.erase( points.begin() + i, points.end()-1);
+            break;
+        }
+
+        size_t indOK2 = points.size();
+        for(size_t j = indOK1+1; j < points.size() ; ++j){
+            const Point& p2 = points.at(indOK1);
+            const Point& p3 = points.at(j);
+            if( calc_dist(p2, p3) < tolerance ){
+                continue;
+            }
+            indOK2 = j;
+            break;
+        }
+        if(indOK2 >= points.size()){
+            points.erase( points.begin() + i, points.end()-1);
+            break;
+        }
+
+        size_t indOK3 = indOK2;
+        for(size_t j = indOK1; j < indOK2 ; ++j){
+            const Point& p2 = points.at(j);
+            const Point& p3 = points.at(j+1);
+            if( calc_dist(p2, p3) < tolerance ){
+                continue;
+            }
+            indOK3 = j;
+            break;
+        }
+
+        if(indOK3 >= indOK2){
+            points.erase( points.begin() + indOK1+1, points.begin() + indOK2);
+            indOK3 = indOK1;
+        }
+
+        if(indOK1 != i){
+            if(indOK1 == indOK3){
+                points.erase( points.begin() + i, points.begin() + indOK1 );
+            }
+            else{
+                PointVec seg(points.begin()+indOK1, points.begin()+indOK3+1);
+                points.at(i) = getPointAtHalfLength(seg).first;
+                points.erase( points.begin() + i + 1, points.begin() + indOK3 );
+            }
+            --i;
+            continue;
+        }
+
+        if(i+1 >= points.size())
+            break;
+
+        const Point& p2 = points.at(i);
+        const Point& p3 = points.at(i+1);
+        if( ( std::fabs( get_angle(p2, p1, p3) ) < angTolerance && calc_dist(p1, p2) < calc_dist(p1, p3) ) ){
+            points.erase( points.begin() + i );
+            i--;
+        }
+    }
+
+    if( points.size() == 2 && points.front() == points.back())
+        points.pop_back();
+
+    return !points.empty();
+}
+
+template< typename T,  typename >
+bool unsample_linestring2(std::vector<T>& points, double tolerance, double angTolerance){
     for ( size_t i = 1 ; i+1 < points.size() ; ++i ){
         const Point& p1 = points.at(i-1);
         const Point& p2 = points.at(i);
@@ -503,7 +592,7 @@ bool unsample_linestring(std::vector<T>& points, double tolerance, double angTol
 }
 
 template< typename T, typename >
-bool unsample_linestring2(std::vector<T>& points, double tolerance){
+bool unsample_linestring3(std::vector<T>& points, double tolerance){
     if (points.empty())
         return false;
     if( points.size() == 1 )
@@ -637,6 +726,49 @@ size_t getPointIndInMinDist(const std::vector<T> points, const Point &p){
 
 template< typename T,
          typename >
+std::pair<Point, int> getPointAtDist(const std::vector<T> &geom, double d){
+
+    std::pair<Point, int> ret;
+    double length_ls;
+    double dist = 0;
+    if (geom.empty()){
+        ret.second = -1;
+        return ret;
+    }
+
+    length_ls = getGeometryLength(geom);
+    bool inReverse = false;
+    if(d < 0){
+        d *= -1;
+        inReverse = true;
+    }
+
+    ret.first = ( !inReverse ? geom.back() : geom.front() );
+    ret.second = ( !inReverse ? geom.size()-1 : 0 );
+    if( d >= length_ls )
+        return ret;
+
+    for(size_t i = 0; i+1 < geom.size(); i++){
+        const auto &p1 = ( !inReverse ? geom[i] : r_at(geom, i) );
+        const auto &p2 = ( !inReverse ? geom[i+1] : r_at(geom, i+1) );
+        double point_dist = calc_dist(p1, p2);
+        dist += point_dist;
+
+        if( d > dist )
+            continue;
+
+        double diff = d - (dist - point_dist);
+        ret.first = getPointInLineAtDist(p1, p2, diff);
+        ret.second = ( !inReverse ? i : geom.size()-1-i );
+        break;
+    }
+
+    return ret;
+}
+
+
+template< typename T,
+         typename >
 std::pair<Point, int> getPointAtRelativeDist(const std::vector<T> &geom, double d){
 
     std::pair<Point, int> ret;
@@ -745,18 +877,11 @@ size_t getGeomIndex(const std::vector<T>& geom, const Point &p, bool distToLine)
 
 
 template< typename T, typename >
-size_t getIndexFromContinuousGeometry(const std::vector<T>& geom, int ind, Point *p_out){
+size_t getIndexFromContinuousGeometry(const std::vector<T>& geom, int ind, T *p_out){
    if(geom.empty())
-       throw std::invalid_argument( std::string(__FUNCTION__) + " geom.size must be > 0" );
+       throw std::invalid_argument( std::string(__FUNCTION__) + ": geom.size must be > 0" );
 
-   if(ind >= 0)
-       ind = ind % geom.size();
-   else{
-       ind = -1 * (ind + 1);
-       ind = ind % geom.size();
-       ind = geom.size() - 1 - ind;
-   }
-
+   ind = get_index_from_cyclic_container(geom, ind);
    if(p_out)
      *p_out = geom.at(ind);
    return ind;
@@ -764,34 +889,35 @@ size_t getIndexFromContinuousGeometry(const std::vector<T>& geom, int ind, Point
 
 
 template< typename T, typename >
-T getPointFromContinuousGeometry(const std::vector<T>& geom, int ind, size_t* indReal){
+T& getPointFromContinuousGeometry(std::vector<T>& geom, int ind, size_t* indReal){
    if(geom.empty())
-       throw std::invalid_argument( std::string(__FUNCTION__) + " geom.size must be > 0" );
+       throw std::invalid_argument( std::string(__FUNCTION__) + ": geom.size must be > 0" );
+   return at_cyclic(geom, ind, indReal);
+}
 
-   if(ind >= 0)
-       ind = ind % geom.size();
-   else{
-       ind = -1 * (ind + 1);
-       ind = ind % geom.size();
-       ind = geom.size() - 1 - ind;
-   }
-   if(indReal)
-       *indReal = ind;
-   return geom.at(ind);
+
+template< typename T, typename >
+const T& getPointFromContinuousGeometry(const std::vector<T>& geom, int ind, size_t* indReal){
+   if(geom.empty())
+       throw std::invalid_argument( std::string(__FUNCTION__) + ": geom.size must be > 0" );
+   return at_cyclic(geom, ind, indReal);
 }
 
 
 //-------------------------------------------------------------------------------------
 
 template< typename T, typename >
-std::vector<Point> getGeometryPart(const std::vector<T>& geom,
-                                   int start_index, int end_index){
-    std::vector<Point> geom_out;
+std::vector<T> getGeometryPart(const std::vector<T>& geom,
+                               int start_index, int end_index,
+                               bool reverse, bool cycleOnEqualIndexes){
+    std::vector<T> geom_out;
     if (start_index < 0 || start_index >= geom.size()  || end_index < 0 || end_index > geom.size())
         return geom_out;
-    if(start_index > end_index) {
-      geom_out.insert(geom_out.begin(),geom.begin() + start_index,geom.end());
-      geom_out.insert(geom_out.end(),geom.begin(), geom.begin() + end_index + 1);
+    if( start_index > end_index ||
+            (start_index == end_index && cycleOnEqualIndexes) ) {
+        int isClosed = calc_dist(geom.front(), geom.back()) < 1e-6;
+        geom_out.insert(geom_out.begin(), geom.begin() + start_index, geom.end());
+        geom_out.insert(geom_out.end(), geom.begin() + isClosed, geom.begin() + end_index + 1);
     } else {
         if (end_index + 1 < geom.size()) {
             geom_out.insert(geom_out.begin(), geom.begin() + start_index, geom.begin() + end_index + 1);
@@ -799,8 +925,26 @@ std::vector<Point> getGeometryPart(const std::vector<T>& geom,
             geom_out.insert(geom_out.end(), geom.begin() + start_index, geom.end());
         }
     }
+    if(reverse)
+        std::reverse(geom_out.begin(), geom_out.end());
     return geom_out;
-  }
+}
+
+template< typename T, typename >
+std::vector<T> getShortestGeometryPart(const std::vector<T>& geom,
+                                       size_t ind1, size_t ind2){
+
+    // get the sub parts of the given geometry in both directions
+    std::vector<T> part = getGeometryPart(geom, ind1, ind2, false, false);
+    if(ind1 != ind2){
+        std::vector<T> part_reverse = getGeometryPart(geom, ind2, ind1, true, false);
+        // return the shorter sub part
+        if(getGeometryLength(part) > getGeometryLength(part_reverse))
+            return part_reverse;
+    }
+    return part;
+
+}
 
 template< typename T, typename >
 std::vector<T> getShortestGeometryPart(const std::vector<T>& geom,
@@ -812,14 +956,17 @@ std::vector<T> getShortestGeometryPart(const std::vector<T>& geom,
     size_t _end = getGeomIndex(geom,p2,distToLine);
 
     // get the sub parts of the given geometry in both directions
-    std::vector<T> part = getGeometryPart(geom, _start, _end);
-    std::vector<T> part_reverse = getGeometryPart(geom, _end, _start);
-    // return the shorter sub part
-    if(getGeometryLength(part) > getGeometryLength(part_reverse)) {
-        std::reverse(part_reverse.begin(), part_reverse.end());
-        end = _start;
-        start = _end;
-        return part_reverse;
+    std::vector<T> part = getGeometryPart(geom, _start, _end, false, false);
+    if(_start != _end){
+        std::vector<T> part_reverse = getGeometryPart(geom, _end, _start, true, false);
+        // return the shorter sub part
+        if(getGeometryLength(part) > getGeometryLength(part_reverse)) {
+    //        end = _start;
+    //        start = _end;
+            start = _start;
+            end = _end;
+            return part_reverse;
+        }
     }
     start = _start;
     end = _end;
@@ -836,6 +983,22 @@ std::vector<T> getShortestGeometryPart(const std::vector<T>& geom,
 
 template< typename T, typename >
 std::vector<T> getLongestGeometryPart(const std::vector<T>& geom,
+                                      size_t ind1, size_t ind2){
+
+    // get the sub parts of the given geometry in both directions
+    std::vector<T> part = getGeometryPart(geom, ind1, ind2, false, true);
+    if(ind1 != ind2){
+        std::vector<T> part_reverse = getGeometryPart(geom, ind2, ind1, true, true);
+        // return the shorter sub part
+        if(getGeometryLength(part) < getGeometryLength(part_reverse))
+            return part_reverse;
+    }
+    return part;
+
+}
+
+template< typename T, typename >
+std::vector<T> getLongestGeometryPart(const std::vector<T>& geom,
                                            const Point &p1, const Point &p2,
                                            size_t &start, size_t &end,
                                            bool distToLine){
@@ -844,14 +1007,17 @@ std::vector<T> getLongestGeometryPart(const std::vector<T>& geom,
     size_t _end = getGeomIndex(geom,p2,distToLine);
 
     // get the sub parts of the given geometry in both directions
-    std::vector<T> part = getGeometryPart(geom, _start, _end);
-    std::vector<T> part_reverse = getGeometryPart(geom, _end, _start);
-    // return the shorter sub part
-    if(getGeometryLength(part) < getGeometryLength(part_reverse)) {
-        std::reverse(part_reverse.begin(), part_reverse.end());
-        end = _start;
-        start = _end;
-        return part_reverse;
+    std::vector<T> part = getGeometryPart(geom, _start, _end, false, true);
+    if(_start != _end){
+        std::vector<T> part_reverse = getGeometryPart(geom, _end, _start, true, true);
+        // return the shorter sub part
+        if(getGeometryLength(part) < getGeometryLength(part_reverse)) {
+    //        end = _start;
+    //        start = _end;
+            start = _start;
+            end = _end;
+            return part_reverse;
+        }
     }
     start = _start;
     end = _end;
@@ -1253,6 +1419,58 @@ T getUppermostPoint(const std::vector<T>& points){
     if(ind < 0)
         throw std::invalid_argument( std::string(__FUNCTION__) + " geom.size must be > 0" );
     return points.at(ind);
+}
+
+
+template< typename T, typename >
+int getNextNonRepeatedPointIndex(const std::vector<T>& points, size_t indFrom, int indTo, double eps){
+
+    if(indTo < 0 || indTo >= points.size())
+        indTo = points.size()-1;
+
+    if(indFrom+1 > indTo)
+        return -1;
+
+    auto indNext = indFrom;
+    if(eps < 1e-9){
+        do{
+            ++indNext;
+        }while( indNext <= indTo &&
+                points.at(indFrom).point() == points.at(indNext).point() );
+    }
+    else{
+        do{
+            ++indNext;
+        }while( indNext <= indTo &&
+                calc_dist( points.at(indFrom), points.at(indNext).point() ) <= eps );
+    }
+    return indNext <= indTo ? indNext : -1;
+}
+
+
+template< typename T, typename >
+int getPrevNonRepeatedPointIndex(const std::vector<T>& points, size_t indFrom, int indTo, double eps){
+
+    if(indTo < 0)
+        indTo = 0;
+
+    if(indFrom >= points.size() || indFrom <= indTo)
+        return -1;
+
+    auto indPrev = indFrom;
+    if(eps < 1e-9){
+        do{
+            --indPrev;
+        }while( indPrev >= indTo &&
+                points.at(indFrom).point() == points.at(indPrev).point() );
+    }
+    else{
+        do{
+            --indPrev;
+        }while( indPrev >= indTo &&
+                calc_dist( points.at(indFrom), points.at(indPrev).point() ) <= eps );
+    }
+    return indPrev >= indTo ? indPrev : -1;
 }
 
 

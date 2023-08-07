@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,243 +23,203 @@ SimpleBaseRoutesPlanner::SimpleBaseRoutesPlanner(const LogLevel &logLevel) :
     m_has_subfield (false),
     m_has_machine (false)
 {
+
+    m_track_sequencer = std::make_shared<SimpleTrackSequencer>();
+    m_track_sequencer->logger().setParent(loggerPtr());
 }
 
-void SimpleBaseRoutesPlanner::setSubfield(Subfield subfield) {
+AroResp SimpleBaseRoutesPlanner::setSubfield(const Subfield& subfield) {
+    if(subfield.tracks.empty())
+        return AroResp(1, "No tracks given");
+    for(auto& track : subfield.tracks){
+        if(track.points.empty())
+            return AroResp(1, "One or more tracks are empty");
+    }
     m_subfield = subfield;
     m_has_subfield = true;
+    return AroResp::ok();
 }
 
-void SimpleBaseRoutesPlanner::addMachine(Machine machine) {
-    m_machines[machine.id] = machine;
+AroResp SimpleBaseRoutesPlanner::addMachine(const Machine &machine) {
+    if( m_machinesMap.find(machine.id) != m_machinesMap.end() )
+        return AroResp(1, "Machine with the same id already added");
+    m_machinesMap[machine.id] = machine;
+    m_machines.push_back(machine);
     m_has_machine = true;
-    m_track_sequencer.addMachine(machine);
+    return AroResp::ok();
 }
 
-bool SimpleBaseRoutesPlanner::plan(IEdgeMassCalculator &edgeMassCalculator, IEdgeSpeedCalculator &edgeSpeedCalculator) {
+AroResp SimpleBaseRoutesPlanner::plan(std::shared_ptr<IEdgeMassCalculator> edgeMassCalculator,
+                                      std::shared_ptr<IEdgeSpeedCalculator> edgeSpeedCalculator,
+                                      std::shared_ptr<IEdgeSpeedCalculator> edgeSpeedCalculatorTransit) {
     if(!m_has_subfield || !m_has_machine)
-        return false;
+        return AroResp(1, "Subfield or machines missing");
 
-    m_track_sequencer.setSubfield(m_subfield);
-    m_track_sequencer.computeSequence();//compute the tracks assigned to each machine and the sequence in which the machines should drive them
+    Pose2D initRefPose = getInitRefPoseForSequencer();
+    if(!initRefPose.isValid())
+        return AroResp(1, "Error obtaining initial reference point for sequencer");
 
-    m_logger.printOut(LogLevel::DEBUG, __FUNCTION__, "Sequence computed!");
+    std::map<MachineId_t, std::vector<ITrackSequencer::TrackInfo>> sequences;
 
-    std::vector< RouteAssembler > routeAss_v;
-    for(size_t i = 0 ; i < m_track_sequencer.getNumberMachines() ; ++i){
-        int id = m_track_sequencer.getID(i);
-        Machine machine = m_machines[id];
-        routeAss_v.emplace_back( RouteAssembler(RoutePoint::getDefaultRPType(machine), m_logger.logLevel()) );
-        routeAss_v.back().logger().setParent(&m_logger);
+    auto aroResp = m_track_sequencer->computeSequences(m_subfield, m_machines, m_track_sequencer_settings, sequences, &initRefPose, m_excludeTrackIndexes);
+    if(aroResp.isError())
+        return AroResp(1, "Error obtaining tracks' sequence: " + aroResp.msg);
+
+    logger().printOut(LogLevel::DEBUG, __FUNCTION__, "Sequence computed!");
+
+    std::map< MachineId_t, RouteAssembler* > routeAssemblers;
+    std::vector< RouteAssembler > routeAss_v;//for some reason, the routeAssemblers.at() tries to call the RouteAssembler constructur. this is a workarround
+    int route_id = 0;
+    for(auto& it_m : sequences){
+        const auto & machineId = it_m.first;
+        if(it_m.second.empty())
+            continue;
+        auto it_m2 = m_machinesMap.find(machineId);
+        if(it_m2 == m_machinesMap.end())
+            return AroResp(1, "Sequence obtained for a non-existing machine");
+        const Machine& machine = it_m2->second;
+
+        routeAss_v.push_back( RouteAssembler(machine, route_id++, RoutePoint::getDefaultRPType(machine), logger().logLevel()) );
+        routeAssemblers[it_m.first] = &(routeAss_v.back());
+
+        RouteAssembler& routeAss = *( routeAssemblers.at(machineId) );
+        routeAss.logger().setParent(loggerPtr());
+        routeAss.setMassCalculator(edgeMassCalculator);
+        routeAss.setWorkingSpeedCalculator(edgeSpeedCalculator);
+        routeAss.setTransitSpeedCalculator(edgeSpeedCalculatorTransit);
+        routeAss.setTracksConnectionsMap( m_track_sequencer->getPathsMap() );
     }
 
-    const double limBoundaryDist_turningRadFactor = 0.1;//@todo we should either put this as a setting of the planner or simple not allow transit outside the subfield boundary
-    std::map<MachineId_t, Polygon> limitBoundaries;
-    for (int j = 0; j < m_track_sequencer.getNumberMachines(); j++) {//generate the routes for each machine based on the assigned tracks and their sequence
+    double limBoundaryDist_turningRadFactor = 0.1;//@todo we should either put this as a setting of the planner or simple not allow transit outside the subfield boundary
+    if(!m_subfield.headlands.hasCompleteHeadland())//workaround for partial headlands (some connections will very likelly lie outside the boundary)
+        limBoundaryDist_turningRadFactor = 2.0; //1.5;
 
-        bool invPoints = m_first_track_inverse;//flag used to know if the points of the next track should be added in reverse order
+    std::map<MachineId_t, Polygon> limitBoundaries;
+    for(auto& it_m : sequences){//generate the routes for each machine based on the assigned tracks and their sequence
 
         //get the sequence
-        int id = m_track_sequencer.getID(j);
-        std::vector<int> sequence = m_track_sequencer.getSequence(id);
+        const auto & machineId = it_m.first;
+        const auto & sequence = it_m.second;
 
-        m_logger.printOut(LogLevel::INFO, __FUNCTION__, "Sequence gotten for machine " + std::to_string(j)
+        logger().printOut(LogLevel::INFO, __FUNCTION__, "Sequence gotten for machine with id " + std::to_string(it_m.first)
                                                          + " ( " + std::to_string(sequence.size()) + " tracks )");
 
-        Machine machine = m_machines[id];
-
-        const Polygon *limitBoundary = &m_subfield.boundary_outer;//limit boundary used for inter-track connections
-        if(limBoundaryDist_turningRadFactor > 1e-9){
-            if( limitBoundaries.find( machine.id ) == limitBoundaries.end() ){
-                Polygon limitBoundaryTmp;
-                if( arolib::geometry::offsetPolygon(m_subfield.boundary_outer, limitBoundaryTmp, limBoundaryDist_turningRadFactor * machine.getTurningRadius(), true, 0) )
-                    limitBoundaries[machine.id] = limitBoundaryTmp;
-                else
-                    limitBoundaries[machine.id] = m_subfield.boundary_outer;
-            }
-            limitBoundary = &(limitBoundaries[machine.id]);
-        }
+        const Machine& machine = m_machinesMap[machineId];
 
         //get and initialize the route assembler for this machine/route
-        RouteAssembler& routeAss = routeAss_v.at(j);
-        routeAss.setMachine( machine );
-        routeAss.setIDs(id, j);
+        RouteAssembler& routeAss = *( routeAssemblers.at(machineId) );
 
-        double machine_def_speed = machine.def_working_speed;
+//        const Polygon *limitBoundary = &m_subfield.boundary_outer;//limit boundary used for inter-track connections
+//        if(limBoundaryDist_turningRadFactor > 1e-9){
+//            if( limitBoundaries.find( machine.id ) == limitBoundaries.end() ){
+//                Polygon limitBoundaryTmp;
+//                if( arolib::geometry::offsetPolygon(m_subfield.boundary_outer, limitBoundaryTmp, limBoundaryDist_turningRadFactor * machine.getTurningRadius(), true, 0) )
+//                    limitBoundaries[machine.id] = limitBoundaryTmp;
+//                else
+//                    limitBoundaries[machine.id] = m_subfield.boundary_outer;
+//            }
+//            limitBoundary = &(limitBoundaries[machine.id]);
+//        }
+
+        auto it_bound = limitBoundaries.find( machine.id );
+        if( it_bound == limitBoundaries.end() ){
+            limitBoundaries[machine.id] = routeAss.getTracksConnector()->getExtendedLimitBoundary(m_subfield, machine.getTurningRadius());
+            it_bound = limitBoundaries.find( machine.id );
+        }
+        const Polygon *limitBoundary = &(it_bound->second);
 
         //build the route by adding all assigned tracks in the given order, adding the corresponding inter-track (headland) connections in between
         for (int k = 0; k < sequence.size(); ++k) {
+            const ITrackSequencer::TrackInfo& trackInfo = sequence.at(k);
+            auto points = m_subfield.tracks.at(trackInfo.trackIndex).points;//get a copy of the next track in the sequence
 
-            auto l = m_subfield.tracks.at(sequence.at(k));//get a copy of the next track in the sequence
+            if(trackInfo.trackPointsDirection == ITrackSequencer::REVERSE)//reverse the track points if necesary
+                std::reverse(points.begin(), points.end());
 
-            if(invPoints)//reverse the track points if necesary
-                std::reverse(l.points.begin(), l.points.end());
-
-            bool reverse = false;//flag stating if the points of the current track should be added in reverse order
-            if(routeAss.getRouteSize() > 0) {//the route has already points --> check if the points of the current track should be added in reverse order
-                double distFirst = arolib::geometry::calc_dist(routeAss.getRoutePoint( routeAss.getRouteSize()-1 ), l.points.front());
-                double distLast  = arolib::geometry::calc_dist(routeAss.getRoutePoint( routeAss.getRouteSize()-1 ), l.points.back());
-                if (distFirst > distLast) {//the last point of the track is closer to the last point in the route than the first point of the track --> add track points in reverse order (i.e. the route will be connected to the last point in the track)
-                    reverse = true;
-                }
+            if( !routeAss.addTrack(m_subfield,
+                                   points,
+                                   m_subfield.tracks.at(trackInfo.trackIndex).id,
+                                   trackInfo.trackPointsDirection == ITrackSequencer::UNDEF,
+                                   *limitBoundary) ){
+                return AroResp::LoggingResp(1, "Error adding track " + std::to_string(k) + " (track index = " + std::to_string(trackInfo.trackIndex) + ") of sequence for machine with id " + std::to_string(machineId), m_logger, LogLevel::ERROR, __FUNCTION__);
             }
 
-            routeAss.addTrack(m_subfield,
-                              l.points,
-                              sequence.at(k),
-                              reverse,
-                              machine,
-                              edgeMassCalculator,
-                              edgeSpeedCalculator);
+            logger().printOut(LogLevel::DEBUG, __FUNCTION__, "Track " + std::to_string(k) + " (track index = " + std::to_string(trackInfo.trackIndex) + ") of sequence for machine with id " + std::to_string(machineId) + " added.");
 
-            m_logger.printOut(LogLevel::DEBUG, __FUNCTION__, "Track " + std::to_string(k)
-                                                              + " of sequence " + std::to_string(j) + " added.");
-
-            //add the inter-track (headland) connection, i.e. the segment that connects the current route's end with the next track
-            if(k+1 < sequence.size()) {//add the connection only if this is not the last track to be added
-                Point next_track_point;
-                if(reverse) {//the last track was added in reverse order --> the new track should be adde in forward order (iif TrackConnectionStrategy!=MEANDER)
-                    next_track_point = m_subfield.tracks.at(sequence.at(k+1)).points.at(0);
-                } else {
-                    next_track_point = m_subfield.tracks.at(sequence.at(k+1)).points.back();
-                }
-                //note: the next_track_point is not used if the TrackConnectionStrategy=MEANDER (in this case, the best point of the next track is automatically selected)
-
-
-                if(! addHeadlandConnection(routeAss,
-                                           sequence.at(k+1),
-                                           !reverse, //the last track was added in reverse order --> the new track should be adde in forward order (for TrackConnectionStrategy!=MEANDER)
-                                           machine_def_speed,
-                                           *limitBoundary) )
-                    return false;
-
-                m_logger.printOut(LogLevel::DEBUG, __FUNCTION__, "Headland part of track " + std::to_string(k)
-                                                                  + " of sequence " + std::to_string(j) + " added.");
-            }
         }
-        m_machines_routes[id] = routeAss.getRoute();//retrieve the routes
+        m_machines_routes[machineId] = routeAss.getRoute();//retrieve the routes
     }
 
-    return true;
+    return AroResp::ok();
 }
 
-bool SimpleBaseRoutesPlanner::plan(PlanningWorkspace &pw, IEdgeMassCalculator &edgeMassCalculator, IEdgeSpeedCalculator &edgeSpeedCalculator)
+Pose2D SimpleBaseRoutesPlanner::getInitRefPoseForSequencer()
 {
-    m_calcGridValueOption = CALC_PW;
-    m_planningWorkspace = &pw;
+    if(m_initRefPose.isValid())
+        return m_initRefPose;
 
-    bool ret = plan(edgeMassCalculator, edgeSpeedCalculator);
-
-    m_planningWorkspace = nullptr;
-    m_calcGridValueOption = CALC_DIRECT;
-    return ret;
-}
-
-
-bool SimpleBaseRoutesPlanner::addHeadlandConnection(RouteAssembler &routeAss,
-                                                    int nextTrackId,
-                                                    bool reverseTrack,
-                                                    double speed,
-                                                    const Polygon& limitBoundary)
-{
-    //get the index of the corresponding next track
-    int indNextTrack = -1;
+    int ind0 = -1;
     for(size_t i = 0 ; i < m_subfield.tracks.size() ; ++i){
-        if(m_subfield.tracks.at(i).id == nextTrackId){
-            indNextTrack = i;
+        if( m_excludeTrackIndexes.find(i) == m_excludeTrackIndexes.end() ){
+            ind0 = i;
             break;
         }
     }
-    if(indNextTrack < 0){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Track with given id not found");
-        return false;
+    if(ind0 < 0)
+        return Pose2D(Point::invalidPoint(), 0);
+
+    int indn;
+    for(int i = m_subfield.tracks.size() - 1 ; i >= ind0 ; --i){
+        if( m_excludeTrackIndexes.find(i) == m_excludeTrackIndexes.end() ){
+            indn = i;
+            break;
+        }
     }
 
-    Track track = m_subfield.tracks.at(indNextTrack);
-
-    if( m_track_sequencer.getStrategy() != SimpleTrackSequencer::MEANDER && reverseTrack )
-        std::reverse(track.points.begin(), track.points.end());
-
-    return routeAss.addConnectionToTrack(track,
-                                         m_subfield,
-                                         speed,
-                                         m_track_sequencer.getStrategy() == SimpleTrackSequencer::MEANDER,
-                                         limitBoundary);
+    auto& track = m_tracks_in_reverse ? m_subfield.tracks.at(indn).points : m_subfield.tracks.at(ind0).points;
+    if(m_first_track_inverse)
+        return Pose2D( track.back(),
+                       geometry::get_angle( track.back(), r_at(track,1) ) );
+    return Pose2D( track.front(),
+                   geometry::get_angle( track.front(), track.at(1)) );
 
 }
 
-bool SimpleBaseRoutesPlanner::getRoute(int machine_id,
-                                       Route &route,
-                                       IEdgeMassCalculator & edgeMassCalculator,
-                                       IEdgeSpeedCalculator & edgeSpeedCalculator) {
+AroResp SimpleBaseRoutesPlanner::getRoute(int machine_id,
+                                          Route &route,
+                                          std::shared_ptr<IEdgeMassCalculator> edgeMassCalculator,
+                                          std::shared_ptr<IEdgeSpeedCalculator> edgeSpeedCalculator,
+                                          std::shared_ptr<IEdgeSpeedCalculator> edgeSpeedCalculatorTransit) {
 
-    if(m_machines.find(machine_id) == m_machines.end()){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, 10, "The machine with id ", machine_id, " is not part of the working group");
+    if(m_machinesMap.find(machine_id) == m_machinesMap.end()){
         route.route_points.clear();
-        return false;
+        return AroResp(1, "The machine with id " + std::to_string(machine_id) + " is not part of the working group");
     }
 
     auto it_m = m_machines_routes.find(machine_id);
     if(it_m == m_machines_routes.end()) {//either no plan hos been computed, or this machine was added after computing the last plan --> plan (for the first time or again)
         if(m_machines_routes.empty())
-            m_logger.printOut(LogLevel::INFO, __FUNCTION__, "No plan has been computed. Planning for all harvesters...");
+            logger().printOut(LogLevel::DEBUG, __FUNCTION__, "No plan has been computed. Planning for all machines...");
         else
-            m_logger.printOut(LogLevel::INFO, __FUNCTION__, "The computed plan might be outdated. Planning for all harvesters...");
+            logger().printOut(LogLevel::DEBUG, __FUNCTION__, "The computed plan might be outdated. Planning for all machines...");
 
-        if( !plan(edgeMassCalculator, edgeSpeedCalculator) ){
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error planning harvester route(s)");
+        auto aroResp = plan(edgeMassCalculator, edgeSpeedCalculator, edgeSpeedCalculatorTransit);
+        if( aroResp.isError() ){
             m_machines_routes.clear();
             route.route_points.clear();
-            return false;
+            return aroResp;
         }
-        m_logger.printOut(LogLevel::INFO, __FUNCTION__, "Plan was obtained");
+        logger().printOut(LogLevel::DEBUG, __FUNCTION__, "Plan was obtained");
 
         it_m = m_machines_routes.find(machine_id);
         if(it_m == m_machines_routes.end()) {
-            m_logger.printOut(LogLevel::WARNING, __FUNCTION__, 10, "No route was planned for the machine with id ", machine_id);
             route.route_points.clear();
-            return false;
+            return AroResp(1, "The machine with id " + std::to_string(machine_id) + " is not part of the working group");
         }
     }
     route = it_m->second;
-    return true;
+    return AroResp::ok();
 }
 
-bool SimpleBaseRoutesPlanner::getRoute(int machine_id,
-                                       PlanningWorkspace &pw,
-                                       Route &route,
-                                       IEdgeMassCalculator & edgeMassCalculator,
-                                       IEdgeSpeedCalculator & edgeSpeedCalculator)
-{
-    if(m_machines.find(machine_id) == m_machines.end()){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, 10, "The machine with id ", machine_id, " is not part of the working group");
-        route.route_points.clear();
-        return false;
-    }
-
-    auto it_m = m_machines_routes.find(machine_id);
-    if(it_m == m_machines_routes.end()) {//either no plan hos been computed, or this machine was added after computing the last plan --> plan (for the first time or again)
-        if(m_machines_routes.empty())
-            m_logger.printOut(LogLevel::INFO, __FUNCTION__, "No plan has been computed. Planning for all harvesters...");
-        else
-            m_logger.printOut(LogLevel::INFO, __FUNCTION__, "The computed plan might be outdated. Planning for all harvesters...");
-
-        if( !plan(pw, edgeMassCalculator, edgeSpeedCalculator) ){
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error planning harvester route(s)");
-            m_machines_routes.clear();
-            return false;
-        }
-        m_logger.printOut(LogLevel::INFO, __FUNCTION__, "Plan was obtained");
-
-        it_m = m_machines_routes.find(machine_id);
-        if(it_m == m_machines_routes.end()) {
-            m_logger.printOut(LogLevel::WARNING, __FUNCTION__, 10, "No route was planned for the machine with id ", machine_id);
-            route.route_points.clear();
-            return false;
-        }
-    }
-    route = it_m->second;
-    return true;
-}
 
 }

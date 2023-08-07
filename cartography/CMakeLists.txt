@@ -20,8 +20,7 @@ add_library(${AROLIB_LIB_NAME} SHARED
     include/arolib/cartography/impl/gridmap_numeric.tcc
 )
 
-#set_property(TARGET ${AROLIB_LIB_CARTOGRAPHY} PROPERTY CXX_STANDARD 11)  # 98, 11 or 14
-#set_property(TARGET ${AROLIB_LIB_CARTOGRAPHY} PROPERTY CXX_STANDARD_REQUIRED ON)
+#set_target_properties(${AROLIB_LIB_NAME} PROPERTIES DEBUG_POSTFIX ${CMAKE_DEBUG_POSTFIX})
 
 target_include_directories(${AROLIB_LIB_NAME}
   PUBLIC
@@ -32,12 +31,12 @@ target_include_directories(${AROLIB_LIB_NAME}
 )
 
 target_link_libraries(${AROLIB_LIB_NAME}
-    INTERFACE
-      png
-      ${GDAL_LIBRARY}
-      ${AROLIB_LIB_PREFIX}${AROLIB_LIB_TYPES}
-      ${AROLIB_LIB_PREFIX}${AROLIB_LIB_GEOMETRY}
-      ${AROLIB_LIB_PREFIX}${AROLIB_LIB_MISC}
+  PUBLIC
+    png
+    ${AROLIB_LIB_PREFIX}${AROLIB_LIB_TYPES}
+    ${AROLIB_LIB_PREFIX}${AROLIB_LIB_MISC}
+    ${GDAL_LIBRARY}
+    ${AROLIB_LIB_PREFIX}${AROLIB_LIB_GEOMETRY}
 )
 
 install(TARGETS ${AROLIB_LIB_NAME}

@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,8 @@
 
 namespace arolib{
 
-typedef gridmap::NumericGridmap<float> ArolibGrid_t;
+typedef float ArolibGridVal_t;
+typedef gridmap::NumericGridmap<ArolibGridVal_t> ArolibGrid_t;
 
 }
 

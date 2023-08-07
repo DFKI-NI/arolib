@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -130,6 +130,17 @@ std::size_t GridCellsInfoManager::Edge::KeyHash::get(const GridCellsInfoManager:
     boost::hash_combine(seed, e.width);
     boost::hash_combine(seed, e.precise);
     return seed;
+}
+
+GridCellsInfoManager::GridCellsInfoManager(const GridCellsInfoManager& other) 
+    : LoggingComponent(other.logger().logLevel())
+{
+    std::unique_lock<std::mutex> guard(other.m_mutex);
+
+    m_gridProperties = other.m_gridProperties;
+    m_edgeProperties = other.m_edgeProperties;
+    
+    guard.unlock();
 }
 
 GridCellsInfoManager::GridCellsInfoManager(const LogLevel &logLevel):

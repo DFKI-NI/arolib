@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,6 +29,7 @@
 #include <memory>
 #include <future>
 #include <functional>
+#include <exception>
 
 #include <boost/geometry/geometry.hpp>
 #include <boost/geometry/geometries/point_xy.hpp>
@@ -63,10 +64,18 @@ namespace gridmap{
 template <typename T>
 class Gridmap : public LoggingComponent{
 
+    using ValType = T;
     using TStore = std::unique_ptr<T>;
     using GridCell = GridmapLayout::GridCell;
 
 public:
+
+    using FuncGetNewValue = std::function< std::shared_ptr<T> //return: new value (nullptr -> clear cell value)
+                                                (const std::shared_ptr<const T>&, //current value (nullptr if not set)
+                                                  unsigned int x, unsigned int y) >;
+    using FuncGetNewValueGCOverlap = std::function< std::shared_ptr<T> //return: new value (nullptr -> clear cell value)
+                                                        (const std::shared_ptr<const T>&, //current value (nullptr if not set)
+                                                         const GridmapLayout::GridCellOverlap&) >;
 
     /**
      * @brief Holds cell's data
@@ -284,13 +293,13 @@ public:
     /**
      * Creates the grid from a given polygon.
      * Cells that lie outside the polygone are set equal to 0
-     * @param boundry Points of the polygon.
+     * @param boundary Points of the polygon.
      * @param resolution Resolution (cell size) given in meters.
      * @param _val [optional] Value to set the cells that lie inside the polygon. (if nullptr -> noData or 0)
      * @param only_perimeter If set to true, only the cells in touch with the perimeter of the boundary will be set with the given value.
      * @return True on success
      */
-    virtual bool convertPolygonToGrid(const std::vector<Point>& boundry,
+    virtual bool convertPolygonToGrid(const std::vector<Point>& boundary,
                                       double resolution,
                                       const T *_val = nullptr,
                                       bool only_perimeter = false);
@@ -298,30 +307,30 @@ public:
     /**
      * Creates the grid from a given polygon.
      * Cells that lie outside the polygone are set equal to 0
-     * @param boundry Points of the polygon.
+     * @param boundary Points of the polygon.
      * @param resolution Resolution (cell size) given in meters.
      * @param _val Value to be set to the cells that lie inside the polygon.
      * @param only_perimeter If set to true, only the cells in touch with the perimeter of the boundary will be set with the given value.
      * @return True on success
      */
-    virtual inline bool convertPolygonToGrid(const std::vector<Point>& boundry,
+    virtual inline bool convertPolygonToGrid(const std::vector<Point>& boundary,
                                              double resolution,
                                              const T &_val,
                                              bool only_perimeter = false){
-        return convertPolygonToGrid(boundry, resolution, &_val, only_perimeter);
+        return convertPolygonToGrid(boundary, resolution, &_val, only_perimeter);
     }
 
 
     /**
      * Takes the current grid and expands it (if necesary) to include the given polygon.
      * The values of the new cells that lie inside the polygon will be set to the desired input value.
-     * @param boundry Points of the polygon.
+     * @param boundary Points of the polygon.
      * @param _val [optional] Value to be set to the new cells that lie inside the polygon. (if nullptr -> noData or 0)
      * @param only_perimeter If set to true, only the added-cells in touch with the perimeter of the boundary will be set with the given value.
      * @param reduceToPolygon If set to true, the parts of the grid that do not overlap with the polygon will be deleted.
      * @return True on success
      */
-    virtual bool expandGridFromPolygon(const std::vector<Point>& boundry,
+    virtual bool expandGridFromPolygon(const std::vector<Point>& boundary,
                                        const T *_val = nullptr,
                                        bool only_perimeter = false,
                                        bool reduceToPolygon = true);
@@ -329,29 +338,29 @@ public:
     /**
      * Takes the current grid and expands it (if necesary) to include the given polygon.
      * The values of the new cells that lie inside the polygon will be set to the desired input value.
-     * @param boundry Points of the polygon.
+     * @param boundary Points of the polygon.
      * @param _val Value to be set to the new cells that lie inside the polygon.
      * @param only_perimeter If set to true, only the added-cells in touch with the perimeter of the boundary will be set with the given value.
      * @param reduceToPolygon If set to true, the parts of the grid that do not overlap with the polygon will be deleted.
      * @return True on success
      */
-    virtual inline bool expandGridFromPolygon(const std::vector<Point>& boundry,
+    virtual inline bool expandGridFromPolygon(const std::vector<Point>& boundary,
                                               const T &_val,
                                               bool only_perimeter = false,
                                               bool reduceToPolygon = true){
-        return expandGridFromPolygon(boundry, &_val, only_perimeter, reduceToPolygon);
+        return expandGridFromPolygon(boundary, &_val, only_perimeter, reduceToPolygon);
     }
 
     /**
      * Takes the current grid and reduces it (if necesary) so that only cells that lie under the polygon are kept.
      * The values of the new cells that lie inside the polygon will be set to the desired input value.
-     * @param boundry Points of the polygon.
+     * @param boundary Points of the polygon.
      * @param expandToPolygon If set to true, the current grid and expands it (if necesary) to include all given polygon.
      * @param _val [optional] Value to be set to the new cells that lie inside the polygon (in case expandToPolygon is true). (if nullptr -> noData or 0)
      * @param only_perimeter If set to true (and expandToPolygon == true), only the added-cells in touch with the perimeter of the boundary will be set with the given value.
      * @return True on success
      */
-    virtual bool reduceGridToPolygon(const std::vector<Point>& boundry,
+    virtual bool reduceGridToPolygon(const std::vector<Point>& boundary,
                                      bool  expandToPolygon = true,
                                      const T *_val = nullptr,
                                      bool only_perimeter = false);
@@ -359,17 +368,17 @@ public:
     /**
      * Takes the current grid and reduces it (if necesary) so that only cells that lie under the polygon are kept.
      * The values of the new cells that lie inside the polygon will be set to the desired input value.
-     * @param boundry Points of the polygon.
+     * @param boundary Points of the polygon.
      * @param expandToPolygon If set to true, the current grid and expands it (if necesary) to include all given polygon.
      * @param _val Value to be set to the new cells that lie inside the polygon (in case expandToPolygon is true).
      * @param only_perimeter If set to true (and expandToPolygon == true), only the added-cells in touch with the perimeter of the boundary will be set with the given value.
      * @return True on success
      */
-    virtual inline bool reduceGridToPolygon(const std::vector<Point>& boundry,
+    virtual inline bool reduceGridToPolygon(const std::vector<Point>& boundary,
                                             bool  expandToPolygon = true,
                                             const T &_val = T(),
                                             bool only_perimeter = false){
-        return reduceGridToPolygon(boundry, expandToPolygon, &_val, only_perimeter);
+        return reduceGridToPolygon(boundary, expandToPolygon, &_val, only_perimeter);
     }
 
 
@@ -475,6 +484,33 @@ public:
      */
     virtual inline bool setAllValues(const T& value){ return setAllValues(&value); }
 
+    /**
+     * Unset the data(value) of a all cells.
+     * @return True on success
+     */
+    virtual inline bool unsetAllValues(){
+        return setAllValues(nullptr);
+    }
+
+    /**
+     * Sets a new cell value based on the given callback function.
+     * @param x X-index of the cell.
+     * @param y Y-index of the cell.
+     * @param funcGetNewValue Callback function to get the new value based on the current one
+     * @return True on success
+     */
+    virtual bool setValue(unsigned int x,
+                          unsigned int y,
+                          const FuncGetNewValue& funcGetNewValue);
+
+    /**
+     * Sets a new cell value based on the given callback function.
+     * @param p Point.
+     * @param funcGetNewValue Callback function to get the new value based on the current one
+     * @return True on success
+     */
+    virtual bool setValue(const Point& p,
+                          const FuncGetNewValue& funcGetNewValue);
 
     /**
      * Set the data(value) of the cells corresponding to a line within the grid, given in *real world coordinates*. The line is extended sideways a distance if width/2.
@@ -566,7 +602,7 @@ public:
      * @param overlapThreshold If > 0 (0,1), the overlapping cells will be calculated precisely using area/intersection analysis (cell will be set if overlap > overlapThreshold)
      * @return True if successful
      */
-    virtual inline  bool setLine(const Point& start,
+    virtual inline bool setLine(const Point& start,
                                  const Point& end,
                                  double width,
                                  const T &_val,
@@ -594,6 +630,25 @@ public:
     template<typename K = GridCell, typename = typename std::enable_if< std::is_base_of<GridCell, K>::value, void >::type>
     inline bool setCellsValue(const T& _value,
                               const std::vector<K>& cells){ return setCellsValue(&_value, cells); }
+
+    /**
+     * Sets the cells in the list with the value obtained from the callback function
+     * @param cells List of cells to be used (the values on the list elements will be disregarded)
+     * @param funcGetNewValue Callback function to get the new value based on the current one
+     * @return True if successful
+     */
+    template<typename K = GridCell, typename = typename std::enable_if< std::is_base_of<GridCell, K>::value, void >::type>
+    bool setCellsValue(const std::vector<K>& cells,
+                       const FuncGetNewValue& funcGetNewValue);
+
+    /**
+     * Sets the cells in the list with the value obtained from the callback function
+     * @param cells List of cells (incl. overlap) to be used
+     * @param funcGetNewValue Callback function to get the new value based on the current one
+     * @return True if successful
+     */
+    virtual bool setCellsValue(const std::vector<GridmapLayout::GridCellOverlap>& cells,
+                               FuncGetNewValueGCOverlap funcGetNewValue);
 
     /**
      * Sets the cells in the list with the corresponding value
@@ -756,7 +811,10 @@ public:
     */
     virtual bool hasValue(unsigned int x,
                           unsigned int y,
-                          bool* _error_ = nullptr) const;
+                          bool* _error_) const;
+
+    virtual bool hasValue(unsigned int x,
+                          unsigned int y) const;
 
     /**
     * Check if a cell has value, specified by the cell's x- and y- indexes.
@@ -778,6 +836,10 @@ public:
     virtual T getValue(unsigned int x,
                        unsigned int y,
                        bool* _error_ = nullptr) const;
+
+    /* Returns value (x,y) if it exists, otherwise an exception is thrown (required for pyarolib) */
+    virtual T getValueThrows(unsigned int x,
+                            unsigned int y) const;
 
     /**
      * Obtain the data(value) of a grid point, given in *real world coordinates*.

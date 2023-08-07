@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -55,8 +55,10 @@ public:
         TAG_MAX_SPEED_EMPTY,
         TAG_MAX_SPEED_FULL,
         TAG_DEF_WORKING_SPEED,
-        TAG_NUM_AXIS,
+        TAG_UNLOADING_SPEED_MASS,
+        TAG_UNLOADING_SPEED_VOLUME,
         TAG_TURNING_RADIUS,
+        TAG_NUM_AXIS,
         TAG_AXIS_DISTANCE,
         TAG_GAUGE,
         TAG_ENGINE_POWER,

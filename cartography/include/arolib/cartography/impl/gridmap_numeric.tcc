@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -95,7 +95,6 @@ NumericGridmap<T>& NumericGridmap<T>::operator=(const NumericGridmap<T>& other){
 //------------------------------------
 //--------------SET-VALUE-------------
 //------------------------------------
-
 
 /**
  * Adds the given the data(value) to the current value of all the cells within the grid.
@@ -204,7 +203,7 @@ bool NumericGridmap<T>::multValue(const T &_value)
 
             long double valTmp = this->get(x, y);
 
-            valTmp += _value;
+            valTmp *= _value;
 
             set_internal(x, y, valTmp);
         }
@@ -234,7 +233,7 @@ bool NumericGridmap<T>::multValue(unsigned int x,
 
     long double valTmp = this->get(x, y);
 
-    valTmp += _value;
+    valTmp *= _value;
     return set_internal(x, y, valTmp);
 }
 
@@ -508,7 +507,7 @@ bool NumericGridmap<T>::addToLine(const Point& start,
 /**
  * Set the data(value) of the cells corresponding to a polygon within the grid, given in *real world coordinates*.
  * If the polygon does not completely include a cell, the value of the cell will be updated proportionally to the overlaying area taking into account the cell's previous value
- * (e.g. if half of a cell (with initial value 0) must be updated with a value 9, the new value of the cell will be 0.5)
+ * (e.g. if half of a cell (with initial value 0) must be updated with a value 1, the new value of the cell will be 0.5)
  */
 template<typename T>
 bool NumericGridmap<T>::updatePolygonProportionally(const Polygon& _poly,
@@ -914,7 +913,7 @@ bool NumericGridmap<T>::intersectProportionaly(const T & valueOut,
     NumericGridmap<float> gridTmp(this->m_layout, this->logger().logLevel());
 
     if(!gridTmp.isAllocated()){
-        this->m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error creating temporal gridmap");
+        this->logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error creating temporal gridmap");
         return false;
     }
 
@@ -969,7 +968,7 @@ bool NumericGridmap<T>::intersectProportionaly(const Polygon& _poly){
     NumericGridmap<float> gridTmp(this->m_layout, this->logger().logLevel());
 
     if(!gridTmp.isAllocated()){
-        this->m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error creating temporal gridmap");
+        this->logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error creating temporal gridmap");
         return false;
     }
 
@@ -2400,7 +2399,7 @@ bool NumericGridmap<T>::readGridFromFile(const std::string& filename)
  * Saves the grid as a PNG file (plus meta-file).
  */
 template<typename T>
-bool NumericGridmap<T>::saveGridAsPNG(const std::string& _filename, Range2RGBColorType colorType) const  {
+bool NumericGridmap<T>::saveGridAsPNG(const std::string& _filename, Range2RGBColorType colorType, std::pair<T, T> *valuesRange) const  {
     if ( !this->checkInternalParameters(true,__FUNCTION__) )
         return false;
 
@@ -2409,6 +2408,17 @@ bool NumericGridmap<T>::saveGridAsPNG(const std::string& _filename, Range2RGBCol
         this->logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error computing grid statistics.");
         return false;
     }
+
+    auto minValue = stats.min;
+    auto maxValue = stats.max;
+    if(valuesRange){
+        if(!std::isnan(valuesRange->first))
+            minValue = valuesRange->first;
+        if(!std::isnan(valuesRange->second))
+            maxValue = valuesRange->second;
+    }
+    if(minValue > maxValue)
+        std::swap(minValue, maxValue);
 
     std::string filename = _filename;
     std::string metadata = _filename;
@@ -2427,7 +2437,7 @@ bool NumericGridmap<T>::saveGridAsPNG(const std::string& _filename, Range2RGBCol
     }
     outMeta << std::setprecision(12) << this->getCellsize()
             << " " << this->m_layout.getMinPointX() << " " << this->m_layout.getMinPointY()
-            << " " << stats.min << " " << stats.max
+            << " " << minValue << " " << maxValue
             << " " << unitToString(this->m_units) << " " << colorType << std::endl;
     outMeta.close();
 
@@ -2437,7 +2447,7 @@ bool NumericGridmap<T>::saveGridAsPNG(const std::string& _filename, Range2RGBCol
         return false;
     }
 
-    bool ok = saveGridAsPNG(image_out, colorType);
+    bool ok = saveGridAsPNG(image_out, colorType, valuesRange);
     image_out.close();
 
     if(ok)
@@ -2451,11 +2461,11 @@ bool NumericGridmap<T>::saveGridAsPNG(const std::string& _filename, Range2RGBCol
 * Gets the grid as a PNG ostringstream.
 */
 template<typename T>
-bool NumericGridmap<T>::saveGridAsPNG(std::ostringstream &image_out, Range2RGBColorType colorType) const  {
+bool NumericGridmap<T>::saveGridAsPNG(std::ostringstream &image_out, Range2RGBColorType colorType, std::pair<T, T> *valuesRange) const  {
     try{
          image_out.str(std::string());
          std::ostream& image_out_ref = image_out;
-         return saveGridAsPNG(image_out_ref, colorType) && image_out.good();
+         return saveGridAsPNG(image_out_ref, colorType, valuesRange) && image_out.good();
     }
     catch (std::exception &e){
         this->logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error converting grid to png: " + std::string( e.what() ) );
@@ -2467,7 +2477,7 @@ bool NumericGridmap<T>::saveGridAsPNG(std::ostringstream &image_out, Range2RGBCo
  * Gets the grid as a PNG ostream.
 */
 template<typename T>
-bool NumericGridmap<T>::saveGridAsPNG(std::ostream &image_out, Range2RGBColorType colorType) const{
+bool NumericGridmap<T>::saveGridAsPNG(std::ostream &image_out, Range2RGBColorType colorType, std::pair<T, T> *valuesRange) const{
     try{
          if ( !this->checkInternalParameters(true,__FUNCTION__) )
              return false;
@@ -2477,6 +2487,17 @@ bool NumericGridmap<T>::saveGridAsPNG(std::ostream &image_out, Range2RGBColorTyp
              this->logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error computing grid statistics.");
              return false;
          }
+
+         auto minValue = stats.min;
+         auto maxValue = stats.max;
+         if(valuesRange){
+             if(!std::isnan(valuesRange->first))
+                 minValue = valuesRange->first;
+             if(!std::isnan(valuesRange->second))
+                 maxValue = valuesRange->second;
+         }
+         if(minValue > maxValue)
+             std::swap(minValue, maxValue);
 
          //    if(grayscale){
 
@@ -2488,12 +2509,12 @@ bool NumericGridmap<T>::saveGridAsPNG(std::ostream &image_out, Range2RGBColorTyp
          //        for (unsigned int x=0; x < this->getSizeX(); x++) {
          //            for (unsigned int y=0; y < this->getSizeY(); y++) {
          //                pixelVal = 0;
-         //                if(stats.min == stats.max)
+         //                if(minValue == maxValue)
          //                    pixelVal = std::numeric_limits<png::gray_pixel>::max();
          //                else if( this->hasValue(x, y, errorTmp) ){
          //                    value = getValue(x, y, errorTmp, m_isNormalized);
          //                    if(!errorTmp)
-         //                        pixelVal = getGrayValue<png::gray_pixel>(value, stats.min, stats.max);
+         //                        pixelVal = getGrayValue<png::gray_pixel>(value, minValue, maxValue);
          //                }
          //                image[this->getSizeY()-y-1][x] = pixelVal;
          //            }
@@ -2517,7 +2538,7 @@ bool NumericGridmap<T>::saveGridAsPNG(std::ostream &image_out, Range2RGBColorTyp
                  pixel.alpha = 0;
                  if( this->hasValue(x, y, &errorTmp) && !errorTmp ){
                      value = this->get(x, y);
-                     auto rgb = getRGBValue<png::byte>(value, stats.min, stats.max, colorType);
+                     auto rgb = getRGBValue<png::byte>(value, minValue, maxValue, colorType);
                      pixel.red = rgb.r;
                      pixel.green = rgb.g;
                      pixel.blue = rgb.b;

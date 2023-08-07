@@ -1,5 +1,5 @@
 # Add new test suites to this list
-set(test_suits test_mock)
+set(test_suits test_mock io_xml_test)
 
 set(test_module unittest_${AROLIB_LIB_NAME})
 

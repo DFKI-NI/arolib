@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -172,7 +172,7 @@ void PlanningWorkspace::clearAll()
 bool PlanningWorkspace::clearSubfield(int subfieldIdx, bool onlyInfield)
 {
     if(subfieldIdx >= m_field.subfields.size()){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Invalid subfield index");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Invalid subfield index");
         return false;
     }
 
@@ -234,7 +234,7 @@ void PlanningWorkspace::setField(const Field &_field)
     //initialize the routes' map-elements for all the subfields with empty containers (no routes)
     clearRouteMaps(PlanningWorkspace::RouteType_TOTAL);
     for(size_t i = 0 ; i < m_field.subfields.size() ; ++i){
-        m_baseRoutes_headland[i] = std::vector<HeadlandRoute>(0);
+        m_baseRoutes_headland[i] = std::vector<Route>(0);
         m_baseRoutes_infield[i] = std::vector<Route>(0);
         m_plannedRoutes[i] = std::vector<Route>(0);
     }
@@ -280,14 +280,14 @@ const ArolibGrid_t &PlanningWorkspace::getGrid(PlanningWorkspace::GridType gridT
     return m_maps.at(gridType);
 }
 
-const std::map<int, std::vector<HeadlandRoute> > &PlanningWorkspace::getBaseRoutes_headland(bool processed) const {
+const std::map<int, std::vector<Route> > &PlanningWorkspace::getBaseRoutes_headland(bool processed) const {
     if(processed)
         return m_baseRoutesProcessed_headland;
     else
         return m_baseRoutes_headland;
 }
 
-std::map<int, std::vector<HeadlandRoute> > &PlanningWorkspace::getBaseRoutes_headland(bool processed) {
+std::map<int, std::vector<Route> > &PlanningWorkspace::getBaseRoutes_headland(bool processed) {
     if(processed)
         return m_baseRoutesProcessed_headland;
     else
@@ -331,7 +331,7 @@ const std::vector<gridmap::GridmapLayout::GridCellOverlap> &PlanningWorkspace::g
     if(it_edge == edges->end() || !ep.gridCellsInfoIsSet.at(gridType))
         ep.updateGridCells( gridType, map, edge, true );
     else
-        m_logger.printOut(LogLevel::DEBUG, __FUNCTION__, "Edge already present : " + edge.p0.toString() + " <--> " + edge.p1.toString() + " ; w = " + std::to_string(edge.width) );
+        logger().printOut(LogLevel::DEBUG, __FUNCTION__, "Edge already present : " + edge.p0.toString() + " <--> " + edge.p1.toString() + " ; w = " + std::to_string(edge.width) );
 
     return ep.gridCellsInfo.at(gridType);
 

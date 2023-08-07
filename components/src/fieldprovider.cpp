@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -39,19 +39,19 @@ FieldProvider::FieldProvider(const std::string &baseDir,
         slash = "";
 
     std::string kmlDir = baseDir + slash + "kml/";
-    m_logger.printOut(LogLevel::INFO, "", "Field directory - KML: " + kmlDir);
+    logger().printOut(LogLevel::INFO, "", "Field directory - KML: " + kmlDir);
     nbFilesKml = getFieldList_kml(kmlDir, nbFieldsKml);
-    m_logger.printOut(LogLevel::INFO, "", "\tFound: " + std::to_string(nbFieldsKml) + " fields in " + std::to_string(nbFilesKml) + " KML files.\n");
+    logger().printOut(LogLevel::INFO, "", "\tFound: " + std::to_string(nbFieldsKml) + " fields in " + std::to_string(nbFilesKml) + " KML files.\n");
 
     std::string xmlDir = baseDir + slash + "xml/";
-    m_logger.printOut(LogLevel::INFO, "", "Field directory - XML: " + xmlDir);
+    logger().printOut(LogLevel::INFO, "", "Field directory - XML: " + xmlDir);
     nbFilesXml = getFieldList_xml(xmlDir, nbFieldsXml);
-    m_logger.printOut(LogLevel::INFO, "", "\tFound: " + std::to_string(nbFieldsXml) + " fields in " + std::to_string(nbFilesXml) + " XML files.\n");
+    logger().printOut(LogLevel::INFO, "", "\tFound: " + std::to_string(nbFieldsXml) + " fields in " + std::to_string(nbFilesXml) + " XML files.\n");
 
     std::string hdf5Dir = baseDir + slash + "hdf5/";
-    m_logger.printOut(LogLevel::INFO, "", "Field directory - HDF5: " + baseDir); // using baseDir as directory for HDF5
+    logger().printOut(LogLevel::INFO, "", "Field directory - HDF5: " + baseDir); // using baseDir as directory for HDF5
     nbFilesHDF5 = getFieldList_hdf5(hdf5Dir, nbFieldsHDF5);
-    m_logger.printOut(LogLevel::INFO, "", "\tFound: " + std::to_string(nbFieldsHDF5) + " fields in given HDF5 file.\n");
+    logger().printOut(LogLevel::INFO, "", "\tFound: " + std::to_string(nbFieldsHDF5) + " fields in given HDF5 file.\n");
 }
 
 FieldProvider::FieldProvider(const FieldProvider &other):
@@ -121,8 +121,8 @@ AroResp FieldProvider::readField(const std::string &fieldId, Field &field, std::
     if (fieldFound){
         filename = it->second.filename;
 
-        m_logger.printOut(LogLevel::INFO, __FUNCTION__, "Read " + it->second.filename + " (" + it->second.fieldname + ")");
-        m_logger.printOut(LogLevel::INFO, __FUNCTION__, std::string("\n") +
+        logger().printOut(LogLevel::INFO, __FUNCTION__, "Read " + it->second.filename + " (" + it->second.fieldname + ")");
+        logger().printOut(LogLevel::INFO, __FUNCTION__, std::string("\n") +
                  "   filename                : " + field.filename + "\n" +
                  "   number of subfields     : " + std::to_string( field.subfields.size() ) + "\n" +
                  "   outer boundary nr points: " + std::to_string( field.outer_boundary.points.size() ) + "\n" );
@@ -134,7 +134,7 @@ AroResp FieldProvider::readField(const std::string &fieldId, Field &field, std::
                           "      inner boundary nr points: " + std::to_string( sf.boundary_inner.points.size() ) + "\n" +
                           "      nr rerefence lines      : " + std::to_string( sf.reference_lines.size() ) + "\n";
             }
-            m_logger.printOut(LogLevel::INFO, __FUNCTION__, msgOut );
+            logger().printOut(LogLevel::INFO, __FUNCTION__, msgOut );
         }
 
         return AroResp(0,"OK");
@@ -171,7 +171,7 @@ AroResp FieldProvider::readFieldFromFile(const std::string &filename, Field &fie
             if(field_names.empty())
                 return AroResp(1, "No fields in given file.");
             if(field_names.size() > 1)
-                m_logger.printWarning(__FUNCTION__, "The given file has more than one field. Reading only the first one.");
+                logger().printWarning(__FUNCTION__, "The given file has more than one field. Reading only the first one.");
 
             Field field;
             if(!read_field_hdf5(filename, field_names.front(),field))
@@ -183,7 +183,7 @@ AroResp FieldProvider::readFieldFromFile(const std::string &filename, Field &fie
         }
     }
     else if ( fileHasExtension(filename, "") ){
-        m_logger.printWarning(__FUNCTION__, "No file extension (file format) recognized. Attempting to read available formats.");
+        logger().printWarning(__FUNCTION__, "No file extension (file format) recognized. Attempting to read available formats.");
         AroResp resp;
         resp = readFieldFromFile(filename + ".xml", field);
         if( !resp.isError() )
@@ -209,24 +209,24 @@ AroResp FieldProvider::saveField(const Field &field, const std::string &filename
 
         if(file_extension == "kml") {
             if (!writeFieldKML(filename,field)) {
-                m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Could not write file " + filename);
+                logger().printOut(LogLevel::ERROR, __FUNCTION__, "Could not write file " + filename);
                 return AroResp(1, "Could not write file " + filename );
             }
-            m_logger.printOut(LogLevel::INFO, __FUNCTION__, "File " + filename + " written.");
+            logger().printOut(LogLevel::INFO, __FUNCTION__, "File " + filename + " written.");
         }
         else if(file_extension == "xml") {
             if (!writeFieldXML(filename,field)) {
-                m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Could not write file " + filename);
+                logger().printOut(LogLevel::ERROR, __FUNCTION__, "Could not write file " + filename);
                 return AroResp(1, "Could not write file " + filename );
             }
-            m_logger.printOut(LogLevel::INFO, __FUNCTION__, "File " + filename + " written.");
+            logger().printOut(LogLevel::INFO, __FUNCTION__, "File " + filename + " written.");
         }
         else {
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Field name has unknown extension: " + file_extension );
+            logger().printOut(LogLevel::ERROR, __FUNCTION__, "Field name has unknown extension: " + file_extension );
             return AroResp(1, "Field name has unknown extension: " + file_extension );
         }
     } catch (std::exception &e) {
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, std::string("Exception cought: ") + e.what() );
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, std::string("Exception cought: ") + e.what() );
         return AroResp(1, e.what() );
     }
     return AroResp(0,"OK");
@@ -322,16 +322,17 @@ int FieldProvider::getFieldList_xml(std::string directory_name, unsigned int &nu
 
     // go through all xml files, get the fields
     for (size_t i=0; i < filelist.size(); i++) {
-        Field field;
-        if( !readFieldXML(directory_name + filelist.at(i), field) )
+        std::vector<Field> fields;
+        if( !readFieldsXML(directory_name + filelist.at(i), fields) )
             continue;
+        for(auto& field : fields){
+            field.id = m_idCount++;
+            std::string id = createFieldKey(field, filelist.at(i), pattern);
 
-        field.id = m_idCount++;
-        std::string id = createFieldKey(field, filelist.at(i), pattern);
-
-        if ( m_allFields.find(id) == m_allFields.end() ){
-            ++num_fields;
-            m_allFields[id] = createFieldInfo(field, directory_name, filelist.at(i), FileType::XML);
+            if ( m_allFields.find(id) == m_allFields.end() ){
+                ++num_fields;
+                m_allFields[id] = createFieldInfo(field, directory_name, filelist.at(i), FileType::XML);
+            }
         }
     }
 
@@ -358,7 +359,7 @@ int FieldProvider::getFieldList_hdf5(std::string directory_name,
            {
                Field field;
                if(!read_field_hdf5(file_name, field_names.at(j),field)) {
-                   m_logger.printOut(LogLevel::WARNING, __FUNCTION__, "Error reading field " + field_names.at(j) + " in file " + file_name);
+                   logger().printOut(LogLevel::WARNING, __FUNCTION__, "Error reading field " + field_names.at(j) + " in file " + file_name);
                    continue;
                }
 
@@ -380,7 +381,7 @@ int FieldProvider::getFieldList_hdf5(std::string directory_name,
        }
        catch (std::exception& e)
        {
-           m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error reading file " + file_name + " (exception): " + e.what());
+           logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error reading file " + file_name + " (exception): " + e.what());
        }
 
    }
@@ -396,9 +397,9 @@ bool FieldProvider::getField_kml(const FieldProvider::FieldInfo &fi, arolib::Fie
 
     bool ok = readFieldsKML(fi.filename, fields);
     if(!ok || fields.empty()){
-        m_logger.printOut(LogLevel::WARNING, __FUNCTION__, "Error reading fields (readFieldsKML). Attempting with read_field_kml_best_guess..." );
+        logger().printOut(LogLevel::WARNING, __FUNCTION__, "Error reading fields (readFieldsKML). Attempting with read_field_kml_best_guess..." );
         if( !read_field_kml_best_guess(fi.filename, fields) ){
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error reading fields" );
+            logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error reading fields" );
             return false;
         }
     }
@@ -410,17 +411,29 @@ bool FieldProvider::getField_kml(const FieldProvider::FieldInfo &fi, arolib::Fie
         }
     }
 
-    m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error reading desired field" );
+    logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error reading desired field" );
     return false;
 }
 
 bool FieldProvider::getField_xml(const FieldProvider::FieldInfo &fi, Field &field)
 {
-    if( !readFieldXML(fi.filename, field) ){
-        m_logger.printOut(LogLevel::DEBUG, __FUNCTION__, "***** ERROR-XML - readFieldXML *****" );
+    std::vector<arolib::Field> fields;
+
+    bool ok = readFieldsXML(fi.filename, fields);
+    if(!ok || fields.empty()){
+        logger().printOut(LogLevel::WARNING, __FUNCTION__, "Error reading fields (readFieldsXML)." );
         return false;
     }
-    return true;
+
+    for (size_t i = 0; i < fields.size(); ++i) {
+        if(fields.at(i).name == fi.fieldname) {
+            field = fields.at(i);
+            return true;
+        }
+    }
+
+    logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error reading desired field" );
+    return false;
 
 }
 
@@ -431,7 +444,7 @@ bool FieldProvider::getField_hdf5(const FieldProvider::FieldInfo &fi, Field &fie
         return true;
     }
 
-    m_logger.printOut(LogLevel::DEBUG, __FUNCTION__, "***** ERROR-HDF5 - read_field_hdf5 *****" );
+    logger().printOut(LogLevel::DEBUG, __FUNCTION__, "***** ERROR-HDF5 - read_field_hdf5 *****" );
     return false;
 }
 

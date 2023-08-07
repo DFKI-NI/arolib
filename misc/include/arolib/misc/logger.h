@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -52,12 +52,14 @@ class Logger {
 
 public:
 
+    static LogLevel DefaultLogLevel;
+
     /**
      * @brief Constructor
      * @param logLevel Logger's log level. Only logs with this level or 'lower' (more important) will be printed by the logger
      * @param baseName Basename to be printed in the messages' header (disregarded if empty-string).
      */
-    Logger(const LogLevel& logLevel, const std::string &baseName = "");
+    Logger(const LogLevel& logLevel = DefaultLogLevel, const std::string &baseName = "");
 
     /**
      * @brief Constructor
@@ -66,7 +68,7 @@ public:
      * @param parent Pointer to the parent logger (this logger will have some same attributes (log level, output stream, etc) as the parent). If = null --> no parent.
      * @param baseName Basename to be printed in the messages (disregarded if empty-string).
      */
-    Logger(Logger *parent, const std::string &baseName = "");
+    Logger(std::shared_ptr<Logger> parent, const std::string &baseName = "");
 
     /**
      * @brief Copy constructor
@@ -349,6 +351,12 @@ public:
     std::string baseName() const;
 
     /**
+     * @brief Get the stored basename of the logger
+     * @return Stored basename of the logger
+     */
+    inline const std::shared_ptr<Logger> parent() const { return m_parent; }
+
+    /**
      * @brief Set the log level and reset/remove the parent if existent.
      * @param logLevel Log level
      */
@@ -367,7 +375,7 @@ public:
      * If the logger has a parent, the logger's log level and output stream is inherited from the parent.
      * @param parent Pointer to the parent logger. If = null --> no parent
      */
-    void setParent(const Logger *parent);
+    void setParent(const std::shared_ptr<Logger> parent);
 
     /**
      * @brief Remove the logger's parent logger (i.e. no parent)
@@ -488,7 +496,7 @@ protected:
     LogLevel m_logLevel = LogLevel::INFO; /**< Logger's log level */
     std::string m_baseName = ""; /**< Logger's base name (to be printed in the message headers iif not an empty-string) */
     mutable std::ostream* m_os = &std::cout; /**< Pointer to the logger's output stream */
-    Logger* m_parent = nullptr; /**< Logger's parent (to inherit its log level and output stream) */
+    std::shared_ptr<Logger> m_parent = nullptr; /**< Logger's parent (to inherit its log level and output stream) */
     int m_precision = 10; /**< Logger's (number) precision */
     //mutable std::chrono::steady_clock::time_point m_timestamp; /**< Timestamp of the last message */
     mutable DateTime m_timestamp; /**< Timestamp of the last message */

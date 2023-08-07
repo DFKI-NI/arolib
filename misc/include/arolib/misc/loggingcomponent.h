@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@
 #define AROLIBLOGGINGCOMPONENT_H
 
 #include <vector>
+#include <memory>
 
 #include "logger.h"
 #include "container_helper.h"
@@ -33,7 +34,13 @@ public:
      * @brief Get a reference to the logger
      * @return Reference to the logger
      */
-    Logger& logger() const {return m_logger;}
+    inline Logger& logger() const {return *m_logger;}
+
+    /**
+     * @brief Get the logger
+     * @return Logger
+     */
+    inline std::shared_ptr<Logger> loggerPtr() const {return m_logger;}
 
 protected:
     /**
@@ -59,7 +66,7 @@ protected:
         void resetLoggers();
 
         bool resetOnDestruction = true; /**< If true, the saved loggers are restored to their original on destruction */
-        std::vector< std::pair< Logger, Logger* > > loggers; /**< Contains a copy of the original loggers and the respective pointers. <Copy of the original logger, pointer to the corresponding logger> */
+        std::vector< std::pair< const std::shared_ptr<Logger>, const std::shared_ptr<Logger> > > loggers; /**< Contains the original parents of the loggers. <pointer to the corresponding logger, original parent> */
     };
 
     /**
@@ -76,7 +83,7 @@ protected:
      * @param parentLogger Logger's parent logger.
      * @param baseName Logger's baseName.
      */
-    LoggingComponent(Logger *parentLogger, const std::string &baseName = "");
+    LoggingComponent(std::shared_ptr<Logger> parentLogger, const std::string &baseName = "");
 
     /**
      * @brief Copy constructor
@@ -103,8 +110,7 @@ protected:
      */
     template<typename ... Ts>
     static void setTemporalLoggersParent(LoggersHandler& lh, const LoggingComponent &parent, const LoggingComponent &item, const Ts & ...items){
-        lh.loggers.emplace_back( std::make_pair(item.m_logger, &item.m_logger) );
-        item.logger().setParent(&parent.m_logger);
+        setTemporalLoggersParent(lh, parent, item);
         return setTemporalLoggersParent(lh, parent, items...);
     }
 
@@ -115,7 +121,7 @@ protected:
      * @param parent Logger to be set as a (temporal) parent
      * @param [in/out] item Loggert to be set as a (temporal) child
      */
-    static void setTemporalLoggersParent(LoggersHandler& lh, Logger *parent, Logger &item);
+    static void setTemporalLoggersParent(LoggersHandler& lh, std::shared_ptr<Logger> parent, std::shared_ptr<Logger> &item);
 
     /**
      * @brief Set (recursivelly) one logger as a (temporal) parent of other loggers
@@ -126,9 +132,8 @@ protected:
      * @param [in/out] items Remanining loggers to be set as a (temporal) children
      */
     template<typename ... Ts>
-    static void setTemporalLoggersParent(LoggersHandler& lh, Logger *parent, Logger &item, Ts & ...items){
-        lh.loggers.emplace_back( std::make_pair(item, &item) );
-        item.setParent(parent);
+    static void setTemporalLoggersParent(LoggersHandler& lh, std::shared_ptr<Logger> parent, std::shared_ptr<Logger> &item, Ts & ...items){
+        setTemporalLoggersParent(lh, parent, item);
         return setTemporalLoggersParent(lh, parent, items...);
     }
 
@@ -138,7 +143,7 @@ protected:
     static void resetTemporalLoggersParent(LoggersHandler& lh);
 
 protected:
-    mutable Logger m_logger;
+    std::shared_ptr<Logger> m_logger;
 };
 
 }

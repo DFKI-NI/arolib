@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -189,22 +189,6 @@ public:
     bool read( const ReadHandler & base, std::vector<RoutePoint> &pts );
 
     /**
-     * @brief Read headland point from base ReadHandler.
-     * @param base Base handler
-     * @param [out] pt Point read from the base handler
-     * @return True on success
-     */
-    bool read( const ReadHandler & base, HeadlandPoint &pt );
-
-    /**
-     * @brief Read headland points from base ReadHandler.
-     * @param base Base handler
-     * @param [out] pts Points read from the base handler
-     * @return True on success
-     */
-    bool read( const ReadHandler & base, std::vector<HeadlandPoint> &pts );
-
-    /**
      * @brief Read track from base ReadHandler.
      * @param base Base handler
      * @param [out] track Track read from the base handler
@@ -235,6 +219,22 @@ public:
      * @return True on success
      */
     bool read( const ReadHandler & base, CompleteHeadland &hl );
+
+    /**
+     * @brief Read partial headland from base ReadHandler.
+     * @param base Base handler
+     * @param [out] hl Partial headland read from the base handler
+     * @return True on success
+     */
+    bool read( const ReadHandler & base, PartialHeadland &hl );
+
+    /**
+     * @brief Read partial headlands from base ReadHandler.
+     * @param base Base handler
+     * @param [out] headlands Partial headlands read from the base handler
+     * @return True on success
+     */
+    bool read( const ReadHandler & base, std::vector<PartialHeadland> &headlands );
 
     /**
      * @brief Read obstacle from base ReadHandler.
@@ -293,7 +293,7 @@ public:
         if(!wasOpen){
             if(!openDocument()){
                 if(isReadyToRead())
-                    m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Cannot open document");
+                    logger().printOut(LogLevel::ERROR, __FUNCTION__, "Cannot open document");
                 return false;
             }
         }
@@ -319,12 +319,12 @@ public:
     bool read(T& value, const ReadHandler & base, const KmlTag& kmlTag, const std::vector<std::string>& parentTags = {}){
 
         if(!m_isDocOpen){
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
+            logger().printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
             return false;
         }
 
         if(kmlTag.kml_tag.empty()){
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Invalid kml tag");
+            logger().printOut(LogLevel::ERROR, __FUNCTION__, "Invalid kml tag");
             return false;
         }
 
@@ -362,13 +362,13 @@ public:
         if(!wasOpen){
             if(!openDocument()){
                 if(isReadyToRead())
-                    m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Cannot open document");
+                    logger().printOut(LogLevel::ERROR, __FUNCTION__, "Cannot open document");
                 return false;
             }
         }
 
         if(kmlTag.kml_tag.empty()){
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Invalid kml tag");
+            logger().printOut(LogLevel::ERROR, __FUNCTION__, "Invalid kml tag");
             return false;
         }
 
@@ -392,10 +392,10 @@ public:
                 if(!read( createRH(v.second) , values.back())){
                     values.pop_back();
                     if(strict){
-                        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error reading element # " + std::to_string(count));
+                        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error reading element # " + std::to_string(count));
                         return false;
                     }
-                    m_logger.printOut(LogLevel::WARNING, __FUNCTION__, "Error reading element # " + std::to_string(count));
+                    logger().printOut(LogLevel::WARNING, __FUNCTION__, "Error reading element # " + std::to_string(count));
                 }
             }
         }
@@ -422,12 +422,12 @@ public:
         values.clear();
 
         if(!m_isDocOpen){
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
+            logger().printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
             return false;
         }
 
         if(kmlTag.kml_tag.empty()){
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Invalid kml tag");
+            logger().printOut(LogLevel::ERROR, __FUNCTION__, "Invalid kml tag");
             return false;
         }
 
@@ -446,10 +446,10 @@ public:
                 if(!read( createRH(v.second) , values.back())){
                     values.pop_back();
                     if(strict){
-                        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error reading element # " + std::to_string(count));
+                        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error reading element # " + std::to_string(count));
                         return false;
                     }
-                    m_logger.printOut(LogLevel::WARNING, __FUNCTION__, "Error reading element # " + std::to_string(count));
+                    logger().printOut(LogLevel::WARNING, __FUNCTION__, "Error reading element # " + std::to_string(count));
                 }
             }
         }
@@ -725,16 +725,6 @@ protected:
     static bool readFromDescription(ResourcePoint& pt, const std::string& description, bool strict);
 
     /**
-     * @brief Read headland point properties from description
-     *
-     * @param [out] pt Headland point read
-     * @param description Description holding the properties
-     * @param strict If true, all the properties must be read from the description for success.
-     * @return True on success
-     */
-    static bool readFromDescription(HeadlandPoint& pt, const std::string& description, bool strict);
-
-    /**
      * @brief Read route point properties from description
      *
      * @param [out] pt Route point read
@@ -773,6 +763,16 @@ protected:
      * @return True on success
      */
     static bool readFromDescription(CompleteHeadland& hl, const std::string& description, bool strict);
+
+    /**
+     * @brief Read partial headland properties from description
+     *
+     * @param [out] hl Partial headland read
+     * @param description Description holding the properties
+     * @param strict If true, all the properties must be read from the description for success.
+     * @return True on success
+     */
+    static bool readFromDescription(PartialHeadland& hl, const std::string& description, bool strict);
 
 
     /**

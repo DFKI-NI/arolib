@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,6 +31,39 @@ Pose2D::Pose2D(const Point &point, double _angle):
     angle(_angle)
 {
 
+}
+
+bool Pose2D::operator==(const Pose2D &other) const
+{
+    static const double epsilon = 0.001;
+    return ( this->point() == other.point() && fabs(angle-other.angle) < epsilon );
+}
+
+bool Pose2D::operator!=(const Pose2D &other) const
+{
+    return !(operator ==(other));
+}
+
+bool Pose2D::operator<(const Pose2D &other) const
+{
+    static const double epsilon = 0.001;
+    if (this->point() != other.point())
+        return this->point() < other.point();
+    else if (fabs(angle - other.angle) > epsilon)
+        return angle < other.angle;
+    return false;
+}
+
+std::size_t Pose2D::KeyHash::operator()(const Pose2D &p) const
+{
+    return get(p, 0);
+}
+
+std::size_t Pose2D::KeyHash::get(const Pose2D &p, std::size_t seed)
+{
+    seed = Point::KeyHash::get( p.point(), seed );
+    boost::hash_combine(seed, p.angle);
+    return seed;
 }
 
 

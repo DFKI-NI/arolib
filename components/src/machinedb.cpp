@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -39,8 +39,10 @@ MachineDB::MachineDB(const std::string &baseDir, const LogLevel &logLevel):
                        {TAG_MAX_SPEED_EMPTY, "max speed empty"},
                        {TAG_MAX_SPEED_FULL, "max speed full"},
                        {TAG_DEF_WORKING_SPEED, "def working speed"},
-                       {TAG_NUM_AXIS, "num axis"},
+                       {TAG_UNLOADING_SPEED_MASS, "unloading speed mass"},
+                       {TAG_UNLOADING_SPEED_VOLUME, "unloading speed volume"},
                        {TAG_TURNING_RADIUS, "turning radius"},
+                       {TAG_NUM_AXIS, "num axis"},
                        {TAG_AXIS_DISTANCE, "axis distance"},
                        {TAG_GAUGE, "gauge"},
                        {TAG_ENGINE_POWER, "engine power"},
@@ -61,8 +63,10 @@ MachineDB::MachineDB(const std::string &baseDir, const LogLevel &logLevel):
                           {TAG_MAX_SPEED_EMPTY, true},
                           {TAG_MAX_SPEED_FULL, true},
                           {TAG_DEF_WORKING_SPEED, true},
-                          {TAG_NUM_AXIS, false},
+                          {TAG_UNLOADING_SPEED_MASS, false},
+                          {TAG_UNLOADING_SPEED_VOLUME, false},
                           {TAG_TURNING_RADIUS, false},
+                          {TAG_NUM_AXIS, false},
                           {TAG_AXIS_DISTANCE, false},
                           {TAG_GAUGE, false},
                           {TAG_ENGINE_POWER, false},
@@ -222,10 +226,10 @@ bool MachineDB::saveListXML(const std::string &filename)
     }
 
     if(!writeMachinesXML(filename, machines) ){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error saving list of machines in " + filename);
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error saving list of machines in " + filename);
         return false;
     }
-    m_logger.printOut(LogLevel::INFO, __FUNCTION__, "List of machines saved in " + filename);
+    logger().printOut(LogLevel::INFO, __FUNCTION__, "List of machines saved in " + filename);
     return true;
 }
 
@@ -260,11 +264,11 @@ void MachineDB::parseCSV(std::string filename) {
     boost::escaped_list_separator<char> seps(('\\', m_CSVFieldDelimiter, '\\'));
     std::string line;
 
-    m_logger.printOut(LogLevel::INFO, __FUNCTION__, "Reading " + filename + "...");
+    logger().printOut(LogLevel::INFO, __FUNCTION__, "Reading " + filename + "...");
 
     std::ifstream infile(filename);
     if(!infile.is_open()){
-        m_logger.printOut(LogLevel::WARNING, __FUNCTION__, "Unable to open file " + filename);
+        logger().printOut(LogLevel::WARNING, __FUNCTION__, "Unable to open file " + filename);
         return;
     }
 
@@ -279,7 +283,7 @@ void MachineDB::parseCSV(std::string filename) {
     }
 
     if(!std::getline(infile, line)){
-        m_logger.printOut(LogLevel::WARNING, __FUNCTION__, "Unable to read headers in file " + filename);
+        logger().printOut(LogLevel::WARNING, __FUNCTION__, "Unable to read headers in file " + filename);
         return;
     }
     ++lineCount;
@@ -311,7 +315,7 @@ void MachineDB::parseCSV(std::string filename) {
 
         for(int i = 0 ; i < mapTag2index.size() ; i++){
             if( mapTag2index.at(i) < 0 && m_requiredEntries.at(i) ){
-                m_logger.printOut(LogLevel::WARNING, __FUNCTION__, "Not all required header entries are available in file " + filename + ": Tag \"" + m_CSVHeaderTags[i] + "\" is missing.");
+                logger().printOut(LogLevel::WARNING, __FUNCTION__, "Not all required header entries are available in file " + filename + ": Tag \"" + m_CSVHeaderTags[i] + "\" is missing.");
                 return;
             }
         }
@@ -363,7 +367,7 @@ void MachineDB::parseCSV(std::string filename) {
             }
         }
         catch(std::exception &e){
-            m_logger.printOut(LogLevel::WARNING, __FUNCTION__, "Line " + std::to_string(lineCount) + ", index " + std::to_string(idx) + ": exception = " + e.what() );
+            logger().printOut(LogLevel::WARNING, __FUNCTION__, "Line " + std::to_string(lineCount) + ", index " + std::to_string(idx) + ": exception = " + e.what() );
             ok = false;
             break;
         }
@@ -372,7 +376,7 @@ void MachineDB::parseCSV(std::string filename) {
             std::string& val = values.at(i);
             boost::trim(val);
             if(val.empty() && m_requiredEntries.at(i) ){
-                m_logger.printOut(LogLevel::WARNING, __FUNCTION__, "Line " + std::to_string(lineCount) + ": required entry " + m_CSVHeaderTags[i] + " is missing");
+                logger().printOut(LogLevel::WARNING, __FUNCTION__, "Line " + std::to_string(lineCount) + ": required entry " + m_CSVHeaderTags[i] + " is missing");
                 ok = false;
                 break;
             }
@@ -419,11 +423,17 @@ void MachineDB::parseCSV(std::string filename) {
                     else if(i == TAG_DEF_WORKING_SPEED){
                         m.def_working_speed = string2double(val);
                     }
-                    else if(i == TAG_NUM_AXIS){
-                        m.num_axis = string2numAxis(val);
+                    else if(i == TAG_UNLOADING_SPEED_MASS){
+                        m.unloading_speed_mass = string2double(val);
+                    }
+                    else if(i == TAG_UNLOADING_SPEED_VOLUME){
+                        m.unloading_speed_volume = string2double(val);
                     }
                     else if(i == TAG_TURNING_RADIUS){
                         m.turning_radius = string2double(val);
+                    }
+                    else if(i == TAG_NUM_AXIS){
+                        m.num_axis = string2numAxis(val);
                     }
                     else if(i == TAG_AXIS_DISTANCE){
                         m.axis_distance = string2double(val);
@@ -492,7 +502,7 @@ void MachineDB::parseCSV(std::string filename) {
 
                         else  {
                             m.machinetype = Machine::UNDEFINED_TYPE;
-                            m_logger.printOut(LogLevel::WARNING, __FUNCTION__, "Line " + std::to_string(lineCount) + ": unknown machine type " + val);
+                            logger().printOut(LogLevel::WARNING, __FUNCTION__, "Line " + std::to_string(lineCount) + ": unknown machine type " + val);
                         }
 
                     }
@@ -501,7 +511,7 @@ void MachineDB::parseCSV(std::string filename) {
                     }
                 }
                 catch (std::exception &e) {
-                    m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Invalid argument '" + m_CSVHeaderTags[i] + "' in line " + std::to_string(lineCount) + ": " + e.what());
+                    logger().printOut(LogLevel::ERROR, __FUNCTION__, "Invalid argument '" + m_CSVHeaderTags[i] + "' in line " + std::to_string(lineCount) + ": " + e.what());
                     if(m_requiredEntries.at( i )){
                         ok = false;
                         break;
@@ -518,7 +528,7 @@ void MachineDB::parseCSV(std::string filename) {
         if(it1 != m_machineDB.end()){
             auto it2 = it1->second.find(m.model);
             if(it2 != it1->second.end()){
-                m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Line " + std::to_string(lineCount)
+                logger().printOut(LogLevel::ERROR, __FUNCTION__, "Line " + std::to_string(lineCount)
                          + ": a machine from manufacturer '" + m.manufacturer + "' and model '" + m.model + "' already exists in the DB. The new entry will be disregarded");
                 continue;
             }
@@ -529,7 +539,7 @@ void MachineDB::parseCSV(std::string filename) {
         ++machineCount;
     }
 
-    m_logger.printOut(LogLevel::INFO, __FUNCTION__, std::to_string(machineCount) + " machines read from file.");
+    logger().printOut(LogLevel::INFO, __FUNCTION__, std::to_string(machineCount) + " machines read from file.");
 }
 
 
@@ -539,7 +549,7 @@ void MachineDB::parseCSVOld(std::string filename) {
     boost::escaped_list_separator<char> seps('\\', ',', '\"');
     std::string line;
 
-    m_logger.printOut(LogLevel::INFO, __FUNCTION__, "Reading " + filename + "...");
+    logger().printOut(LogLevel::INFO, __FUNCTION__, "Reading " + filename + "...");
 
     std::ifstream infile(filename);
     std::getline(infile, line); //the first two lines do not contain machine info
@@ -564,7 +574,7 @@ void MachineDB::parseCSVOld(std::string filename) {
                 switch (idx) {
                 case 0:
                     if (i.length() == 0) {
-                        m_logger.printOut(LogLevel::WARNING, __FUNCTION__, "Machine #" + std::to_string(machineNr) + ": entry 'id' is empty!");
+                        logger().printOut(LogLevel::WARNING, __FUNCTION__, "Machine #" + std::to_string(machineNr) + ": entry 'id' is empty!");
                         m.id_intern = 0;
                     } else {
                         m.id_intern = std::stoi(i);
@@ -572,31 +582,31 @@ void MachineDB::parseCSVOld(std::string filename) {
                     break;
                 case 1:
                     if (i.length() == 0) {
-                        m_logger.printOut(LogLevel::WARNING, __FUNCTION__, "Machine #" + std::to_string(machineNr) + ": entry 'machine type' is empty!");
+                        logger().printOut(LogLevel::WARNING, __FUNCTION__, "Machine #" + std::to_string(machineNr) + ": entry 'machine type' is empty!");
                     }
 
                     else if (i == "Schlepper")    m.machinetype = Machine::OLV;
                     else if (i == "Maehdrescher") m.machinetype = Machine::HARVESTER;
                     else if (i == "Ruebenroder")  m.machinetype = Machine::HARVESTER;
                     else  {
-                        m_logger.printOut(LogLevel::WARNING, __FUNCTION__, "Machine #" + std::to_string(machineNr) + ": unknown machine type " + i);
+                        logger().printOut(LogLevel::WARNING, __FUNCTION__, "Machine #" + std::to_string(machineNr) + ": unknown machine type " + i);
                     }
                     break;
                 case 2:
                     if (i.length() == 0) {
-                        m_logger.printOut(LogLevel::WARNING, __FUNCTION__, "Machine #" + std::to_string(machineNr) + ": entry 'manufacturer' is empty!");
+                        logger().printOut(LogLevel::WARNING, __FUNCTION__, "Machine #" + std::to_string(machineNr) + ": entry 'manufacturer' is empty!");
                     }
                     m.manufacturer = i;
                     break;
                 case 3:
                     if (i.length() == 0) {
-                        m_logger.printOut(LogLevel::WARNING, __FUNCTION__, "Machine #" + std::to_string(machineNr) + ": entry 'model' is empty!");
+                        logger().printOut(LogLevel::WARNING, __FUNCTION__, "Machine #" + std::to_string(machineNr) + ": entry 'model' is empty!");
                     }
                     m.model = i;
                     break;
                 case 4:
                     if (i.length() == 0) {
-                        m_logger.printOut(LogLevel::WARNING, __FUNCTION__, "Machine #" + std::to_string(machineNr) + ": entry 'width' is empty!");
+                        logger().printOut(LogLevel::WARNING, __FUNCTION__, "Machine #" + std::to_string(machineNr) + ": entry 'width' is empty!");
                         m.width = 0;
                     } else {
                         m.width = string2double(i);
@@ -604,7 +614,7 @@ void MachineDB::parseCSVOld(std::string filename) {
                     break;
                 case 5:
                     if (i.length() == 0) {
-                        m_logger.printOut(LogLevel::WARNING, __FUNCTION__, "Machine #" + std::to_string(machineNr) + ": entry 'length' is empty!");
+                        logger().printOut(LogLevel::WARNING, __FUNCTION__, "Machine #" + std::to_string(machineNr) + ": entry 'length' is empty!");
                         m.length = 0;
                     } else {
                         m.length = string2double(i);
@@ -612,7 +622,7 @@ void MachineDB::parseCSVOld(std::string filename) {
                     break;
                 case 6:
                     if (i.length() == 0) {
-                        m_logger.printOut(LogLevel::WARNING, __FUNCTION__, "Machine #" + std::to_string(machineNr) + ": entry 'height' is empty!");
+                        logger().printOut(LogLevel::WARNING, __FUNCTION__, "Machine #" + std::to_string(machineNr) + ": entry 'height' is empty!");
                         m.height = 0;
                     } else {
                         m.height = string2double(i);
@@ -620,7 +630,7 @@ void MachineDB::parseCSVOld(std::string filename) {
                     break;
                 case 7:
                     if (i.length() == 0) {
-                        m_logger.printOut(LogLevel::WARNING, __FUNCTION__, "Machine #" + std::to_string(machineNr) + ": entry 'weight' is empty!");
+                        logger().printOut(LogLevel::WARNING, __FUNCTION__, "Machine #" + std::to_string(machineNr) + ": entry 'weight' is empty!");
                         m.weight = 0;
                     } else {
                         m.weight = string2double(i);
@@ -628,7 +638,7 @@ void MachineDB::parseCSVOld(std::string filename) {
                     break;
                 case 8:
                     if (i.length() == 0) {
-                        m_logger.printOut(LogLevel::WARNING, __FUNCTION__, "Machine #" + std::to_string(machineNr) + ": entry 'bunker volume' is empty!");
+                        logger().printOut(LogLevel::WARNING, __FUNCTION__, "Machine #" + std::to_string(machineNr) + ": entry 'bunker volume' is empty!");
                         m.bunker_mass = 0;
                     } else {
                         m.bunker_mass = string2double(i);
@@ -636,7 +646,7 @@ void MachineDB::parseCSVOld(std::string filename) {
                     break;
                 case 9:
                     if (i.length() == 0) {
-                        m_logger.printOut(LogLevel::WARNING, __FUNCTION__, "Machine #" + std::to_string(machineNr) + ": entry 'working width' is empty!");
+                        logger().printOut(LogLevel::WARNING, __FUNCTION__, "Machine #" + std::to_string(machineNr) + ": entry 'working width' is empty!");
                         m.working_width = 0;
                     } else {
                         m.working_width = string2double(i);
@@ -644,7 +654,7 @@ void MachineDB::parseCSVOld(std::string filename) {
                     break;
                 case 10:
                     if (i.length() == 0) {
-                        m_logger.printOut(LogLevel::WARNING, __FUNCTION__, "Machine #" + std::to_string(machineNr) + ": entry 'working speed' is empty!");
+                        logger().printOut(LogLevel::WARNING, __FUNCTION__, "Machine #" + std::to_string(machineNr) + ": entry 'working speed' is empty!");
                         m.def_working_speed = 0;
                     } else {
                         m.def_working_speed = string2double(i);
@@ -652,7 +662,7 @@ void MachineDB::parseCSVOld(std::string filename) {
                     break;
                 case 11:
                     if (i.length() == 0) {
-                        m_logger.printOut(LogLevel::WARNING, __FUNCTION__, "Machine #" + std::to_string(machineNr) + ": entry 'max speed' is empty!");
+                        logger().printOut(LogLevel::WARNING, __FUNCTION__, "Machine #" + std::to_string(machineNr) + ": entry 'max speed' is empty!");
                         m.max_speed_empty = 0;
                         m.max_speed_full = 0;
                     } else {
@@ -664,7 +674,7 @@ void MachineDB::parseCSVOld(std::string filename) {
                     break;
                 }
             } catch (std::invalid_argument) {
-                m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Invalid argument");
+                logger().printOut(LogLevel::ERROR, __FUNCTION__, "Invalid argument");
                 return;
             }
 
@@ -675,7 +685,7 @@ void MachineDB::parseCSVOld(std::string filename) {
         if(it1 != m_machineDB.end()){
             auto it2 = it1->second.find(m.model);
             if(it2 != it1->second.end()){
-                m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Machine #" + std::to_string(machineNr)
+                logger().printOut(LogLevel::ERROR, __FUNCTION__, "Machine #" + std::to_string(machineNr)
                          + ": a machine from manufacturer '" + m.manufacturer + "' and model '" + m.model + "' already exists in the DB. The new entry will be disregarded");
                 continue;
             }
@@ -688,7 +698,7 @@ void MachineDB::parseCSVOld(std::string filename) {
         for(auto it : m_machineDB){
             machineCount += it.second.size();
         }
-        m_logger.printOut(LogLevel::INFO, __FUNCTION__, std::to_string(machineCount) + " machines read from file.");
+        logger().printOut(LogLevel::INFO, __FUNCTION__, std::to_string(machineCount) + " machines read from file.");
     }
 }
 

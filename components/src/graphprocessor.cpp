@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,35 @@
 
 namespace arolib {
 
+bool GraphProcessor::Settings::parseFromStringMap(Settings &params, const std::map<std::string, std::string> &map, bool strict)
+{
+    GraphProcessor::Settings tmp;
+
+    std::map<std::string, double*> dMap = { {"workingWidth" , &tmp.workingWidth},
+                                            {"workingWidthHL" , &tmp.workingWidthHL} };
+    std::map<std::string, bool*> bMap = { {"bePreciseWithMaps" , &tmp.bePreciseWithMaps},
+                                            {"incVisitPeriods" , &tmp.incVisitPeriods} };
+
+    if( !setValuesFromStringMap( map, dMap, strict)
+            || !setValuesFromStringMap( map, bMap, strict) )
+        return false;
+
+    params = tmp;
+    return true;
+}
+
+std::map<std::string, std::string> GraphProcessor::Settings::parseToStringMap(const Settings &params)
+{
+    std::map<std::string, std::string> ret;
+
+    ret["workingWidth"] = double2string( params.workingWidth );
+    ret["workingWidthHL"] = double2string( params.workingWidthHL );
+    ret["bePreciseWithMaps"] = std::to_string( params.bePreciseWithMaps );
+    ret["incVisitPeriods"] = std::to_string( params.incVisitPeriods );
+
+    return ret;
+}
+
 GraphProcessor::GraphProcessor(const LogLevel &logLevel):
     LoggingComponent(logLevel, __FUNCTION__)
 {
@@ -32,21 +61,23 @@ AroResp GraphProcessor::createGraph(const Subfield &subfield, const std::vector<
     try {
 
         if (subfield.resource_points.empty()) {
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "No ressource points given." );
-            return AroResp(1, "No resource points given." );
+//            logger().printOut(LogLevel::ERROR, __FUNCTION__, "No ressource points given." );
+//            return AroResp(1, "No resource points given." );
+
+            logger().printOut(LogLevel::WARNING, __FUNCTION__, "No ressource points given." );
         }
 
         for(auto &rp : subfield.resource_points){
             if( outFieldInfo.mapUnloadingCosts().find(OutFieldInfo::AllResourcePoints) == outFieldInfo.mapUnloadingCosts().end() ){
                 OutFieldInfo::UnloadingCosts uc( rp.defaultUnloadingTime, rp.defaultUnloadingTimePerKg );
                 if( outFieldInfo.addDefaultUnloadingCosts(rp.id, uc, false) )
-                    m_logger.printOut(LogLevel::INFO, __FUNCTION__, "Adding default unloading costs for all machines for resource point " + std::to_string(rp.id) );
+                    logger().printOut(LogLevel::INFO, __FUNCTION__, "Adding default unloading costs for all machines for resource point " + std::to_string(rp.id) );
             }
         }
 
-        m_logger.printOut(LogLevel::INFO, __FUNCTION__, "Building the graph...");
-        DirectedGraph::GraphBuilder_TracksBased graphBuilder(m_logger.logLevel());
-        graphBuilder.logger().setParent(&m_logger);
+        logger().printOut(LogLevel::INFO, __FUNCTION__, "Building the graph...");
+        DirectedGraph::GraphBuilder_TracksBased graphBuilder(logger().logLevel());
+        graphBuilder.logger().setParent(loggerPtr());
         graph = graphBuilder.buildGraph(subfield,
                                         baseRoutes,
                                         subfield.resource_points,
@@ -59,153 +90,14 @@ AroResp GraphProcessor::createGraph(const Subfield &subfield, const std::vector<
                                         settings.incVisitPeriods,
                                         m_filename_graphBuilding);
 
-        m_logger.printOut(LogLevel::INFO, __FUNCTION__, "Graph created!");
+        logger().printOut(LogLevel::INFO, __FUNCTION__, "Graph created!");
         return AroResp(0, "OK" );
 
     }
     catch (std::exception &e) {
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, std::string("Exception cought: ") + e.what() );
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, std::string("Exception cought: ") + e.what() );
         return AroResp(1, "Exception cought: ", e.what() );
     }
-
-}
-
-AroResp GraphProcessor::createGraph(PlanningWorkspace &pw, size_t subfieldIdx, const Settings& settings, DirectedGraph::Graph &graph)
-{
-    if(subfieldIdx >= getField(pw).subfields.size()){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Invalid subfield index");
-        return AroResp(1, "Invalid subfield index");
-    }
-    const auto &subfield = getField(pw).subfields.at(subfieldIdx);
-    const auto &machines = getMachines(pw);
-    const auto &baseRoutes = getConnectedBaseRoutes(pw)[subfieldIdx];
-    auto &outFieldInfo = getOutFieldInfo(pw);
-    const auto &machineCurrentStates = getMachineCurrentStates(pw);
-
-    m_planningWorkspace = &pw;
-    m_pw_subfieldIdx = subfieldIdx;
-
-    auto ret = createGraph(subfield,
-                           baseRoutes,
-                           machines,
-                           settings,
-                           outFieldInfo,
-                           machineCurrentStates,
-                           graph);
-
-    m_planningWorkspace = nullptr;
-
-    return ret;
-
-}
-
-AroResp GraphProcessor::createGraph_old(const Subfield& subfield,
-                                          const std::vector<arolib::HeadlandRoute> &baseRoutes_headland,
-                                          const std::vector<arolib::Route> &baseRoutes_infield,
-                                          const std::vector<arolib::Machine>& machines,
-                                          const Settings &settings,
-                                          OutFieldInfo &outFieldInfo,
-                                          const std::map<MachineId_t, arolib::MachineDynamicInfo>& machineCurrentStates,
-                                          DirectedGraph::Graph& graph )
-{
-    AroResp compResp;
-
-    LoggingComponent::LoggersHandler lh(true);//will be reset on destruction
-    LoggingComponent::setTemporalLoggersParent(lh, *this, graph);
-
-    try {
-
-        if (subfield.resource_points.empty()) {
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "No ressource points given." );
-            return AroResp(1, "No resource points given." );
-        }
-        if (baseRoutes_infield.empty() && baseRoutes_headland.empty()) {
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Routes missing, needed by the planner" );
-            return AroResp(1, "Routes missing, needed by the planner" );
-        }
-
-        for(auto &rp : subfield.resource_points){
-            if( outFieldInfo.mapUnloadingCosts().find(OutFieldInfo::AllResourcePoints) == outFieldInfo.mapUnloadingCosts().end() ){
-                OutFieldInfo::UnloadingCosts uc( rp.defaultUnloadingTime, rp.defaultUnloadingTimePerKg );
-                if( outFieldInfo.addDefaultUnloadingCosts(rp.id, uc, false) )
-                    m_logger.printOut(LogLevel::INFO, __FUNCTION__, "Adding default unloading costs for all machines for resource point " + std::to_string(rp.id) );
-            }
-        }
-
-        m_logger.printOut(LogLevel::INFO, __FUNCTION__, "Building the graph...");
-        DirectedGraph::GraphBuilder_RoutesBased graphBuilder(settings.bePreciseWithMaps, m_logger.logLevel());
-        graphBuilder.logger().setParent(&m_logger);
-        graphBuilder.setOutputFile(m_filename_graphBuilding);
-
-        if(m_planningWorkspace){
-            if(m_pw_subfieldIdx >= getField(*m_planningWorkspace).subfields.size())
-                throw std::invalid_argument( std::string(__FUNCTION__) + ": Invalid subfield index" );
-
-            graph = graphBuilder.buildGraph(*m_planningWorkspace,
-                                             m_pw_subfieldIdx,
-                                             baseRoutes_infield,
-                                             baseRoutes_headland,
-                                             outFieldInfo,
-                                             settings.workingWidth,
-                                             settings.workingWidthHL,
-                                             settings.incVisitPeriods,
-                                             getField(*m_planningWorkspace).subfields.at(m_pw_subfieldIdx).boundary_outer);
-        }
-        else{
-            graph = graphBuilder.buildGraph(subfield,
-                                             baseRoutes_infield,
-                                             baseRoutes_headland,
-                                             subfield.resource_points,
-                                             subfield.access_points,
-                                             outFieldInfo,
-                                             machines,
-                                             machineCurrentStates,
-                                             settings.workingWidth,
-                                             settings.workingWidthHL,
-                                             settings.incVisitPeriods,
-                                             subfield.boundary_outer);
-        }
-
-        m_logger.printOut(LogLevel::INFO, __FUNCTION__, "Graph created!");
-        return AroResp(0, "OK" );
-
-    }
-    catch (std::exception &e) {
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, std::string("Exception cought: ") + e.what() );
-        return AroResp(1, "Exception cought: ", e.what() );
-    }
-
-
-}
-
-AroResp GraphProcessor::createGraph_old(PlanningWorkspace &pw, size_t subfieldIdx, const Settings& settings, DirectedGraph::Graph &graph)
-{
-    if(subfieldIdx >= getField(pw).subfields.size()){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Invalid subfield index");
-        return AroResp(1, "Invalid subfield index");
-    }
-    const auto &subfield = getField(pw).subfields.at(subfieldIdx);
-    const auto &machines = getMachines(pw);
-    const auto &baseRoutes_headland = getBaseRoutesProcessed_headland(pw)[subfieldIdx];
-    const auto &baseRoutes_infield = getBaseRoutesProcessed_infield(pw)[subfieldIdx];
-    auto &outFieldInfo = getOutFieldInfo(pw);
-    const auto &machineCurrentStates = getMachineCurrentStates(pw);
-
-    m_planningWorkspace = &pw;
-    m_pw_subfieldIdx = subfieldIdx;
-
-    auto ret = createGraph_old(subfield,
-                           baseRoutes_headland,
-                           baseRoutes_infield,
-                           machines,
-                           settings,
-                           outFieldInfo,
-                           machineCurrentStates,
-                           graph);
-
-    m_planningWorkspace = nullptr;
-
-    return ret;
 
 }
 
@@ -217,55 +109,37 @@ AroResp GraphProcessor::createSimpleGraph(const Subfield &subfield,
                                           const ArolibGrid_t &remainingAreaMap,
                                           DirectedGraph::Graph &graph)
 {
-    std::vector<arolib::HeadlandRoute> headlandRoute(1);
-    std::vector<arolib::Route> infieldRoute(1);
-    AroResp resp = generatePseudoRoutes(subfield,
-                                        settings,
-                                        remainingAreaMap,
-                                        headlandRoute.back(),
-                                        infieldRoute.back());
+    AroResp resp = createGraph(subfield,
+                               {},
+                               machines,
+                               settings,
+                               outFieldInfo,
+                               machineCurrentStates,
+                               graph);
     if(resp.isError())
         return resp;
 
-    return createGraph_old(subfield,
-                       headlandRoute,
-                       infieldRoute,
-                       machines,
-                       settings,
-                       outFieldInfo,
-                       machineCurrentStates,
-                       graph);
+    if(!remainingAreaMap.isAllocated())
+        return AroResp::ok();
+
+    const double remainingAreaThreshold = 0.5;
+    for(auto vt_it = boost::vertices(graph); vt_it.first != vt_it.second; vt_it.first++){
+        RoutePoint& rp = graph[*vt_it.first].route_point;
+        if(rp.track_id >= 0) {
+            bool errorTmp = true;
+            double remainingArea = 0;
+            if(remainingAreaMap.hasValue(rp))
+                remainingArea = remainingAreaMap.getValue(rp, &errorTmp);
+
+            if (errorTmp || remainingArea > remainingAreaThreshold){
+                rp.time_stamp = std::numeric_limits<double>::max() - 10;
+                rp.type = RoutePoint::DEFAULT;
+            }
+        }
+    }
+
 
     return AroResp::ok();
-}
-
-AroResp GraphProcessor::createSimpleGraph(PlanningWorkspace &pw, size_t subfieldIdx, const GraphProcessor::Settings &settings, DirectedGraph::Graph &graph)
-{
-    if(subfieldIdx >= getField(pw).subfields.size()){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Invalid subfield index");
-        return AroResp(1, "Invalid subfield index");
-    }
-    const auto &subfield = getField(pw).subfields.at(subfieldIdx);
-    const auto &machines = getMachines(pw);
-    const auto &remainingAreaMap = getMaps(pw).at( PlanningWorkspace::GridType::REMAINING_AREA );
-    auto &outFieldInfo = getOutFieldInfo(pw);
-    const auto &machineCurrentStates = getMachineCurrentStates(pw);
-
-    m_planningWorkspace = &pw;
-    m_pw_subfieldIdx = subfieldIdx;
-
-    auto ret = createSimpleGraph(subfield,
-                                 machines,
-                                 settings,
-                                 outFieldInfo,
-                                 machineCurrentStates,
-                                 remainingAreaMap,
-                                 graph);
-
-    m_planningWorkspace = nullptr;
-
-    return ret;
-
 }
 
 AroResp GraphProcessor::addInitialPositons(DirectedGraph::Graph &graph, const Subfield &subfield, const std::vector<Machine> &machines,
@@ -291,6 +165,116 @@ void GraphProcessor::setOutputFiles(const std::string &filename_graphBuilding)
     m_filename_graphBuilding = filename_graphBuilding;
 }
 
+AroResp GraphProcessor::addBaseRouteInformationToGraph(DirectedGraph::Graph &graph, const std::vector<Machine> &machines, const std::vector<Route> &baseWorkingRoutes, bool includeVisitPeriods) const
+{
+    LoggingComponent::LoggersHandler lh(true);//will be reset on destruction
+    LoggingComponent::setTemporalLoggersParent(lh, *this, graph);
+
+    try {
+
+        logger().printOut(LogLevel::INFO, __FUNCTION__, "Editing the graph...");
+        DirectedGraph::GraphBuilder_TracksBased graphBuilder(logger().logLevel());
+        graphBuilder.logger().setParent(loggerPtr());
+        auto aroResp = graphBuilder.addBaseRouteInformationToGraph(graph,
+                                                                   machines,
+                                                                   baseWorkingRoutes,
+                                                                   includeVisitPeriods);
+        if(aroResp.isError())
+            return AroResp::LoggingResp(1, "Error adding information to graph: " + aroResp.msg, logger(), LogLevel::ERROR, __FUNCTION__);
+
+        logger().printOut(LogLevel::INFO, __FUNCTION__, "Graph edited!");
+        return AroResp(0, "OK" );
+
+    }
+    catch (std::exception &e) {
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, std::string("Exception cought: ") + e.what() );
+        return AroResp(1, "Exception cought: ", e.what() );
+    }
+
+}
+
+AroResp GraphProcessor::resetVertexTimestampsFromWorkedArea(DirectedGraph::Graph &graph, std::shared_ptr<const ArolibGrid_t> remainingAreaMap, bool resetIfWorked, std::shared_ptr<gridmap::GridCellsInfoManager> cim) const
+{
+    static const std::string RemainingAreaMapName = "RAM";
+    static const double ThresholdIsWorked = 0.5;
+
+    if(!remainingAreaMap || !remainingAreaMap->isAllocated()){
+        logger().printWarning(__FUNCTION__, "Remaining-area map is not valid");
+        return AroResp(0, "OK" );
+    }
+
+    gridmap::SharedGridsManager gm;
+    gm.setCellsInfoManager(cim);
+    gm.addGrid(RemainingAreaMapName, remainingAreaMap);
+
+    auto isSegmentWorked = [&gm](const Point &p0, const Point &p1, double width)->bool{
+        bool errorTmp = true;
+        double value = 1;
+        double area = arolib::geometry::calc_dist(p0, p1) * width;
+
+        if( area > 1e-9 ){
+            std::vector<gridmap::GridmapLayout::GridCellOverlap> cellsInfo;
+            gm.getCellsInfoUnderLine(RemainingAreaMapName, p0, p1, width, gridmap::SharedGridsManager::PRECISE_ONLY_IF_AVAILABLE, cellsInfo);
+
+            if(!cellsInfo.empty())
+                value = gm.getGrid(RemainingAreaMapName)->getCellsComputedValue( cellsInfo,
+                                                                                 ArolibGrid_t::AVERAGE_TOTAL,
+                                                                                 area,
+                                                                                 false,
+                                                                                 &errorTmp );
+        }
+        else{
+            arolib::Point p0_1;
+            p0_1.x = 0.5*( p0.x + p1.x );
+            p0_1.y = 0.5*( p0.y + p1.y );
+            if(gm.getGrid(RemainingAreaMapName)->hasValue(p0_1))
+                value = gm.getGrid(RemainingAreaMapName)->getValue(p0_1, &errorTmp);
+        }
+
+        return (!errorTmp && value < ThresholdIsWorked);
+    };
+
+    for(auto it_vt : graph.routepoint_vertex_map()){
+        auto vt = it_vt.second;
+
+        DirectedGraph::vertex_property& vt_prop = graph[vt];
+        if(vt_prop.route_point.time_stamp < 1e-9)
+            continue;
+
+        std::unordered_map<DirectedGraph::vertex_t, double> adjVts;
+        for( auto _edges = boost::in_edges(vt, graph) ; _edges.first != _edges.second ; _edges.first++){
+            DirectedGraph::edge_property ep = graph[*_edges.first];
+            adjVts[ source(*_edges.first, graph) ] = ep.defWidth;
+        }
+        for( auto _edges = boost::out_edges(vt, graph) ; _edges.first != _edges.second ; _edges.first++){
+            DirectedGraph::edge_property ep = graph[*_edges.first];
+            adjVts[ target(*_edges.first, graph) ] = ep.defWidth;
+        }
+
+        if(adjVts.empty())
+            continue;
+
+        Point p1 = vt_prop.route_point.point();
+        bool reset = true;
+        for(auto it_vt2 : adjVts){
+            DirectedGraph::vertex_t vt_adj = it_vt2.first;
+            auto width = it_vt2.second;
+            const DirectedGraph::vertex_property& vt_prop_adj = graph[vt_adj];
+            Point p2 = vt_prop_adj.route_point.point();
+            p2 = geometry::getCentroid(p1, p2);
+            bool worked = isSegmentWorked(p1, p2, width);
+            if(worked != resetIfWorked){
+                reset = false;
+                break;
+            }
+        }
+        if(reset)
+            vt_prop.route_point.time_stamp = -1;
+    }
+
+    return AroResp(0, "OK" );
+}
+
 bool GraphProcessor::addEdge(DirectedGraph::Graph &graph,
                              DirectedGraph::EdgeType edgeType,
                              const DirectedGraph::vertex_t &vt1, const DirectedGraph::vertex_t &vt2,
@@ -307,87 +291,6 @@ bool GraphProcessor::addEdge(DirectedGraph::Graph &graph,
     edge_prop.edge_type = edgeType;
 
     return graph.addEdge(vt1, vt2, edge_prop, bidirectional, onlyIfNotExisting, overwrite);
-}
-
-AroResp GraphProcessor::generatePseudoRoutes(const Subfield &subfield, const Settings &settings, const ArolibGrid_t &remainingAreaMap, HeadlandRoute &headlandRoute, Route &infieldRoute) const
-{
-    const double remainingAreaThreshold = 0.5;
-    headlandRoute.route_points.clear();
-    infieldRoute.route_points.clear();
-
-    if( subfield.tracks.empty() && subfield.headlands.complete.tracks.empty() )
-        return AroResp( 1, "No valid tracks to generate pseudo routes" );
-
-    for(auto& track : subfield.headlands.complete.tracks){
-        auto& route = headlandRoute;
-        if(track.points.size() < 2)
-            continue;
-        for(size_t i = 0 ; i < track.points.size() ; ++i){
-            auto& p = track.points.at(i);
-            route.route_points.push_back(RoutePoint());
-            RoutePoint& rp = route.route_points.back();
-            rp.point() = p;
-            rp.track_id = track.id;
-            rp.time_stamp = -1;
-            if(remainingAreaMap.isAllocated()){
-                bool errorTmp;
-                double remainingArea = remainingAreaMap.getValue(p, &errorTmp);
-
-                if (errorTmp || remainingArea > remainingAreaThreshold)
-                    rp.time_stamp = std::numeric_limits<double>::max() - 10;
-            }
-            if(i == 0)
-                rp.type = RoutePoint::TRACK_START;
-            else if(i+1 == track.points.size())
-                rp.type = RoutePoint::TRACK_END;
-            else
-                rp.type = RoutePoint::HARVESTING;
-        }
-    }
-
-    for(auto& track : subfield.tracks){
-        auto& route = infieldRoute;
-        if(track.points.size() < 2)
-            continue;
-        for(size_t i = 0 ; i < track.points.size() ; ++i){
-            auto& p = track.points.at(i);
-
-            if(i==0 && !route.route_points.empty()){//add a pseudo HL point to avoid connection with previout (track end) point
-                Point p2 = track.points.at(i+1);
-                p2 = arolib::geometry::extend_line( p2, p, arolib::geometry::calc_dist(p, p2) );
-                route.route_points.push_back(RoutePoint());
-                RoutePoint& rp2 = route.route_points.back();
-                rp2.point() = p2;
-                rp2.track_id = -1;
-                rp2.time_stamp = -1;
-                rp2.type = RoutePoint::HEADLAND;
-            }
-
-            route.route_points.push_back(RoutePoint());
-            RoutePoint& rp = route.route_points.back();
-            rp.point() = p;
-            rp.track_id = track.id;
-            rp.time_stamp = -1;
-            if(remainingAreaMap.isAllocated()){
-                bool errorTmp;
-                double remainingArea = remainingAreaMap.getValue(p, &errorTmp);
-
-                if (errorTmp || remainingArea > remainingAreaThreshold)
-                    rp.time_stamp = std::numeric_limits<double>::max() - 10;
-            }
-            if(i == 0)
-                rp.type = RoutePoint::TRACK_START;
-            else if(i+1 == track.points.size())
-                rp.type = RoutePoint::TRACK_END;
-            else
-                rp.type = RoutePoint::HARVESTING;
-        }
-    }
-
-    if( headlandRoute.route_points.empty() && infieldRoute.route_points.empty() )
-        return AroResp( 1, "No valid tracks to generate pseudo routes" );
-
-    return AroResp::ok();
 }
 
 }

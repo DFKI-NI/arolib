@@ -1,5 +1,7 @@
 #!/bin/bash
 
+# Probably no longer required, the main Makefile doesn't source this file anymore
+
 if [ "$AROLIB_AROLIB_ENV_SET" != "TRUE" ]; then
 	echo "Setting AroLib - arolib env variables.."
 

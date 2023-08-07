@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -121,7 +121,7 @@ public:
      * @param _logger Logger
      * @return True on success
      */
-    static bool getBranchHandler(const ReadHandler& base, const std::string& name, ReadHandler & branch, Logger *_logger = nullptr);
+    static bool getBranchHandler(const ReadHandler& base, const std::string& name, ReadHandler & branch, std::shared_ptr<Logger> _logger = nullptr);
 
     /**
      * @brief Get a (sub) branch ReadHandler with a given sequence of tags from the branch coresponding to a ReadHandler.
@@ -132,7 +132,7 @@ public:
      * @param _logger Logger
      * @return True on success
      */
-    static bool getBranchHandler(const ReadHandler& base, const std::vector< std::string >& tags, ReadHandler & branch, Logger *_logger = nullptr);
+    static bool getBranchHandler(const ReadHandler& base, const std::vector< std::string >& tags, ReadHandler & branch, std::shared_ptr<Logger> _logger = nullptr);
 
     /**
      * @brief Get a (sub) branch ReadHandler with a given name from the base/root branch of the document.
@@ -169,7 +169,7 @@ public:
                                        const std::string& tag,
                                        const std::function<bool(const ReadHandler&)> funct,
                                        const std::vector<std::string>& parentTags = {},
-                                       Logger *_logger = nullptr);
+                                       std::shared_ptr<Logger> _logger = nullptr);
 
 
     /**

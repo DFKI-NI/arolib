@@ -28,8 +28,7 @@ add_library(${AROLIB_LIB_NAME} SHARED
     include/arolib/io/arokmloutdocument.hpp
 )
 
-#set_property(TARGET ${AROLIB_LIB_PREFIX}io PROPERTY CXX_STANDARD 11)  # 98, 11 or 14
-#set_property(TARGET ${AROLIB_LIB_PREFIX}io PROPERTY CXX_STANDARD_REQUIRED ON)
+#set_target_properties(${AROLIB_LIB_NAME} PROPERTIES DEBUG_POSTFIX ${CMAKE_DEBUG_POSTFIX})
 
 target_include_directories(${AROLIB_LIB_NAME}
   PUBLIC
@@ -39,8 +38,10 @@ target_include_directories(${AROLIB_LIB_NAME}
 )
 
 target_link_libraries(${AROLIB_LIB_NAME}
-    INTERFACE
+    PUBLIC
         ${Boost_LIBRARIES}
+        ${HDF5_LIBRARIES}
+        ${HDF5_HL_LIBRARIES}
         ${AROLIB_LIB_PREFIX}${AROLIB_LIB_TYPES}
         ${AROLIB_LIB_PREFIX}${AROLIB_LIB_GEOMETRY}
         ${AROLIB_LIB_PREFIX}${AROLIB_LIB_PLANNING}

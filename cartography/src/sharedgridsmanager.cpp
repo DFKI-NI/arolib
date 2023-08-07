@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,23 +20,17 @@
 namespace arolib {
 namespace gridmap{
 
-std::set<int> SharedGridsManager::m_ids;
-
 SharedGridsManager::SharedGridsManager(const LogLevel &logLevel):
     LoggingComponent(logLevel, __FUNCTION__)
 {
-    do{
-        m_id = gen_random_int(0, 1000);
-    }while( m_ids.find(m_id) != m_ids.end() );
-
-    m_ids.insert(m_id);
+    static int _id = 0;
+    m_id = _id++;
     m_prefix = "sgm_" + std::to_string(m_id) + "__";
 }
 
 SharedGridsManager::~SharedGridsManager()
 {
     removeGridsFromCIM();
-    m_ids.erase(m_id);
 }
 
 bool SharedGridsManager::setCellsInfoManager(std::shared_ptr<gridmap::GridCellsInfoManager> cim, bool removeGrids)

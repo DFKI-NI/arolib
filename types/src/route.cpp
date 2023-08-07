@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -103,8 +103,8 @@ RoutePoint Route::calcPoint(const std::vector<RoutePoint> &route_points, double 
     ret.time_stamp = time;
     ret.x = (1 - a) * rp1.x + a * rp2.x;
     ret.y = (1 - a) * rp1.y + a * rp2.y;
-    ret.harvested_mass = (1 - a) * rp1.harvested_mass + a * rp2.harvested_mass;
-    ret.harvested_volume = (1 - a) * rp1.harvested_volume + a * rp2.harvested_volume;
+    ret.worked_mass = (1 - a) * rp1.worked_mass + a * rp2.worked_mass;
+    ret.worked_volume = (1 - a) * rp1.worked_volume + a * rp2.worked_volume;
     ret.bunker_mass = (1 - a) * rp1.bunker_mass + a * rp2.bunker_mass;
     ret.bunker_volume = (1 - a) * rp1.bunker_volume + a * rp2.bunker_volume;
     ret.type = getIntermediateRPType(rp1, rp2, RoutePoint::DEFAULT, &ret.point());
@@ -186,8 +186,8 @@ RoutePoint Route::calcPoint2(const std::vector<RoutePoint> &route_points, double
     double a = dTime1 / dTime2;
     ret.x = (1 - a) * rp1.x + a * rp2.x;
     ret.y = (1 - a) * rp1.y + a * rp2.y;
-    ret.harvested_mass = (1 - a) * rp1.harvested_mass + a * rp2.harvested_mass;
-    ret.harvested_volume = (1 - a) * rp1.harvested_volume + a * rp2.harvested_volume;
+    ret.worked_mass = (1 - a) * rp1.worked_mass + a * rp2.worked_mass;
+    ret.worked_volume = (1 - a) * rp1.worked_volume + a * rp2.worked_volume;
     ret.bunker_mass = (1 - a) * rp1.bunker_mass + a * rp2.bunker_mass;
     ret.bunker_volume = (1 - a) * rp1.bunker_volume + a * rp2.bunker_volume;
     ret.type = getIntermediateRPType(rp1, rp2, RoutePoint::DEFAULT, &ret.point());

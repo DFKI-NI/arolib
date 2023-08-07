@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,7 +35,7 @@ AroResp GeneralRoutePlanner::planRouteToPointInSubfield(DirectedGraph::Graph &gr
                                                         PlanGeneralInfo *pPlanInfo)
 {
     if(!edgeCostCalculator){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Invalid edgeCostCalculator." );
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Invalid edgeCostCalculator." );
         return AroResp(1, "Invalid edgeCostCalculator." );
     }
 
@@ -43,7 +43,7 @@ AroResp GeneralRoutePlanner::planRouteToPointInSubfield(DirectedGraph::Graph &gr
 
     auto it_mdi = machineCurrentStates.find(machine.id);
     if(it_mdi == machineCurrentStates.end()){
-        m_logger.printError(__FUNCTION__, "No current state found for machine with id " + std::to_string(machine.id));
+        logger().printError(__FUNCTION__, "No current state found for machine with id " + std::to_string(machine.id));
         return AroResp(1, "No current state found for machine with id " + std::to_string(machine.id));
     }
 
@@ -53,7 +53,7 @@ AroResp GeneralRoutePlanner::planRouteToPointInSubfield(DirectedGraph::Graph &gr
     auto it_initP = graph.initialpoint_vertex_map().find(machine.id);
 
     if(it_initP == graph.initialpoint_vertex_map().end()){
-        m_logger.printError(__FUNCTION__, "No initial vertex found in graph for machine with id " + std::to_string(machine.id));
+        logger().printError(__FUNCTION__, "No initial vertex found in graph for machine with id " + std::to_string(machine.id));
         return AroResp(1, "No initial vertex found in graph for machine with id " + std::to_string(machine.id));
     }
 
@@ -64,16 +64,21 @@ AroResp GeneralRoutePlanner::planRouteToPointInSubfield(DirectedGraph::Graph &gr
     astarParams.start_vt = it_initP->second;
     astarParams.goal_vt = goal_vt;
     astarParams.start_time = 0;
-    astarParams.max_time_visit = planParameters.max_time_visit;
-    astarParams.max_time_goal = planParameters.max_time_goal;
     astarParams.machine = machine;
     astarParams.machine_speed = machine.calcSpeed( mdi.bunkerMass );
     astarParams.initial_bunker_mass = mdi.bunkerMass;
-    astarParams.overload = false;
     astarParams.includeWaitInCost = false;
-    astarParams.exclude = planParameters.exclude;
-    astarParams.restrictedMachineIds = planParameters.restrictedMachineIds;
-    astarParams.restrictedMachineIds_futureVisits = {};//@todo check
+
+    //successor checkers
+    if(!planParameters.restrictedMachineIds.empty() && !std::isnan(planParameters.max_time_visit))
+        astarParams.successorCheckers.emplace_back( std::make_shared<AstarSuccessorChecker_SuccessorTimestamp>(planParameters.max_time_visit,
+                                                                                                               AstarSuccessorChecker_SuccessorTimestamp::INVALID_IF_LOWER_THAN_SUCC_TIMESPAMP,
+                                                                                                               planParameters.restrictedMachineIds) );
+    if(!std::isnan(planParameters.max_time_goal) )
+        astarParams.successorCheckers.emplace_back( std::make_shared<AstarSuccessorChecker_GoalMaxTime>(planParameters.max_time_goal) );
+    if(!planParameters.exclude.empty())
+        astarParams.successorCheckers.emplace_back( std::make_shared<AstarSuccessorChecker_VertexExcludeSet_Exceptions1>(planParameters.exclude) );
+    //@todo check if a FutureVisits checker is needed
 
     std::string foldername_planData = m_foldername_planData;
     if(!foldername_planData.empty()){
@@ -86,10 +91,10 @@ AroResp GeneralRoutePlanner::planRouteToPointInSubfield(DirectedGraph::Graph &gr
                 planParameters,
                 RoutePoint::TRANSIT,
                 foldername_planData,
-                &m_logger);
+                loggerPtr());
 
     if( !aStar.plan(graph, edgeCostCalculator) ){
-        m_logger.printOut(LogLevel::DEBUG, __FUNCTION__, "Error planning to vertex " + std::to_string(goal_vt));
+        logger().printOut(LogLevel::DEBUG, __FUNCTION__, "Error planning to vertex " + std::to_string(goal_vt));
         return AroResp(1, "Error planning to vertex " + std::to_string(goal_vt));
     }
 
@@ -125,11 +130,11 @@ AroResp GeneralRoutePlanner::planRouteToPointInSubfield(DirectedGraph::Graph &gr
                                                         PlanGeneralInfo *pPlanInfo)
 {
     if(!edgeCostCalculator){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Invalid edgeCostCalculator." );
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Invalid edgeCostCalculator." );
         return AroResp(1, "Invalid edgeCostCalculator." );
     }
     if(subfieldIdx >= getField(pw).subfields.size()){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Invalid subfield index");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Invalid subfield index");
         return AroResp(1, "Invalid subfield index");
     }
     const auto &subfield = getField(pw).subfields.at(subfieldIdx);
@@ -146,7 +151,7 @@ AroResp GeneralRoutePlanner::planRouteToPointInSubfield(DirectedGraph::Graph &gr
         }
     }
     if(!machineFound){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Machine not found in working group");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Machine not found in working group");
         return AroResp(1, "Machine not found in working group");
     }
 
@@ -180,7 +185,7 @@ AroResp GeneralRoutePlanner::planRouteToPointInSubfield(DirectedGraph::Graph &gr
                                                         PlanGeneralInfo *pPlanInfo)
 {
     if(!edgeCostCalculator){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Invalid edgeCostCalculator." );
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Invalid edgeCostCalculator." );
         return AroResp(1, "Invalid edgeCostCalculator." );
     }
 
@@ -205,7 +210,7 @@ AroResp GeneralRoutePlanner::planRouteToPointInSubfield(DirectedGraph::Graph &gr
 
     auto vts = graph.getVerticesInRadius(goal, searchRadius, isVtValid);
     if(vts.empty()){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "No valid vertices found around the goal location withing a radius of " + std::to_string(searchRadius));
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "No valid vertices found around the goal location withing a radius of " + std::to_string(searchRadius));
         return AroResp(1, "No valid vertices found around the goal location withing a radius of " + std::to_string(searchRadius));
     }
 
@@ -237,11 +242,11 @@ AroResp GeneralRoutePlanner::planRouteToPointInSubfield(DirectedGraph::Graph &gr
         if(aroResp.isOK())
             return aroResp;
 
-        m_logger.printOut(LogLevel::WARNING, __FUNCTION__, "No plan found for goal vertex " + std::to_string(goal_vt) + ". Trying for next closest valid vertex if existent.");
+        logger().printOut(LogLevel::WARNING, __FUNCTION__, "No plan found for goal vertex " + std::to_string(goal_vt) + ". Trying for next closest valid vertex if existent.");
 
     }
 
-    m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "No plan found for any of the valid vertices withing a radius of " + std::to_string(searchRadius));
+    logger().printOut(LogLevel::ERROR, __FUNCTION__, "No plan found for any of the valid vertices withing a radius of " + std::to_string(searchRadius));
     return AroResp(1, "No plan found for any of the valid vertices withing a radius of " + std::to_string(searchRadius));
 }
 
@@ -257,11 +262,11 @@ AroResp GeneralRoutePlanner::planRouteToPointInSubfield(DirectedGraph::Graph &gr
                                                         PlanGeneralInfo *pPlanInfo)
 {
     if(!edgeCostCalculator){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Invalid edgeCostCalculator." );
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Invalid edgeCostCalculator." );
         return AroResp(1, "Invalid edgeCostCalculator." );
     }
     if(subfieldIdx >= getField(pw).subfields.size()){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Invalid subfield index");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Invalid subfield index");
         return AroResp(1, "Invalid subfield index");
     }
     const auto &subfield = getField(pw).subfields.at(subfieldIdx);
@@ -278,7 +283,7 @@ AroResp GeneralRoutePlanner::planRouteToPointInSubfield(DirectedGraph::Graph &gr
         }
     }
     if(!machineFound){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Machine not found in working group");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Machine not found in working group");
         return AroResp(1, "Machine not found in working group");
     }
 
@@ -312,7 +317,7 @@ AroResp GeneralRoutePlanner::planRouteToExitPoint(DirectedGraph::Graph &graph,
                                                   PlanGeneralInfo *pPlanInfo)
 {
     if(!edgeCostCalculator){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Invalid edgeCostCalculator." );
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Invalid edgeCostCalculator." );
         return AroResp(1, "Invalid edgeCostCalculator." );
     }
 
@@ -341,7 +346,7 @@ AroResp GeneralRoutePlanner::planRouteToExitPoint(DirectedGraph::Graph &graph,
             goalVts.emplace_back(it_vts.second);
     }
     if(goalVts.empty()){
-        m_logger.printError(__FUNCTION__, "No valid exit points found in graph");
+        logger().printError(__FUNCTION__, "No valid exit points found in graph");
         return AroResp(1, "No valid exit vertices found in graph");
     }
 
@@ -350,7 +355,7 @@ AroResp GeneralRoutePlanner::planRouteToExitPoint(DirectedGraph::Graph &graph,
         auto it_initP = graph.initialpoint_vertex_map().find(m.id);
 
         if(it_initP == graph.initialpoint_vertex_map().end()){
-            m_logger.printError(__FUNCTION__, "No initial vertex found in graph for machine with id " + std::to_string(m.id));
+            logger().printError(__FUNCTION__, "No initial vertex found in graph for machine with id " + std::to_string(m.id));
             return AroResp(1, "No initial vertex found in graph for machine with id " + std::to_string(m.id));
         }
 
@@ -364,17 +369,22 @@ AroResp GeneralRoutePlanner::planRouteToExitPoint(DirectedGraph::Graph &graph,
             Astar::PlanParameters astarParams;
             astarParams.start_vt = it_initP->second;
             astarParams.goal_vt = goal_vt;
-            astarParams.start_time = 0;
-            astarParams.max_time_visit = std::numeric_limits<double>::max(); //planParameters.max_time_visit;
-            astarParams.max_time_goal = planParameters.max_time_goal;
+            astarParams.start_time = mdi.timestamp;
             astarParams.machine = m;
             astarParams.machine_speed = m.calcSpeed( mdi.bunkerMass );
             astarParams.initial_bunker_mass = mdi.bunkerMass;
-            astarParams.overload = false;
             astarParams.includeWaitInCost = false;
-            astarParams.exclude = planParameters.exclude;
-            astarParams.restrictedMachineIds = planParameters.restrictedMachineIds;
-            astarParams.restrictedMachineIds_futureVisits = {};//@todo check
+
+
+//            if(!planParameters.restrictedMachineIds.empty() && !std::isnan(planParameters.max_time_visit))
+//                astarParams.sucessorCheckers.emplace_back( std::make_shared<AstarSuccessorChecker_SuccessorTimestamp>(planParameters.max_time_visit,
+//                                                                                                                      AstarSuccessorChecker_SuccessorTimestamp::INVALID_IF_HIGHER_THAT_SUCC_TIMESPAMP,
+//                                                                                                                      planParameters.restrictedMachineIds) );
+            if(!std::isnan(planParameters.max_time_goal) )
+                astarParams.successorCheckers.emplace_back( std::make_shared<AstarSuccessorChecker_GoalMaxTime>(planParameters.max_time_goal) );
+            if(!planParameters.exclude.empty())
+                astarParams.successorCheckers.emplace_back( std::make_shared<AstarSuccessorChecker_VertexExcludeSet_Exceptions1>(planParameters.exclude) );
+            //@todo check if a FutureVisits checker is needed
 
             std::string foldername_planData = m_foldername_planData;
             if(!foldername_planData.empty()){
@@ -387,10 +397,10 @@ AroResp GeneralRoutePlanner::planRouteToExitPoint(DirectedGraph::Graph &graph,
                         planParameters,
                         RoutePoint::TRANSIT,
                         foldername_planData,
-                        &m_logger);
+                        loggerPtr());
 
             if( !aStar.plan(graph, edgeCostCalculator) ){
-                m_logger.printOut(LogLevel::DEBUG, __FUNCTION__, "Error calling astar directly to access-point vertex " + std::to_string(goal_vt));
+                logger().printOut(LogLevel::DEBUG, __FUNCTION__, "Error calling astar directly to access-point vertex " + std::to_string(goal_vt));
                 continue;
             }
 
@@ -405,7 +415,7 @@ AroResp GeneralRoutePlanner::planRouteToExitPoint(DirectedGraph::Graph &graph,
 
         }
         if(!found_plan){
-            m_logger.printError(__FUNCTION__, "No plan to any of the resource points was found for machine with id " + std::to_string(m.id));
+            logger().printError(__FUNCTION__, "No plan to any of the resource points was found for machine with id " + std::to_string(m.id));
             return AroResp(1, "No plan to any of the resource points was found for machine with id " + std::to_string(m.id));
         }
 
@@ -447,11 +457,11 @@ AroResp GeneralRoutePlanner::planRouteToExitPoint(DirectedGraph::Graph &graph,
                                                   PlanGeneralInfo *pPlanInfo)
 {
     if(!edgeCostCalculator){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Invalid edgeCostCalculator." );
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Invalid edgeCostCalculator." );
         return AroResp(1, "Invalid edgeCostCalculator." );
     }
     if(subfieldIdx >= getField(pw).subfields.size()){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Invalid subfield index");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Invalid subfield index");
         return AroResp(1, "Invalid subfield index");
     }
     const auto &subfield = getField(pw).subfields.at(subfieldIdx);
@@ -492,7 +502,7 @@ AroResp GeneralRoutePlanner::planRouteToResourcePoint(DirectedGraph::Graph &grap
                                                       PlanGeneralInfo *pPlanInfo)
 {
     if(!edgeCostCalculator){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Invalid edgeCostCalculator." );
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Invalid edgeCostCalculator." );
         return AroResp(1, "Invalid edgeCostCalculator." );
     }
 
@@ -529,7 +539,7 @@ AroResp GeneralRoutePlanner::planRouteToResourcePoint(DirectedGraph::Graph &grap
             goalVts.emplace_back(it_vts.second);
     }
     if(goalVts.empty()){
-        m_logger.printError(__FUNCTION__, "No valid resource vertices found in graph");
+        logger().printError(__FUNCTION__, "No valid resource vertices found in graph");
         return AroResp(1, "No valid resource vertices found in graph");
     }
 
@@ -538,7 +548,7 @@ AroResp GeneralRoutePlanner::planRouteToResourcePoint(DirectedGraph::Graph &grap
         auto it_initP = graph.initialpoint_vertex_map().find(m.id);
 
         if(it_initP == graph.initialpoint_vertex_map().end()){
-            m_logger.printError(__FUNCTION__, "No initial vertex found in graph for machine with id " + std::to_string(m.id));
+            logger().printError(__FUNCTION__, "No initial vertex found in graph for machine with id " + std::to_string(m.id));
             return AroResp(1, "No initial vertex found in graph for machine with id " + std::to_string(m.id));
         }
 
@@ -552,17 +562,23 @@ AroResp GeneralRoutePlanner::planRouteToResourcePoint(DirectedGraph::Graph &grap
             Astar::PlanParameters astarParams;
             astarParams.start_vt = it_initP->second;
             astarParams.goal_vt = goal_vt;
-            astarParams.start_time = 0;
-            astarParams.max_time_visit = std::numeric_limits<double>::max(); //planParameters.max_time_visit;
-            astarParams.max_time_goal = planParameters.max_time_goal;
+            astarParams.start_time = mdi.timestamp;
             astarParams.machine = m;
             astarParams.machine_speed = m.calcSpeed( mdi.bunkerMass );
             astarParams.initial_bunker_mass = mdi.bunkerMass;
-            astarParams.overload = false;
             astarParams.includeWaitInCost = false;
-            astarParams.exclude = planParameters.exclude;
-            astarParams.restrictedMachineIds = planParameters.restrictedMachineIds;
-            astarParams.restrictedMachineIds_futureVisits = {};//@todo check
+
+
+            //successor checkers
+//            if(!planParameters.restrictedMachineIds.empty() && !std::isnan(planParameters.max_time_visit))
+//                astarParams.sucessorCheckers.emplace_back( std::make_shared<AstarSuccessorChecker_SuccessorTimestamp>(planParameters.max_time_visit,
+//                                                                                                                      AstarSuccessorChecker_SuccessorTimestamp::INVALID_IF_HIGHER_THAT_SUCC_TIMESPAMP,
+//                                                                                                                      planParameters.restrictedMachineIds) );
+            if(!std::isnan(planParameters.max_time_goal) )
+                astarParams.successorCheckers.emplace_back( std::make_shared<AstarSuccessorChecker_GoalMaxTime>(planParameters.max_time_goal) );
+            if(!planParameters.exclude.empty())
+                astarParams.successorCheckers.emplace_back( std::make_shared<AstarSuccessorChecker_VertexExcludeSet_Exceptions1>(planParameters.exclude) );
+            //@todo check if a FutureVisits checker is needed
 
             std::string foldername_planData = m_foldername_planData;
             if(!foldername_planData.empty()){
@@ -575,10 +591,10 @@ AroResp GeneralRoutePlanner::planRouteToResourcePoint(DirectedGraph::Graph &grap
                         planParameters,
                         RoutePoint::TRANSIT,
                         foldername_planData,
-                        &m_logger);
+                        loggerPtr());
 
             if( !aStar.plan(graph, edgeCostCalculator) ){
-                m_logger.printOut(LogLevel::DEBUG, __FUNCTION__, "Error calling astar directly to resource vertex " + std::to_string(goal_vt));
+                logger().printOut(LogLevel::DEBUG, __FUNCTION__, "Error calling astar directly to resource vertex " + std::to_string(goal_vt));
                 continue;
             }
 
@@ -593,7 +609,7 @@ AroResp GeneralRoutePlanner::planRouteToResourcePoint(DirectedGraph::Graph &grap
 
         }
         if(!found_plan){
-            m_logger.printError(__FUNCTION__, "No plan to any of the resource points was found for machine with id " + std::to_string(m.id));
+            logger().printError(__FUNCTION__, "No plan to any of the resource points was found for machine with id " + std::to_string(m.id));
             return AroResp(1, "No plan to any of the resource points was found for machine with id " + std::to_string(m.id));
         }
 
@@ -637,11 +653,11 @@ AroResp GeneralRoutePlanner::planRouteToResourcePoint(DirectedGraph::Graph &grap
                                                       PlanGeneralInfo *pPlanInfo)
 {
     if(!edgeCostCalculator){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Invalid edgeCostCalculator." );
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Invalid edgeCostCalculator." );
         return AroResp(1, "Invalid edgeCostCalculator." );
     }
     if(subfieldIdx >= getField(pw).subfields.size()){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Invalid subfield index");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Invalid subfield index");
         return AroResp(1, "Invalid subfield index");
     }
     const auto &subfield = getField(pw).subfields.at(subfieldIdx);

@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,9 +17,8 @@
 #ifndef AROLIB_COMPONENTPARAMETERSHELPER_H
 #define AROLIB_COMPONENTPARAMETERSHELPER_H
 
-#include "headlandplanner.h"
-#include "tracksgenerator.h"
-#include "baseroutesinfieldplanner.h"
+#include "fieldgeometryprocessor.h"
+#include "baseroutesplanner.h"
 #include "fieldprocessplanner.h"
 
 #include "arolib/io/io_common.hpp"
@@ -28,32 +27,32 @@ namespace arolib{
 
 /**
  * @brief Parse the components parameters into a string map
- * @param headlandPlannerParameters Parameters of the headland planner
- * @param tracksGeneratorParameters Parameters of the tracks generator
+ * @param fieldGeometryProcessorParameters_headland Headland parameters of the field geometry processor
+ * @param fieldGeometryProcessorParameters_infield Inner-field parameters of the field geometry processor
  * @param baseRoutesPlannerParameters Parameters of the base-routes planner
  * @param fieldProcessPlannerParameters  Parameters of the field-process  planner
  * @return String map containing the component parameters
  */
 std::map<std::string, std::map<std::string, std::string> >
-    getParametersAsMap(const HeadlandPlanner::PlannerParameters & headlandPlannerParameters,
-                        const TracksGenerator::TracksGeneratorParameters & tracksGeneratorParameters,
-                        const BaseRoutesInfieldPlanner::PlannerParameters & baseRoutesPlannerParameters,
-                        const FieldProcessPlanner::PlannerParameters & fieldProcessPlannerParameters );
+    getParametersAsMap(const FieldGeometryProcessor::HeadlandParameters & fieldGeometryProcessorParameters_headland,
+                       const FieldGeometryProcessor::InfieldParameters & fieldGeometryProcessorParameters_infield,
+                       const BaseRoutesPlanner::PlannerParameters & baseRoutesPlannerParameters,
+                       const FieldProcessPlanner::PlannerParameters & fieldProcessPlannerParameters );
 
 /**
  * @brief Updates the components parameters parsing from a string map containing their values
  * @param String map containing the component parameters' values
- * @param [in/out] headlandPlannerParameters Parameters of the headland planner
- * @param [in/out] tracksGeneratorParameters Parameters of the tracks generator
+ * @param [in/out] fieldGeometryProcessorParameters_headland Headland parameters of the field geometry processor
+ * @param [in/out] fieldGeometryProcessorParameters_infield Inner-field parameters of the field geometry processor
  * @param [in/out] baseRoutesPlannerParameters Parameters of the base-routes planner
  * @param [in/out] fieldProcessPlannerParameters  Parameters of the field-process  planner
  * @return True on success
  */
 bool setParametersFromMap(const std::map<std::string, std::map<std::string, std::string> >& map,
-                          HeadlandPlanner::PlannerParameters &headlandPlannerParameters,
-                          TracksGenerator::TracksGeneratorParameters &tracksGeneratorParameters,
-                          BaseRoutesInfieldPlanner::PlannerParameters &baseRoutesPlannerParameters,
-                          FieldProcessPlanner::PlannerParameters &fieldProcessPlannerParameters);
+                          FieldGeometryProcessor::HeadlandParameters & fieldGeometryProcessorParameters_headland,
+                          FieldGeometryProcessor::InfieldParameters & fieldGeometryProcessorParameters_infield,
+                          BaseRoutesPlanner::PlannerParameters & baseRoutesPlannerParameters,
+                          FieldProcessPlanner::PlannerParameters & fieldProcessPlannerParameters);
 
 
 }

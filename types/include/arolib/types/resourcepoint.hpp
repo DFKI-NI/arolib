@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -57,6 +57,11 @@ public:
     explicit ResourcePoint() = default;
 
     /**
+      * @brief Copy constructor
+      */
+    ResourcePoint(const ResourcePoint&) = default;
+
+    /**
       * @brief Constructor with location arguments
       * @param _x x-coordinate
       * @param _y y-coordinate
@@ -100,7 +105,16 @@ public:
     Polygon geometry; /**< Geometry of the resource/silo structure (for future use) */
 };
 
-}
+  inline bool operator==(const ResourcePoint& lhs, const ResourcePoint& rhs) {
+    return (lhs.resourceTypes == rhs.resourceTypes) &&\
+          (lhs.defaultUnloadingTime == rhs.defaultUnloadingTime) &&\
+            (lhs.defaultUnloadingTimePerKg == rhs.defaultUnloadingTimePerKg) &&\
+            (lhs.geometry == rhs.geometry) &&\
+            (lhs.x == rhs.x) &&\
+            (lhs.y == rhs.y) &&\
+            (lhs.z == rhs.z);
+  }
 
+}
 
 #endif //_AROLIB_RESOURCEPOINT_H_

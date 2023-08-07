@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,3 +23,4 @@
 #include "test_machine.cpp"
 #include "test_route.cpp"
 #include "test_coordtransformer.cpp"
+#include "test_headland.cpp"

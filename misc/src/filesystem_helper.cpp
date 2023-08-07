@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -39,6 +39,11 @@ bool create_directory(std::string dir, bool clearIfExistent)
             return false;
     }
     return boost::filesystem::create_directories(dir.c_str());
+}
+
+bool file_or_dir_exists(std::string path)
+{
+    return boost::filesystem::exists(path);
 }
 
 std::vector<std::string> get_filenames_recursive(std::string basedir, std::string endPattern, bool includeBaseDir, bool includeSubDir)

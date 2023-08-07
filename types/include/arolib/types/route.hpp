@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -239,43 +239,24 @@ private:
     const static std::set<RoutePoint::RoutePointType> m_nonConsecutiveTypes; /**< Set of 'non-consecutive' route point types */
 };
 
+inline bool operator==(const Route& lhs, const Route& rhs) {
+  return (lhs.machine_id == rhs.machine_id) &&\
+         (lhs.route_points == rhs.route_points) &&\
+        (lhs.baseDateTime == rhs.baseDateTime);
+}
 
-/**
-  * @brief Overload << operator to stream Route 
-  */
 inline std::ostream& operator<< (std::ostream &out, const arolib::Route& route) {
-  out << "Route with " << route.route_points.size() << " points: [ ";
-  
-  int i = 0;
-  for(const auto& point: route.route_points)
-  {
-    if(i) out << ", ";
-    out << point;
-    i++;
-  }
-
-  out << " ]";
+  out << "Route with " << route.route_points.size() << " points";
   return out;
 }
 
-/**
-  * @brief Overload << operator to stream Routes
-  */
 inline std::ostream& operator<< (std::ostream &out, const std::vector<arolib::Route>& routes) {
-  out << routes.size() << " routes: [ ";
-
-  int i = 0;
+  out << routes.size() << " Routes: [ ";
   for(const auto& route: routes)
-  {
-    if(i) out << ", ";
-    out << i << ": " << route.getPoints().size() << " points";
-    i++;
-  }
-
+    out << route;
   out << " ]";
   return out;
 }
-
 
 }
 

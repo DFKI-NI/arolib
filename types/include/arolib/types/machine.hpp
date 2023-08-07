@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -131,18 +131,90 @@ public:
 
     /**
       * @brief Check if the machine is a 'working field' machine (e.g. harvester, seeder, sprayer)
-      * @return includeScanner Include SCANNER as working type
+      * @param includeScanner Include SCANNER as working type
       * @return True if the machine is a 'working field' machine
       */
     bool isOfWorkingType(bool includeScanner = false) const;
 
     /**
-      * @brief Check if the machine is a 'working field' machine (e.g. harvester, seeder, sprayer)
-      * @return machinetype Machine type
-      * @return includeScanner Include SCANNER as working type
+      * @brief Check if the machine type corresponds to a 'working field' machine (e.g. harvester, seeder, sprayer)
+      * @param machinetype Machine type
+      * @param includeScanner Include SCANNER as working type
       * @return True if the machine is a 'working field' machine
       */
     static bool isOfWorkingType(MachineType machinetype, bool includeScanner = false);
+
+    /**
+      * @brief Check if the machine type corresponds to a 'working field' machine (e.g. harvester, seeder, sprayer)
+      * @param machinetype Machine type
+      * @param includeScanner Include SCANNER as working type
+      * @return True if the machine type corresponds to a 'working field' machine
+      */
+    static inline bool isWorkingType(MachineType machinetype, bool includeScanner = false) { return isOfWorkingType(machinetype, includeScanner); }
+
+    /**
+      * @brief Check if the machine is a 'working field' machine for output material-flow operations (e.g. harvester)
+      * @param includeScanner Include SCANNER as working type
+      * @return True if the machine is a 'working field' machine for output material-flow operations
+      */
+    bool isOfWorkingTypeForMaterialOutput() const;
+
+    /**
+      * @brief Check if the machine type corresponds to a 'working field' machine for output material-flow operations (e.g. harvester)
+      * @param machinetype Machine type
+      * @return True if the machine type corresponds to a 'working field' machine for output material-flow operations
+      */
+    static bool isOfWorkingTypeForMaterialOutput(MachineType machinetype);
+
+    /**
+      * @brief Check if the machine type corresponds to a 'working field' machine for output material-flow operations (e.g. harvester)
+      * @param machinetype Machine type
+      * @return True if the machine type corresponds to a 'working field' machine for output material-flow operations
+      */
+    static bool isWorkingTypeForMaterialOutput(MachineType machinetype) { return isOfWorkingTypeForMaterialOutput(machinetype); }
+
+    /**
+      * @brief Check if the machine is a 'working field' machine for input material-flow operations (e.g. seeder, sprayer)
+      * @return True if the machine is a 'working field' machine for input material-flow operations
+      */
+    bool isOfWorkingTypeForMaterialInput() const;
+
+    /**
+      * @brief Check if the machine type corresponds to a 'working field' machine for input material-flow operations (e.g. seeder, sprayer)
+      * @param machinetype Machine type
+      * @return True if the machine type corresponds to a 'working field' machine for input material-flow operations
+      */
+    static bool isOfWorkingTypeForMaterialInput(MachineType machinetype);
+
+    /**
+      * @brief Check if the machine type corresponds to a 'working field' machine for input material-flow operations (e.g. seeder, sprayer)
+      * @param machinetype Machine type
+      * @return True if the machine type corresponds to a 'working field' machine for input material-flow operations
+      */
+    static bool isWorkingTypeForMaterialInput(MachineType machinetype) { return isOfWorkingTypeForMaterialInput(machinetype); }
+
+    /**
+      * @brief Check if the machine is a 'working field' machine for neutral material-flow operations (e.g. plough)
+      * @param includeScanner Include SCANNER as working type
+      * @return True if the machine is a 'working field' machine for neutral material-flow operations
+      */
+    bool isOfWorkingTypeForNoMaterialFlow(bool includeScanner = false) const;
+
+    /**
+      * @brief Check if the machine type corresponds to a 'working field' machine for neutral material-flow operations (e.g. plough)
+      * @param machinetype Machine type
+      * @param includeScanner Include SCANNER as working type
+      * @return True if the machine type corresponds to a 'working field' machine for neutral material-flow operations
+      */
+    static bool isOfWorkingTypeForNoMaterialFlow(MachineType machinetype, bool includeScanner = false);
+
+    /**
+      * @brief Check if the machine type corresponds to a 'working field' machine for neutral material-flow operations (e.g. plough)
+      * @param machinetype Machine type
+      * @param includeScanner Include SCANNER as working type
+      * @return True if the machine type corresponds to a 'working field' machine for neutral material-flow operations
+      */
+    static bool isWorkingTypeForNoMaterialFlow(MachineType machinetype, bool includeScanner = false) { return isOfWorkingTypeForNoMaterialFlow(machinetype, includeScanner); }
 
     /**
       * @brief Return the machine type as a string description
@@ -196,8 +268,10 @@ public:
     double max_speed_empty = -99999; /**< Machine's speed limit when the bunker is empty [m/s] */
     double max_speed_full = -99999; /**< Machine's speed limit when the bunker is full [m/s] */
     double def_working_speed = -99999; /**< Machine's default working speed [m/s] */
-    int num_axis = -1; /**< number of (wheel) axis */
+    double unloading_speed_mass = -99999; /**< Machine's unloading rate [kg/s] */
+    double unloading_speed_volume = -99999; /**< Machine's unloading rate [m³/s] */
     double turning_radius = -99999; /**< Turning radius [m] */
+    int num_axis = -1; /**< number of (wheel) axis */
     double axis_distance = -99999; /**< Distance between the machine's axis [m] */
     double gauge = -99999; /**< Machine's gauge */
     double engine_power = -99999; /**< Machine's engine power */
@@ -219,6 +293,10 @@ public:
 inline std::ostream& operator<< (std::ostream &ostr, const Machine& m) {
     ostr << m.toString();
     return ostr;
+}
+
+inline bool operator==(const Machine& lhs, const Machine& rhs) {
+  return (lhs.manufacturer == rhs.manufacturer) && (lhs.model == rhs.model);
 }
 
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,28 +22,22 @@ bool FieldProcessPlanner::PlannerParameters::parseFromStringMap(FieldProcessPlan
 {
     FieldProcessPlanner::PlannerParameters tmp;
 
-    try{
+    if( !FieldGeneralParameters::parseFromStringMap(tmp, map, strict) )
+        return false;
+    if( !GridComputationSettings::parseFromStringMap(tmp, map, strict) )
+        return false;
+    if( !MultiOLVPlanner::PlannerSettings::parseFromStringMap(tmp, map, strict) )
+        return false;
+    if( !RoutePlannerStandaloneMachines::PlannerSettings::parseFromStringMap(tmp, map, strict) )
+        return false;
 
-        if( !FieldGeneralParameters::parseFromStringMap(tmp, map, strict) )
-            return false;
-        if( !GridComputationSettings::parseFromStringMap(tmp, map, strict) )
-            return false;
-        if( !MultiOLVPlanner::PlannerSettings::parseFromStringMap(tmp, map, strict) )
-            return false;
-        if( !MultiHarvPlanner::PlannerSettings::parseFromStringMap(tmp, map, strict) )
-            return false;
-
-        std::map<std::string, double*> dMap = { {"unloading_offset" , &tmp.unloading_offset},
-                                                {"workingWidth" , &tmp.workingWidth} };
-        if( !setValuesFromStringMap( map, dMap, strict) )
-            return false;
-
-    } catch(...){ return false; }
+    std::map<std::string, double*> dMap = { {"unloading_offset" , &tmp.unloading_offset},
+                                            {"workingWidth" , &tmp.workingWidth} };
+    if( !setValuesFromStringMap( map, dMap, strict) )
+        return false;
 
     params = tmp;
-
     return true;
-
 }
 
 std::map<std::string, std::string> FieldProcessPlanner::PlannerParameters::parseToStringMap(const FieldProcessPlanner::PlannerParameters &params)
@@ -55,14 +49,13 @@ std::map<std::string, std::string> FieldProcessPlanner::PlannerParameters::parse
     ret.insert( subMap.begin(), subMap.end() );
     subMap = MultiOLVPlanner::PlannerSettings::parseToStringMap(params);
     ret.insert( subMap.begin(), subMap.end() );
-    subMap = MultiHarvPlanner::PlannerSettings::parseToStringMap(params);
+    subMap = RoutePlannerStandaloneMachines::PlannerSettings::parseToStringMap(params);
     ret.insert( subMap.begin(), subMap.end() );
 
     ret["unloading_offset"] = double2string( params.unloading_offset );
     ret["workingWidth"] = double2string( params.workingWidth );
 
     return ret;
-
 }
 
 FieldProcessPlanner::FieldProcessPlanner(const LogLevel &logLevel):
@@ -71,299 +64,33 @@ FieldProcessPlanner::FieldProcessPlanner(const LogLevel &logLevel):
 
 }
 
-AroResp FieldProcessPlanner::planSubfield(const Subfield &subfield,
-                                            const std::vector<Route> &baseRoutes_infield,
-                                            const std::vector<HeadlandRoute> &baseRoutes_headland,
-                                            std::vector<Route> &plannedRoutes,
-                                            const std::vector<Machine> &machines,
-                                            OutFieldInfo &outFieldInfo,
-                                            const std::map<MachineId_t, MachineDynamicInfo> &machineCurrentStates,
-                                            FieldProcessPlanner::PlannerParameters plannerParameters,
-                                            const ArolibGrid_t &yieldmap,
-                                            const ArolibGrid_t &remainingAreaMap,
-                                            std::shared_ptr<IEdgeCostCalculator> edgeCostCalculator,
-                                            PlanGeneralInfo *pPlanInfo,
-                                            DirectedGraph::Graph *pGraph)
-{
-
-    if(!edgeCostCalculator){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Invalid edgeCostCalculator." );
-        return AroResp(1, "Invalid edgeCostCalculator." );
-    }
-
-    plannedRoutes.clear();
-    AroResp compResp;
-
-    if(plannerParameters.harvestedMassLimit < -1e-6)
-        plannerParameters.harvestedMassLimit = getHarvestedMassLimit(subfield, machines, plannerParameters, yieldmap, remainingAreaMap);
-
-    LoggingComponent::LoggersHandler lh(true);//will be reset on destruction
-    LoggingComponent::setTemporalLoggersParent(lh, *this, yieldmap, remainingAreaMap);
-    if(pGraph)
-        LoggingComponent::setTemporalLoggersParent(lh, *this, *pGraph);
-
-    try {
-
-        if (subfield.resource_points.empty()) {
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "No ressource points given." );
-            return AroResp(1, "No resource points given." );
-        }
-        if (baseRoutes_infield.empty() && baseRoutes_headland.empty()) {
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Routes missing, needed by the planner" );
-            return AroResp(1, "Routes missing, needed by the planner" );
-        }
-        if (plannerParameters.workingWidth <= 0) {
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Invalid working width" );
-            return AroResp(1, "Invalid working width" );
-        }
-        if (plannerParameters.avgMassPerArea < 0) {
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Invalid average mass/area" );
-            return AroResp(1, "Invalid default yield" );
-        }
-
-        for(auto &rp : subfield.resource_points){
-            OutFieldInfo::UnloadingCosts uc( rp.defaultUnloadingTime, rp.defaultUnloadingTimePerKg );
-            if( outFieldInfo.addDefaultUnloadingCosts(rp.id, uc, false) )
-                m_logger.printOut(LogLevel::INFO, __FUNCTION__, "Adding default unloading costs for all machines for resource point " + std::to_string(rp.id) );
-        }
-
-        std::vector<Route> baseRoutes_infield_ed = baseRoutes_infield;
-        std::vector<HeadlandRoute> baseRoutes_headland_ed = baseRoutes_headland;
-
-        m_logger.printOut(LogLevel::INFO, __FUNCTION__, "Pre-processing base routes...");
-        preProcessBaseRoutes(baseRoutes_infield_ed,
-                             baseRoutes_headland_ed,
-                             subfield,
-                             machines,
-                             outFieldInfo,
-                             machineCurrentStates,
-                             remainingAreaMap,
-                             plannerParameters.bePreciseWithRemainingAreaMap);
-
-        bool incVisitPeriodsInBuilding = false;//the visitPeriods should be addad once the connected base/main routes (headland -> infield) are available
-        //bool incVisitPeriodsInBuilding = plannerParameters.collisionAvoidanceOption != Astar::WITHOUT_COLLISION_AVOIDANCE;
-        m_logger.printOut(LogLevel::INFO, __FUNCTION__, "Connecting the headland and infield base routes...");
-        std::vector<Route> mainRoutes = connectBaseRoutes(baseRoutes_infield_ed,
-                                                                    baseRoutes_headland_ed,
-                                                                    subfield,
-                                                                    machines);
-
-        m_logger.printOut(LogLevel::INFO, __FUNCTION__, "Removing route points where there is nothing to work on...");
-        auto removedWorkedPoints = removeInitialUselessPoints(mainRoutes);
-
-        if(mainRoutes.empty()){
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "No base/main routes remain after pre-planning processing. Posible reason: there is nothing to harvest.");
-            return AroResp(1, "No base/main routes remain after pre-planning processing. Posible reason: there is nothing to harvest." );
-        }
-
-
-
-        m_logger.printOut(LogLevel::INFO, __FUNCTION__, "Building the graph...");
-        DirectedGraph::GraphBuilder_TracksBased graphBuilder(m_logger.logLevel());
-        graphBuilder.logger().setParent(&m_logger);
-        DirectedGraph::Graph* graph;
-        DirectedGraph::Graph graphTmp;
-        graphTmp.logger().setParent(&m_logger);
-
-        if(pGraph)
-            graph = pGraph;
-        else
-            graph = &graphTmp;
-
-        if(m_planningWorkspace){
-            if(m_pw_subfieldIdx >= getField(*m_planningWorkspace).subfields.size())
-                throw std::invalid_argument( std::string(__FUNCTION__) + ": Invalid subfield index" );
-
-            const Subfield& sf = getField(*m_planningWorkspace).subfields.at(m_pw_subfieldIdx);
-
-            *graph = graphBuilder.buildGraph(sf,
-                                             mainRoutes,
-                                             sf.resource_points,
-                                             sf.access_points,
-                                             outFieldInfo,
-                                             getMachines(*m_planningWorkspace),
-                                             getMachineCurrentStates(*m_planningWorkspace),
-                                             plannerParameters.workingWidth,
-                                             plannerParameters.workingWidth,
-                                             incVisitPeriodsInBuilding,
-                                             m_filename_graphBuilding);
-        }
-        else{
-            *graph = graphBuilder.buildGraph(subfield,
-                                             mainRoutes,
-                                             subfield.resource_points,
-                                             subfield.access_points,
-                                             outFieldInfo,
-                                             machines,
-                                             machineCurrentStates,
-                                             plannerParameters.workingWidth,
-                                             plannerParameters.workingWidth,
-                                             incVisitPeriodsInBuilding,
-                                             m_filename_graphBuilding);
-        }
-
-
-        m_logger.printOut(LogLevel::INFO, __FUNCTION__, "Adding initial paths to the main routes...");
-        auto initMainRoutes = getInitialPathToWorkingRoutes(*graph,
-                                                            mainRoutes,
-                                                            subfield,
-                                                            machines,
-                                                            machineCurrentStates,
-                                                            plannerParameters,
-                                                            edgeCostCalculator);
-
-        std::vector<Route> main_routes, sec_routes;
-
-        if(removedWorkedPoints > 0)//@todo find a better way to check if adding these overruns is necesary, depending on the cost calculator
-            addRoutesOverruns(*graph, machines, mainRoutes);
-
-        size_t numOlvs = 0;
-        for(auto &m : machines){
-            if(m.machinetype == Machine::OLV)
-                ++numOlvs;
-        }
-        DirectedGraph::Graph updated_graph;
-        if(numOlvs == 0){
-            DirectedGraph::Graph updated_graph;
-            auto aroResp = do_multiHarvPlanning(*graph,
-                                                mainRoutes,
-                                                machines,
-                                                machineCurrentStates,
-                                                plannerParameters,
-                                                edgeCostCalculator,
-                                                m_logger,
-                                                main_routes,
-                                                updated_graph,
-                                                pPlanInfo);
-            if(!aroResp.isOK())
-                return aroResp;
-        }
-        else{
-            if(!incVisitPeriodsInBuilding && plannerParameters.collisionAvoidanceOption != Astar::WITHOUT_COLLISION_AVOIDANCE){
-                m_logger.printOut(LogLevel::INFO, __FUNCTION__, "Adding visit periods of working machines to vertices...");
-                addWMVisitPeriods(*graph, mainRoutes, machines);
-            }
-
-            auto aroResp = this->do_multiOLVPlanning(*graph,
-                                                    mainRoutes,
-                                                    machines,
-                                                    machineCurrentStates,
-                                                    plannerParameters,
-                                                    edgeCostCalculator,
-                                                    m_logger,
-                                                    main_routes,
-                                                    sec_routes,
-                                                    updated_graph,
-                                                    pPlanInfo
-                                                );
-            if(!aroResp.isOK())
-                return aroResp;
-        }
-        *graph = updated_graph;
-
-        //this must be done after the multiOLVPlanner plans, because it assumes that the main (harvester) routes do not contain this initial path!
-        m_logger.printOut(LogLevel::INFO, __FUNCTION__, "Adding initial paths to the main routes...");
-        addInitialPathToMainRoutes(initMainRoutes, main_routes);
-
-        m_logger.printOut(LogLevel::INFO, __FUNCTION__, "Adding final paths to the main routes...");
-        bool useSearchToExit = true;
-
-        sendWorkingMachinesToExitPoints(*graph,
-                                        main_routes,
-                                        subfield,
-                                        machines,
-                                        plannerParameters,
-                                        edgeCostCalculator,
-                                        useSearchToExit);
-
-        plannedRoutes.insert( plannedRoutes.end(), main_routes.begin(), main_routes.end() );
-        plannedRoutes.insert( plannedRoutes.end(), sec_routes.begin(), sec_routes.end() );
-
-        if(pPlanInfo){
-            double maxTimestamp = std::numeric_limits<double>::lowest();{
-                for(auto &route: plannedRoutes){
-                    if(!route.route_points.empty())
-                        maxTimestamp = std::max(maxTimestamp, route.route_points.back().time_stamp);
-                }
-            }
-            pPlanInfo->planDuration = std::max(maxTimestamp, 0.0);
-        }
-
-        m_logger.printOut(LogLevel::INFO, __FUNCTION__, "Planning finished. Found " + std::to_string(sec_routes.size()) + " olv routes");
-        return AroResp(0, "OK" );
-
-    }
-    catch (std::exception &e) {
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, std::string("Exception cought: ") + e.what() );
-        return AroResp(1, "Exception cought: ", e.what() );
-    }
-
-
-}
-
-AroResp FieldProcessPlanner::planSubfield(PlanningWorkspace &pw, size_t subfieldIdx, const FieldProcessPlanner::PlannerParameters &plannerParameters, std::shared_ptr<IEdgeCostCalculator> edgeCostCalculator, PlanGeneralInfo *pPlanInfo, DirectedGraph::Graph *pGraph)
-{
-    if(!edgeCostCalculator){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Invalid edgeCostCalculator." );
-        return AroResp(1, "Invalid edgeCostCalculator." );
-    }
-    if(subfieldIdx >= getField(pw).subfields.size()){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Invalid subfield index");
-        return AroResp(1, "Invalid subfield index");
-    }
-    const auto &subfield = getField(pw).subfields.at(subfieldIdx);
-    const auto &machines = getMachines(pw);
-    const auto &machineCurrentStates = getMachineCurrentStates(pw);
-    const auto &mainRoutes_headland = getBaseRoutes_headland(pw)[subfieldIdx];
-    const auto &mainRoutes_infield = getBaseRoutes_infield(pw)[subfieldIdx];
-    const auto &yieldmap = getMaps(pw).at( PlanningWorkspace::GridType::YIELD );
-    const auto &remainingAreaMap = getMaps(pw).at( PlanningWorkspace::GridType::REMAINING_AREA );
-    auto &outFieldInfo = getOutFieldInfo(pw);
-    auto &plannedRoutes = getPlannedRoutes(pw)[subfieldIdx];
-
-    m_planningWorkspace = &pw;
-    m_pw_subfieldIdx = subfieldIdx;
-
-    auto ret = planSubfield(subfield,
-                            mainRoutes_infield,
-                            mainRoutes_headland,
-                            plannedRoutes,
-                            machines,
-                            outFieldInfo,
-                            machineCurrentStates,
-                            plannerParameters,
-                            yieldmap,
-                            remainingAreaMap,
-                            edgeCostCalculator,
-                            pPlanInfo,
-                            pGraph);
-
-    m_planningWorkspace = nullptr;
-
-    return ret;
-}
-
 AroResp FieldProcessPlanner::planSubfield(DirectedGraph::Graph &graph,
-                                            const Subfield &subfield,
-                                            const std::vector<Route> &baseRoutes_,
-                                            std::vector<Route> &plannedRoutes,
-                                            const std::vector<Machine> &machines,
-                                            const OutFieldInfo &outFieldInfo,
-                                            const std::map<MachineId_t, MachineDynamicInfo> &machineCurrentStates,
-                                            FieldProcessPlanner::PlannerParameters plannerParameters,
-                                            const ArolibGrid_t &yieldmap,
-                                            const ArolibGrid_t &remainingAreaMap,
-                                            std::shared_ptr<IEdgeCostCalculator> edgeCostCalculator,
-                                            PlanGeneralInfo *pPlanInfo)
+                                          const Subfield &subfield,
+                                          const std::vector<Route> &baseRoutes_,
+                                          std::vector<Route> &plannedRoutes,
+                                          const std::vector<Machine> &machines,
+                                          const OutFieldInfo &outFieldInfo,
+                                          const std::map<MachineId_t, MachineDynamicInfo> &machineCurrentStates,
+                                          const PlannerParameters &_plannerParameters,
+                                          const ArolibGrid_t &yieldmap,
+                                          const ArolibGrid_t &remainingAreaMap,
+                                          std::shared_ptr<IEdgeCostCalculator> edgeCostCalculator,
+                                          PlanGeneralInfo *pPlanInfo)
 {
     if(!edgeCostCalculator){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Invalid edgeCostCalculator." );
-        return AroResp(1, "Invalid edgeCostCalculator." );
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Invalid edgeCostCalculator.");
+        return AroResp(1, "Invalid edgeCostCalculator.");
     }
-    plannedRoutes.clear();
-    AroResp compResp;
 
-    if(plannerParameters.harvestedMassLimit < -1e-6)
+    if(!MachineDynamicInfo::isValid(machineCurrentStates)){
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Invalid machine initial states");
+        return AroResp(1, "Invalid machine initial states");
+    }
+
+    plannedRoutes.clear();
+    auto plannerParameters = _plannerParameters;
+
+    if(plannerParameters.harvestedMassLimit < -1e-6 && plannerParameters.numOverloadActivities <= 0)
         plannerParameters.harvestedMassLimit = getHarvestedMassLimit(subfield, machines, plannerParameters, yieldmap, remainingAreaMap);
 
     LoggingComponent::LoggersHandler lh(true);//will be reset on destruction
@@ -372,73 +99,83 @@ AroResp FieldProcessPlanner::planSubfield(DirectedGraph::Graph &graph,
     try {
 
         if (subfield.resource_points.empty()) {
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "No ressource points given." );
+            logger().printOut(LogLevel::ERROR, __FUNCTION__, "No ressource points given." );
             return AroResp(1, "No resource points given." );
         }
         if (baseRoutes_.empty()) {
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Routes missing, needed by the planner" );
+            logger().printOut(LogLevel::ERROR, __FUNCTION__, "Routes missing, needed by the planner" );
             return AroResp(1, "Routes missing, needed by the planner" );
         }
 
-        auto baseRoutes = baseRoutes_;
+        size_t numOlvs;
+        MaterialFlowType materialFlowType;
+        TransitRestriction transitRestriction;
+        std::vector<Machine> workingMachines;
+        auto aroResp = checkMachineTypes(machines, workingMachines, numOlvs, materialFlowType, transitRestriction);
+        if (aroResp.isError())
+            return aroResp;
 
-        m_logger.printOut(LogLevel::INFO, __FUNCTION__, "Adding initial paths to the base/main routes...");
-        auto initBaseRoutes = getInitialPathToWorkingRoutes(graph,
-                                                            baseRoutes,
-                                                            subfield,
-                                                            machines,
-                                                            machineCurrentStates,
-                                                            plannerParameters,
-                                                            edgeCostCalculator);
+        auto baseRoutes = baseRoutes_;
 
         std::vector<Route> mainRoutes, sec_routes;
 
-        addRoutesOverruns(graph, machines, baseRoutes);
 
-        size_t numOlvs = 0;
-        for(auto &m : machines){
-            if(m.machinetype == Machine::OLV)
-                ++numOlvs;
-        }
         DirectedGraph::Graph updated_graph;
-        if(numOlvs == 0){
-            auto aroResp = do_multiHarvPlanning(graph,
-                                                baseRoutes,
-                                                machines,
-                                                machineCurrentStates,
-                                                plannerParameters,
-                                                edgeCostCalculator,
-                                                m_logger,
-                                                mainRoutes,
-                                                updated_graph,
-                                                pPlanInfo);
+
+        if(materialFlowType == NEUTRAL_MATERIAL_FLOW || numOlvs == 0){
+            aroResp = do_planningForStandaloneMachines(graph,
+                                                       subfield.boundary_outer,
+                                                       baseRoutes,
+                                                       workingMachines,
+                                                       machineCurrentStates,
+                                                       plannerParameters,
+                                                       edgeCostCalculator,
+                                                       materialFlowType,
+                                                       transitRestriction,
+                                                       logger(),
+                                                       mainRoutes,
+                                                       updated_graph,
+                                                       pPlanInfo);
             if(!aroResp.isOK())
                 return aroResp;
         }
         else{
-            auto aroResp = this->do_multiOLVPlanning(
-                graph,
-                baseRoutes,
-                machines,
-                machineCurrentStates,
-                plannerParameters,
-                edgeCostCalculator,
-                m_logger,
-                mainRoutes,
-                sec_routes,
-                updated_graph,
-                pPlanInfo
-            );
+
+            logger().printOut(LogLevel::INFO, __FUNCTION__, "Adjusting base/main routes...");
+            adjustBaseRoutes(graph, baseRoutes, machineCurrentStates);
+
+            logger().printOut(LogLevel::INFO, __FUNCTION__, "Adding initial paths to the base/main routes...");
+            auto initBaseRoutes = getInitialPathToWorkingRoutes(graph,
+                                                                baseRoutes,
+                                                                subfield,
+                                                                machines,
+                                                                machineCurrentStates,
+                                                                plannerParameters,
+                                                                edgeCostCalculator);
+
+            addRoutesOverruns(graph, machines, baseRoutes);
+
+            aroResp = do_multiOLVPlanning(graph,
+                                          baseRoutes,
+                                          machines,
+                                          machineCurrentStates,
+                                          plannerParameters,
+                                          edgeCostCalculator,
+                                          logger(),
+                                          mainRoutes,
+                                          sec_routes,
+                                          updated_graph,
+                                          pPlanInfo);
             if(!aroResp.isOK())
                 return aroResp;
+
+            //this must be done after the multiOLVPlanner plans, because it assumes that the main routes do not contain this initial path!
+            logger().printOut(LogLevel::INFO, __FUNCTION__, "Adding initial paths to the main routes...");
+            addInitialPathToMainRoutes(initBaseRoutes, mainRoutes);
         }
         graph = updated_graph;
 
-        //this must be done after the multiOLVPlanner plans, because it assumes that the main routes do not contain this initial path!
-        m_logger.printOut(LogLevel::INFO, __FUNCTION__, "Adding initial paths to the main routes...");
-        addInitialPathToMainRoutes(initBaseRoutes, mainRoutes);
-
-        m_logger.printOut(LogLevel::INFO, __FUNCTION__, "Adding final paths to the main routes...");
+        logger().printOut(LogLevel::INFO, __FUNCTION__, "Adding final paths to the main routes...");
         bool useSearchToExit = true;
 
         sendWorkingMachinesToExitPoints(graph,
@@ -462,61 +199,19 @@ AroResp FieldProcessPlanner::planSubfield(DirectedGraph::Graph &graph,
             pPlanInfo->planDuration = std::max(maxTimestamp, 0.0);
         }
 
-        m_logger.printOut(LogLevel::INFO, __FUNCTION__, "Planning finished. Found " + std::to_string(sec_routes.size()) + " olv routes");
+        logger().printOut(LogLevel::INFO, __FUNCTION__, "Planning finished. Found " + std::to_string(sec_routes.size()) + " olv routes");
         return AroResp(0, "OK" );
 
     }
     catch (std::exception &e) {
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, std::string("Exception cought: ") + e.what() );
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, std::string("Exception cought: ") + e.what() );
         return AroResp(1, "Exception cought: ", e.what() );
     }
 }
 
-AroResp FieldProcessPlanner::planSubfield(DirectedGraph::Graph &graph, PlanningWorkspace &pw, size_t subfieldIdx, const FieldProcessPlanner::PlannerParameters &plannerParameters, std::shared_ptr<IEdgeCostCalculator> edgeCostCalculator, PlanGeneralInfo *pPlanInfo)
+
+void FieldProcessPlanner::setOutputFiles(const std::string &foldername_planData, const std::string &foldername_visitSchedule)
 {
-    if(!edgeCostCalculator){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Invalid edgeCostCalculator." );
-        return AroResp(1, "Invalid edgeCostCalculator." );
-    }
-    if(subfieldIdx >= getField(pw).subfields.size()){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Invalid subfield index");
-        return AroResp(1, "Invalid subfield index");
-    }
-    const auto &subfield = getField(pw).subfields.at(subfieldIdx);
-    const auto &machines = getMachines(pw);
-    const auto &machineCurrentStates = getMachineCurrentStates(pw);
-    const auto &baseRoutes = getConnectedBaseRoutes(pw)[subfieldIdx];
-    auto &outFieldInfo = getOutFieldInfo(pw);
-    auto &plannedRoutes = getPlannedRoutes(pw)[subfieldIdx];
-    const auto &yieldmap = getMaps(pw).at( PlanningWorkspace::GridType::YIELD );
-    const auto &remainingAreaMap = getMaps(pw).at( PlanningWorkspace::GridType::REMAINING_AREA );
-
-    m_planningWorkspace = &pw;
-    m_pw_subfieldIdx = subfieldIdx;
-
-    auto ret = planSubfield(graph,
-                            subfield,
-                            baseRoutes,
-                            plannedRoutes,
-                            machines,
-                            outFieldInfo,
-                            machineCurrentStates,
-                            plannerParameters,
-                            yieldmap,
-                            remainingAreaMap,
-                            edgeCostCalculator,
-                            pPlanInfo);
-
-    m_planningWorkspace = nullptr;
-
-    return ret;
-}
-
-
-void FieldProcessPlanner::setOutputFiles(const std::string &filename_graphBuilding, const std::string &foldername_planData, const std::string &foldername_visitSchedule)
-{
-
-    m_filename_graphBuilding = filename_graphBuilding;
     m_foldername_planData = foldername_planData;
     if(!m_foldername_planData.empty() && m_foldername_planData.back() != '/')
         m_foldername_planData += "/";
@@ -525,31 +220,35 @@ void FieldProcessPlanner::setOutputFiles(const std::string &filename_graphBuildi
         m_foldername_visitSchedule += "/";
 }
 
-AroResp FieldProcessPlanner::do_multiHarvPlanning(const DirectedGraph::Graph originalGraph,
-                                                    const std::vector<Route> &baseRoutes,
-                                                    const std::vector<Machine> &machines,
-                                                    const std::map<MachineId_t, MachineDynamicInfo> &machineCurrentStates,
-                                                    const MultiHarvPlanner::PlannerSettings& plannerParameters,
-                                                    const std::shared_ptr<IEdgeCostCalculator> edgeCostCalculator,
-                                                    Logger &logger,
-                                                    std::vector<Route>& out_mainRoutes,
-                                                    DirectedGraph::Graph &out_updatedGraph,
-                                                    PlanGeneralInfo *out_pPlanInfo)
+AroResp FieldProcessPlanner::do_planningForStandaloneMachines(const DirectedGraph::Graph originalGraph,
+                                                              const Polygon &boundary,
+                                                              const std::vector<Route> &baseRoutes,
+                                                              const std::vector<Machine> &machines,
+                                                              const std::map<MachineId_t, MachineDynamicInfo> &machineCurrentStates,
+                                                              const RoutePlannerStandaloneMachines::PlannerSettings& plannerParameters,
+                                                              const std::shared_ptr<IEdgeCostCalculator> edgeCostCalculator,
+                                                              MaterialFlowType materialFlowType,
+                                                              TransitRestriction transitRestriction,
+                                                              Logger &logger,
+                                                              std::vector<Route>& out_mainRoutes,
+                                                              DirectedGraph::Graph &out_updatedGraph,
+                                                              PlanGeneralInfo *out_pPlanInfo)
 {
-    MultiHarvPlanner multiHarvPlanner(originalGraph,
-                                        baseRoutes,
-                                        machines,
-                                        machineCurrentStates,
-                                        plannerParameters,
-                                        edgeCostCalculator,
-                                        m_foldername_planData,
-                                        logger.logLevel());
-    multiHarvPlanner.logger().setParent(&logger);
+    RoutePlannerStandaloneMachines routePlanner(originalGraph,
+                                                baseRoutes,
+                                                machines,
+                                                machineCurrentStates,
+                                                boundary,
+                                                plannerParameters,
+                                                edgeCostCalculator,
+                                                m_foldername_planData,
+                                                logger.logLevel());
+    routePlanner.logger().setParent(loggerPtr());
     logger.printOut(LogLevel::INFO, __FUNCTION__, "Planning started..." );
 
     std::chrono::steady_clock::time_point time_start = std::chrono::steady_clock::now();
 
-    auto sError = multiHarvPlanner.planAll();
+    auto sError = routePlanner.planAll(materialFlowType, transitRestriction);
     if(!sError.empty()){
         logger.printOut( LogLevel::ERROR, __FUNCTION__, "Error planning for the working machine(s): " + sError );
         return AroResp( 1, "Error planning for the working machine(s): " + sError );
@@ -557,41 +256,41 @@ AroResp FieldProcessPlanner::do_multiHarvPlanning(const DirectedGraph::Graph ori
 
     double planningDuration = 1e-6 * std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - time_start).count();
 
-    out_mainRoutes = multiHarvPlanner.getPlannedRoutes();
-    out_updatedGraph = multiHarvPlanner.getPlanData().graph;
+    out_mainRoutes = routePlanner.getPlannedRoutes();
+    out_updatedGraph = routePlanner.getPlanData().graph;
 
     if(out_pPlanInfo){
         out_pPlanInfo->overallDelays = std::vector<double>(out_mainRoutes.size(), 0);
-        out_pPlanInfo->planOverallCost = multiHarvPlanner.getPlanData().planOverallCost;
+        out_pPlanInfo->planOverallCost = routePlanner.getPlanData().planOverallCost;
         out_pPlanInfo->planningDuration = planningDuration;
     }
-    return AroResp();
+    return AroResp::ok();
 }
 
 AroResp FieldProcessPlanner::do_multiOLVPlanning(const DirectedGraph::Graph originalGraph,
-                                                const std::vector<Route> &baseRoutes,
-                                                const std::vector<Machine> &machines,
-                                                const std::map<MachineId_t, MachineDynamicInfo> &machineCurrentStates,
-                                                const MultiOLVPlanner::PlannerSettings& plannerParameters,
-                                                const std::shared_ptr<IEdgeCostCalculator> edgeCostCalculator,
-                                                Logger &logger,
-                                                std::vector<Route>& out_harvRoutes,
-                                                std::vector<Route>& out_olvRoutes,
-                                                DirectedGraph::Graph &out_updatedGraph,
-                                                PlanGeneralInfo *out_pPlanInfo)
+                                                 const std::vector<Route> &baseRoutes,
+                                                 const std::vector<Machine> &machines,
+                                                 const std::map<MachineId_t, MachineDynamicInfo> &machineCurrentStates,
+                                                 const MultiOLVPlanner::PlannerSettings& plannerParameters,
+                                                 const std::shared_ptr<IEdgeCostCalculator> edgeCostCalculator,
+                                                 Logger &logger,
+                                                 std::vector<Route>& out_harvRoutes,
+                                                 std::vector<Route>& out_olvRoutes,
+                                                 DirectedGraph::Graph &out_updatedGraph,
+                                                 PlanGeneralInfo *out_pPlanInfo)
 {
     this->saveVisitSchedule(originalGraph, "graph_visit_schedule__original.csv");
 
     MultiOLVPlanner multiOLVPlanner (originalGraph,
-                                        baseRoutes,
-                                        machines,
-                                        machineCurrentStates,
-                                        plannerParameters,
-                                        edgeCostCalculator,
-                                        this->m_foldername_planData,
-                                        logger.logLevel());
-    multiOLVPlanner.logger().setParent(&logger);
-    m_logger.printOut(LogLevel::INFO, __FUNCTION__, "Planning started..." );
+                                     baseRoutes,
+                                     machines,
+                                     machineCurrentStates,
+                                     plannerParameters,
+                                     edgeCostCalculator,
+                                     this->m_foldername_planData,
+                                     logger.logLevel());
+    multiOLVPlanner.logger().setParent(loggerPtr());
+    logger.printOut(LogLevel::INFO, __FUNCTION__, "Planning started..." );
     std::chrono::steady_clock::time_point time_start = std::chrono::steady_clock::now();
 
     auto sError = multiOLVPlanner.planAll();
@@ -618,14 +317,51 @@ AroResp FieldProcessPlanner::do_multiOLVPlanning(const DirectedGraph::Graph orig
     }
 
     this->saveVisitSchedule(out_updatedGraph, "graph_visit_schedule__final.csv");
-    return AroResp();
+    return AroResp::ok();
+}
+
+AroResp FieldProcessPlanner::checkMachineTypes(const std::vector<Machine> &machines, std::vector<Machine> &workingMachines, size_t &numOlvs, MaterialFlowType &materialFlowType, TransitRestriction &transitRestriction)
+{
+    numOlvs = 0;
+    int iMaterialFlowType = -1;
+    workingMachines.clear();
+    for(auto &m : machines){
+        if(m.machinetype == Machine::OLV)
+            ++numOlvs;
+        else if(m.isOfWorkingType(true)){
+            workingMachines.emplace_back(m);
+            if(m.isOfWorkingTypeForMaterialInput()){
+                transitRestriction = TransitRestriction::TRANSIT_ONLY_OVER_UNWORKED_AREAS;
+                if(iMaterialFlowType < 0) iMaterialFlowType = materialFlowType = MaterialFlowType::INPUT_MATERIAL_FLOW;
+                else if (iMaterialFlowType != MaterialFlowType::INPUT_MATERIAL_FLOW) iMaterialFlowType = -2;
+            }
+            else if(m.isOfWorkingTypeForMaterialOutput()){
+                transitRestriction = TransitRestriction::TRANSIT_ONLY_OVER_WORKED_AREAS;
+                if(iMaterialFlowType < 0) iMaterialFlowType = materialFlowType = MaterialFlowType::OUTPUT_MATERIAL_FLOW;
+                else if (iMaterialFlowType != MaterialFlowType::OUTPUT_MATERIAL_FLOW) iMaterialFlowType = -2;
+            }
+            else if(m.isOfWorkingTypeForNoMaterialFlow()){
+                transitRestriction = TransitRestriction::NO_TRANSIT_RESTRICTION;
+                if(iMaterialFlowType < 0) iMaterialFlowType = materialFlowType = MaterialFlowType::NEUTRAL_MATERIAL_FLOW;
+                else if (iMaterialFlowType != MaterialFlowType::NEUTRAL_MATERIAL_FLOW) iMaterialFlowType = -2;
+            }
+            if(iMaterialFlowType == -2){
+                logger().printOut(LogLevel::ERROR, __FUNCTION__, "Invalid working machines: all working machines must correspond to the same material flow type" );
+                return AroResp(1, "Invalid working machines: all working machines must correspond to the same material flow type" );
+            }
+        }
+    }
+    if(iMaterialFlowType == -1)
+        return AroResp(1, "No supported working machine given" );
+
+    return AroResp::ok();
 }
 
 OutFieldInfo FieldProcessPlanner::adjustOutFieldInfoArrivalTimes(const OutFieldInfo &outFieldInfo_in,
                                                                  const std::vector<FieldAccessPoint> &fieldAccessPoints,
                                                                  const std::vector<Machine> &machines,
                                                                  const std::vector<Route> &baseRoutes_infield,
-                                                                 const std::vector<HeadlandRoute> &baseRoutes_headland,
+                                                                 const std::vector<Route> &baseRoutes_headland,
                                                                  const std::map<MachineId_t, MachineDynamicInfo> &machineCurrentStates,
                                                                  const Subfield &subfield,
                                                                  double &deltaTime)
@@ -672,7 +408,7 @@ OutFieldInfo FieldProcessPlanner::adjustOutFieldInfoArrivalTimes(const OutFieldI
 }
 
 void FieldProcessPlanner::preProcessBaseRoutes(std::vector<Route> &baseRoutes_infield,
-                                                std::vector<HeadlandRoute> &baseRoutes_headland,
+                                                std::vector<Route> &baseRoutes_headland,
                                                 const Subfield &subfield,
                                                 const std::vector<Machine> &machines,
                                                 const OutFieldInfo &outFieldInfo,
@@ -690,7 +426,7 @@ void FieldProcessPlanner::preProcessBaseRoutes(std::vector<Route> &baseRoutes_in
     //check if there is anything to be done (work) in the routes. if not, delete the route
     for(size_t r = 0 ; r < baseRoutes_headland.size() ; ++r){
 
-        HeadlandRoute &route = baseRoutes_headland.at(r);
+        auto &route = baseRoutes_headland.at(r);
         size_t firstGoodIndex = route.route_points.size();
 
         //the base/main routes have been preprocessed already, and the timestamps of the initial segment/edge with nothing to work/process is = -1
@@ -720,29 +456,12 @@ void FieldProcessPlanner::preProcessBaseRoutes(std::vector<Route> &baseRoutes_in
             size_t firstGoodIndex2 = firstGoodIndex;
             for(size_t i = firstGoodIndex ; i+1 < route.route_points.size() ; ++i){
 
-                bool errorTmp;
-                double remainingArea;
+                bool errorTmp = true;
+                double remainingArea = 1;
 
                 if(calcRemainingAreaPrecisely){
                     //check the average value in the area overlaping with the segment/edge's rectangle
-                    if(m_planningWorkspace){
-                        //use the planningWorkspace, which might already know what cells correspond to this segment/edge (reduce computation)
-
-                        const ArolibGrid_t &map = m_planningWorkspace->getGrid( PlanningWorkspace::GridType::REMAINING_AREA );
-                        const auto & gridCellsInfo = m_planningWorkspace->getEdgeCellsInfo(PlanningWorkspace::GridType::REMAINING_AREA,
-                                                                                           PlanningWorkspace::PROCESS_HEADLAND,
-                                                                                           route.route_points.at(i),
-                                                                                           route.route_points.at(i+1),
-                                                                                           workingWidth);
-                        remainingArea = map.getCellsComputedValue( gridCellsInfo,
-                                                                   ArolibGrid_t::AVERAGE_TOTAL,
-                                                                   arolib::geometry::calc_dist(route.route_points.at(i), route.route_points.at(i+1)) * workingWidth,
-                                                                   false,
-                                                                   &errorTmp );
-
-                    }
-                    else
-                        remainingArea = remainingAreaMap.getLineComputedValue( route.route_points.at(i),
+                    remainingArea = remainingAreaMap.getLineComputedValue( route.route_points.at(i),
                                                                                route.route_points.at(i+1),
                                                                                workingWidth,
                                                                                true,
@@ -753,15 +472,16 @@ void FieldProcessPlanner::preProcessBaseRoutes(std::vector<Route> &baseRoutes_in
                     Point midPoint;
                     midPoint.x = 0.5 * ( route.route_points.at(i).x + route.route_points.at(i+1).x );
                     midPoint.y = 0.5 * ( route.route_points.at(i).y + route.route_points.at(i+1).y );
-                    remainingArea = remainingAreaMap.getValue(midPoint, &errorTmp);
+                    if(remainingAreaMap.hasValue(midPoint))
+                        remainingArea = remainingAreaMap.getValue(midPoint, &errorTmp);
                 }
 
-                if (errorTmp || remainingArea < remainingAreaThreshold){    
+                if (!errorTmp && remainingArea < remainingAreaThreshold){
                     //set the parameters of the 'already worked/processed' route points accordingly (inc. timestamp = -1)
                     firstGoodIndex2 = i+1;
                     route.route_points.at(i).time_stamp = -1;
-                    route.route_points.at(i).harvested_mass = 0;
-                    route.route_points.at(i).harvested_volume = 0;
+                    route.route_points.at(i).worked_mass = 0;
+                    route.route_points.at(i).worked_volume = 0;
                 }
                 else{
                     if(remainingArea > 0.2 && remainingArea < 0.8){//add new routepoint
@@ -772,8 +492,8 @@ void FieldProcessPlanner::preProcessBaseRoutes(std::vector<Route> &baseRoutes_in
                         route.route_points.insert( route.route_points.begin()+i+1, newRP );
                         ++firstGoodIndex2;
                         route.route_points.at(i).time_stamp = -1;
-                        route.route_points.at(i).harvested_mass = 0;
-                        route.route_points.at(i).harvested_volume = 0;
+                        route.route_points.at(i).worked_mass = 0;
+                        route.route_points.at(i).worked_volume = 0;
                     }
                     break;
                 }
@@ -792,8 +512,8 @@ void FieldProcessPlanner::preProcessBaseRoutes(std::vector<Route> &baseRoutes_in
         auto rpRef = route.route_points.at(firstGoodIndex);
         for(size_t i = firstGoodIndex ; i < route.route_points.size() ; ++i){
             route.route_points.at(i).time_stamp -= rpRef.time_stamp;
-            route.route_points.at(i).harvested_mass -= rpRef.harvested_mass;
-            route.route_points.at(i).harvested_volume -= rpRef.harvested_volume;
+            route.route_points.at(i).worked_mass -= rpRef.worked_mass;
+            route.route_points.at(i).worked_volume -= rpRef.worked_volume;
         }
 
         firstGoodIndexMap_HL[route.machine_id] = std::make_pair(firstGoodIndex, r);
@@ -831,28 +551,12 @@ void FieldProcessPlanner::preProcessBaseRoutes(std::vector<Route> &baseRoutes_in
             //search for the first valid route point (something to process/work) based on the remaining (unworked) -area map (i.e. th route point of the first segment/edge that has not being worked/processed)
             size_t firstGoodIndex2 = firstGoodIndex;
             for(size_t i = firstGoodIndex ; i+1 < route.route_points.size() ; ++i){
-                bool errorTmp;
-                double remainingArea;
+                bool errorTmp = true;
+                double remainingArea = 1;
 
                 if(calcRemainingAreaPrecisely){
                     //check the average value in the area overlaping with the segment's rectangle
-                    if(m_planningWorkspace){
-                        //use the planningWorkspace, which might already know what cells correspond to this segment/edge (reduce computation)
-                        const ArolibGrid_t &map = m_planningWorkspace->getGrid( PlanningWorkspace::GridType::REMAINING_AREA );
-                        const auto & gridCellsInfo = m_planningWorkspace->getEdgeCellsInfo(PlanningWorkspace::GridType::REMAINING_AREA,
-                                                                                           PlanningWorkspace::PROCESS_INFIELD,
-                                                                                           route.route_points.at(i),
-                                                                                           route.route_points.at(i+1),
-                                                                                           workingWidth);
-                        remainingArea = map.getCellsComputedValue( gridCellsInfo,
-                                                           ArolibGrid_t::AVERAGE_TOTAL,
-                                                           arolib::geometry::calc_dist(route.route_points.at(i), route.route_points.at(i+1)) * workingWidth,
-                                                           false,
-                                                           &errorTmp );
-
-                    }
-                    else
-                        remainingArea = remainingAreaMap.getLineComputedValue( route.route_points.at(i),
+                    remainingArea = remainingAreaMap.getLineComputedValue( route.route_points.at(i),
                                                                                route.route_points.at(i+1),
                                                                                workingWidth,
                                                                                true,
@@ -864,15 +568,16 @@ void FieldProcessPlanner::preProcessBaseRoutes(std::vector<Route> &baseRoutes_in
                     Point midPoint;
                     midPoint.x = 0.5 * ( route.route_points.at(i).x + route.route_points.at(i+1).x );
                     midPoint.y = 0.5 * ( route.route_points.at(i).y + route.route_points.at(i+1).y );
-                    remainingArea = remainingAreaMap.getValue(midPoint, &errorTmp);
+                    if(remainingAreaMap.hasValue(midPoint))
+                        remainingArea = remainingAreaMap.getValue(midPoint, &errorTmp);
                 }
 
-                if (errorTmp || remainingArea < remainingAreaThreshold){
+                if (!errorTmp && remainingArea < remainingAreaThreshold){
                     //set the parameters of the 'already processed/worked' route points accordingly (inc. timestamp = -1)
                     firstGoodIndex2 = i+1;
                     route.route_points.at(i).time_stamp = -1;
-                    route.route_points.at(i).harvested_mass = 0;
-                    route.route_points.at(i).harvested_volume = 0;
+                    route.route_points.at(i).worked_mass = 0;
+                    route.route_points.at(i).worked_volume = 0;
                 }
                 else{
                     if(remainingArea > 0.2 && remainingArea < 0.8){//add new routepoint
@@ -883,8 +588,8 @@ void FieldProcessPlanner::preProcessBaseRoutes(std::vector<Route> &baseRoutes_in
                         route.route_points.insert( route.route_points.begin()+i+1, newRP );
                         ++firstGoodIndex2;
                         route.route_points.at(i).time_stamp = -1;
-                        route.route_points.at(i).harvested_mass = 0;
-                        route.route_points.at(i).harvested_volume = 0;
+                        route.route_points.at(i).worked_mass = 0;
+                        route.route_points.at(i).worked_volume = 0;
                     }
                     break;
                 }
@@ -902,8 +607,8 @@ void FieldProcessPlanner::preProcessBaseRoutes(std::vector<Route> &baseRoutes_in
         auto rpRef = route.route_points.at(firstGoodIndex);
         for(size_t i = firstGoodIndex ; i < route.route_points.size() ; ++i){
             route.route_points.at(i).time_stamp -= rpRef.time_stamp;
-            route.route_points.at(i).harvested_mass -= rpRef.harvested_mass;
-            route.route_points.at(i).harvested_volume -= rpRef.harvested_volume;
+            route.route_points.at(i).worked_mass -= rpRef.worked_mass;
+            route.route_points.at(i).worked_volume -= rpRef.worked_volume;
         }
 
         firstGoodIndexMap_IF[route.machine_id] = std::make_pair(firstGoodIndex, r);
@@ -911,7 +616,7 @@ void FieldProcessPlanner::preProcessBaseRoutes(std::vector<Route> &baseRoutes_in
 }
 
 std::vector<Route> FieldProcessPlanner::connectBaseRoutes(std::vector<Route> &baseRoutes_infield,
-                                                           std::vector<HeadlandRoute> &baseRoutes_headland,
+                                                           std::vector<Route> &baseRoutes_headland,
                                                            const Subfield &subfield,
                                                            const std::vector<Machine> &machines)
 {
@@ -1012,8 +717,8 @@ std::vector<Route> FieldProcessPlanner::connectBaseRoutes(std::vector<Route> &ba
                             rp.track_id = -1;
                             rp.bunker_mass = route.route_points.back().bunker_mass;
                             rp.bunker_volume = route.route_points.back().bunker_volume;
-                            rp.harvested_mass = route.route_points.back().harvested_mass;
-                            rp.harvested_volume = route.route_points.back().harvested_volume;
+                            rp.worked_mass = route.route_points.back().worked_mass;
+                            rp.worked_volume = route.route_points.back().worked_volume;
                             rp.time_stamp = route.route_points.back().time_stamp;
 
 
@@ -1040,8 +745,8 @@ std::vector<Route> FieldProcessPlanner::connectBaseRoutes(std::vector<Route> &ba
                         //apply the shift-time to the timestamps of the (original) infield route
                         for(auto &rp : ifr.route_points){
                             rp.time_stamp += dTime;
-                            rp.harvested_mass += route.route_points.back().harvested_mass;
-                            rp.harvested_volume += route.route_points.back().harvested_volume;
+                            rp.worked_mass += route.route_points.back().worked_mass;
+                            rp.worked_volume += route.route_points.back().worked_volume;
                         }
 
                         //add the adjusted infield route to the final (connected) route
@@ -1105,7 +810,7 @@ AroResp FieldProcessPlanner::checkOLVRoutes(const std::vector<Machine> &machines
         int harvTrackId = -1;
         for(auto &rp : hr.route_points){
             if (rp.track_id >= 0//@TODO: perhaps it must also be checked that the corresponding segment had something to harvest (to know that indeed an olv was needed)
-                  /*&& rp.harvested_mass > 1e-6*/ ){
+                  /*&& rp.worked_mass > 1e-6*/ ){
                 harvTrackId = rp.track_id;
                 break;
             }
@@ -1139,7 +844,7 @@ bool FieldProcessPlanner::getInitialEntryPoint(const OutFieldInfo &outFieldInfo,
                                                const std::vector<FieldAccessPoint> &fieldAccessPoints,
                                                const std::vector<Machine> &workingGroup,
                                                const std::vector<Route> &baseRoutes_infield,
-                                               const std::vector<HeadlandRoute> &baseRoutes_headland,
+                                               const std::vector<Route> &baseRoutes_headland,
                                                FieldAccessPoint &initialFAP,
                                                double &maxArrivalTime)
 {
@@ -1254,27 +959,38 @@ void FieldProcessPlanner::sendWorkingMachinesToExitPoints(DirectedGraph::Graph &
         else
             astarParams.start_vt = find_nearest_vertex(lastRP.point(), graph);
         astarParams.start_time = lastRP.time_stamp;
-        astarParams.max_time_visit = std::numeric_limits<double>::max();//everything is worked now --> not limits
-        astarParams.max_time_goal = std::numeric_limits<double>::max();//not limits, just get there
         astarParams.machine = machine;
         astarParams.machine_speed = machine_speed;
         astarParams.initial_bunker_mass = lastRP.bunker_mass;
-        astarParams.overload = false;
         astarParams.includeWaitInCost = true;
-        astarParams.restrictedMachineIds = {};
-        astarParams.restrictedMachineIds_futureVisits = {};
 
+        std::set<DirectedGraph::vertex_t> exclude;
         //exclude resource points
         for(auto& it_resP : graph.resourcepoint_vertex_map())
-            astarParams.exclude.insert(it_resP.second);
+            exclude.insert(it_resP.second);
 
         if(route.route_points.size() > 1){
             auto rp_exc = r_at(route.route_points, 1);
             auto it_vt_exc = graph.routepoint_vertex_map().find(rp_exc);
             if(it_vt_exc != graph.routepoint_vertex_map().end()){
-                astarParams.exclude.insert(it_vt_exc->second);
+                exclude.insert(it_vt_exc->second);
             }
         }
+
+        if(!route.route_points.empty()){
+            //successor checkers
+            if(machine.isOfWorkingTypeForMaterialOutput())
+                astarParams.successorCheckers.emplace_back( std::make_shared<AstarSuccessorChecker_SuccessorTimestamp>(route.route_points.back().time_stamp,
+                                                                                                                       AstarSuccessorChecker_SuccessorTimestamp::INVALID_IF_LOWER_THAN_SUCC_TIMESPAMP,
+                                                                                                                       std::set<MachineId_t>{machine.id}) );
+            else if(machine.isOfWorkingTypeForMaterialInput())
+                astarParams.successorCheckers.emplace_back( std::make_shared<AstarSuccessorChecker_SuccessorTimestamp>(route.route_points.back().time_stamp,
+                                                                                                                       AstarSuccessorChecker_SuccessorTimestamp::INVALID_IF_HIGHER_THAN_SUCC_TIMESPAMP,
+                                                                                                                       std::set<MachineId_t>{machine.id}) );
+        }
+
+        //successor checkers
+        astarParams.successorCheckers.emplace_back( std::make_shared<AstarSuccessorChecker_VertexExcludeSet_Exceptions1>(exclude) );
 
         //check the planned route-segments to each (exit) access point to obtain the optimal one
         for(size_t i = 0 ; i < subfield.access_points.size() ; ++i){
@@ -1304,10 +1020,10 @@ void FieldProcessPlanner::sendWorkingMachinesToExitPoints(DirectedGraph::Graph &
                                astarSettings,
                                RoutePoint::TRANSIT,
                                foldername_planData,
-                               &m_logger);
+                               loggerPtr());
 
                 if( !planner.plan(graph, edgeCostCalculator) ){
-                    m_logger.printOut(LogLevel::ERROR, __FUNCTION__, 10, "Error getting final path for machine ", machine.id);
+                    logger().printOut(LogLevel::ERROR, __FUNCTION__, 10, "Error getting final path for machine ", machine.id);
                     continue;
                 }
 
@@ -1322,7 +1038,7 @@ void FieldProcessPlanner::sendWorkingMachinesToExitPoints(DirectedGraph::Graph &
         }
 
         if(!planOK){
-            m_logger.printOut(LogLevel::WARNING, __FUNCTION__, 10, "No plan obtained for final path of machine ", machine.id, " with A*. Getting final path geometrically");
+            logger().printOut(LogLevel::WARNING, __FUNCTION__, 10, "No plan obtained for final path of machine ", machine.id, " with A*. Getting final path geometrically");
             sendWorkingMachinesToExitPoint(route, subfield, machine);
             continue;
         }
@@ -1334,12 +1050,16 @@ void FieldProcessPlanner::sendWorkingMachinesToExitPoints(DirectedGraph::Graph &
 
         for(size_t i = 0 ; i < bestPlan.route_points_.size() ; ++i){
             bestPlan.route_points_.at(i).type = RoutePoint::TRANSIT;
-            bestPlan.route_points_.at(i).harvested_mass = lastRP.harvested_mass;
-            bestPlan.route_points_.at(i).harvested_volume = lastRP.harvested_volume;
+            bestPlan.route_points_.at(i).worked_mass = lastRP.worked_mass;
+            bestPlan.route_points_.at(i).worked_volume = lastRP.worked_volume;
         }
         bestPlan.route_points_.back().type = RoutePoint::FIELD_EXIT;
 
         route.route_points.insert( route.route_points.end(), bestPlan.route_points_.begin()+1, bestPlan.route_points_.end() );
+
+
+        if(plannerParameters.collisionAvoidanceOption != Astar::WITHOUT_COLLISION_AVOIDANCE)
+            updateVisitPeriods(graph, machine, bestPlan.route_points_, 0, bestPlan.route_points_.size()-1);
     }
 }
 
@@ -1424,17 +1144,16 @@ void FieldProcessPlanner::sendWorkingMachinesToExitPoint(Route &route, const Sub
         if(pose_end.angle < -1000)
             pose_end.angle = arolib::geometry::get_angle( route.route_points.back(), fapEd );
 
-        std::shared_ptr<IInfieldTracksConnector> connector = std::make_shared<InfieldTracksConnectorDef>(&logger());
+        std::shared_ptr<IInfieldTracksConnector> connector = std::make_shared<InfieldTracksConnectorDef>(loggerPtr());
         std::vector<Point> connectionTmp = connector->getConnection(machine,
                                                                     pose_start,
                                                                     pose_end,
                                                                     -1,
-                                                                    -1,
+                                                                    std::make_pair(-1, -1),
                                                                     limitBoundary,
                                                                     subfield.boundary_inner,
                                                                     subfield.headlands,
-                                                                    speed_start,
-                                                                    -1);
+                                                                    speed_start);
 
 
         if(!connectionTmp.empty()){
@@ -1460,7 +1179,6 @@ void FieldProcessPlanner::sendWorkingMachinesToExitPoint(Route &route, const Sub
         newPoint.point() = connection.at(i);
         newPoint.time_stamp = prevPoint.time_stamp + dist / machine_speed;
         newPoint.track_id = -1;
-        newPoint.track_idx = -1;
         newPoint.copyBasicWorkingValuesFrom(prevPoint);
 
         if(i+1 == connection.size())
@@ -1472,7 +1190,7 @@ void FieldProcessPlanner::sendWorkingMachinesToExitPoint(Route &route, const Sub
     }
 }
 
-std::vector<Point> FieldProcessPlanner::getBestPathToFirstWorkingPoint(const HeadlandRoute &route,
+std::vector<Point> FieldProcessPlanner::getBestPathToFirstWorkingPoint_hl(const Route &route,
                                                                        const Subfield &subfield,
                                                                        const Point &initialPoint,
                                                                        const Machine& machine)
@@ -1556,7 +1274,7 @@ std::vector<Point> FieldProcessPlanner::getBestPathToFirstWorkingPoint(const Hea
     return pointsOut;
 }
 
-std::vector<Point> FieldProcessPlanner::getBestPathToFirstWorkingPoint(const Route &route,
+std::vector<Point> FieldProcessPlanner::getBestPathToFirstWorkingPoint_if(const Route &route,
                                                                       const Subfield &subfield,
                                                                       const Point &initialPoint,
                                                                       const Machine &machine)
@@ -1728,8 +1446,45 @@ std::vector<Point> FieldProcessPlanner::getBestPathToFirstWorkingPoint(const Rou
 
 }
 
+void FieldProcessPlanner::adjustBaseRoutes(DirectedGraph::Graph &graph,
+                                           std::vector<Route> &baseRoutes,
+                                           const std::map<MachineId_t, MachineDynamicInfo> &machineCurrentStates)
+{
+
+    for(auto& route : baseRoutes){
+        double machineTimestamp = 0;
+        auto mdi_it = machineCurrentStates.find(route.machine_id);
+        if(mdi_it != machineCurrentStates.end())
+            machineTimestamp = std::max(0.0, mdi_it->second.timestamp);
+
+        size_t indStart = route.route_points.size();
+        for(size_t i = 0 ; i < route.route_points.size() ; ++i){
+            if(route.route_points.at(i).time_stamp > -1e-9){
+                indStart = i;
+                break;
+            }
+        }
+
+        if(indStart > 0)//set the timestamps of the vertices corresponding to the disregarded segment to "worked"
+            resetTimestampsFromBaseRoute(graph, route, 0, indStart-1);
+
+        route.route_points.erase(route.route_points.begin(), route.route_points.begin()+indStart);
+        if(!route.route_points.empty()){
+            if(machineTimestamp > 1e-9 && route.route_points.front().time_stamp < machineTimestamp){
+                double delta_time = machineTimestamp - route.route_points.front().time_stamp;
+                for(auto& rp : route.route_points)
+                    rp.time_stamp += delta_time;
+            }
+
+            //update the timestamps of the vertices corresponding to the remaining route points
+            updateTimestampsFromBaseRoute(graph, route, 0, 0, -1, 0);
+        }
+    }
+
+}
+
 std::map<MachineId_t, Route> FieldProcessPlanner::getInitialPathToWorkingRoutes(DirectedGraph::Graph &graph,
-                                                                                std::vector<Route> &mainRoutes,
+                                                                                std::vector<Route> &baseRoutes,
                                                                                 const Subfield &subfield,
                                                                                 const std::vector<Machine> &machines,
                                                                                 const std::map<MachineId_t, MachineDynamicInfo> &machineCurrentStates,
@@ -1738,21 +1493,21 @@ std::map<MachineId_t, Route> FieldProcessPlanner::getInitialPathToWorkingRoutes(
 {
     std::map<MachineId_t, Route> routesInit;
 
-    std::map<MachineId_t, Machine> harvestersMap;//for easier access
+    std::map<MachineId_t, Machine> machinesMap;//for easier access
     for(auto& m : machines){
         if(m.isOfWorkingType(true))
-            harvestersMap[m.id] = m;
+            machinesMap[m.id] = m;
     }
 
-    for(auto & route : mainRoutes){
+    for(auto & route : baseRoutes){
         Route routeInit;
         routeInit.machine_id = route.machine_id;
 
-        auto it_m = harvestersMap.find(route.machine_id);
+        auto it_m = machinesMap.find(route.machine_id);
         auto it_mdi = machineCurrentStates.find(route.machine_id);
 
         if(route.route_points.empty()
-                || it_m == harvestersMap.end()
+                || it_m == machinesMap.end()
                 || it_mdi == machineCurrentStates.end() ){//if no current location is given, assume it start at the first route point
             routesInit[route.machine_id] = routeInit;
             continue;
@@ -1768,8 +1523,10 @@ std::map<MachineId_t, Route> FieldProcessPlanner::getInitialPathToWorkingRoutes(
             if( dist < 2 * machine.working_width){
                 RoutePoint rp;
                 rp.type = RoutePoint::INITIAL_POSITION;
-                rp.time_stamp = 0;
+                rp.time_stamp = mdi.timestamp;
                 rp.point() = mdi.position;
+                rp.bunker_mass = mdi.bunkerMass;
+                rp.bunker_volume = mdi.bunkerVolume;
                 routeInit.route_points.emplace_back(rp);
 
                 rp = route.route_points.front();
@@ -1798,17 +1555,24 @@ std::map<MachineId_t, Route> FieldProcessPlanner::getInitialPathToWorkingRoutes(
         Astar::PlanParameters astarParams;
         astarParams.start_vt = it_vt->second;
         astarParams.goal_vt = it_vt_2->second;
-        astarParams.start_time = 0;
-        astarParams.max_time_visit = 0;//do not drive over any of the vertices that will be worked on (except for the first one, which is the goal)
-        astarParams.max_time_goal = std::numeric_limits<double>::max();//no limits, just get there
+        astarParams.start_time = mdi.timestamp;
         astarParams.machine = machine;
         astarParams.machine_speed = machine_speed;
         astarParams.initial_bunker_mass = mdi.bunkerMass;
-        astarParams.overload = false;
         astarParams.includeWaitInCost = false;
-        astarParams.exclude = getExcludeVertices_initMainRoute(graph, astarParams.goal_vt);
-        astarParams.restrictedMachineIds = {machine.id};
-        astarParams.restrictedMachineIds_futureVisits = {};//@todo check
+
+        //successor checkers
+        if(machine.isOfWorkingTypeForMaterialOutput()){
+            //remove the timestamp of the vertex corresponding to the first route point so that the machine does not wait for itself
+            resetTimestampsFromBaseRoute(graph, route, 0, 0);
+
+            astarParams.successorCheckers.emplace_back( std::make_shared<AstarSuccessorChecker_SuccessorTimestamp>(route.route_points.front().time_stamp,
+                                                                                                                   AstarSuccessorChecker_SuccessorTimestamp::INVALID_IF_LOWER_THAN_SUCC_TIMESPAMP,
+                                                                                                                   std::set<MachineId_t>{machine.id}) );
+        }
+
+        astarParams.successorCheckers.emplace_back( std::make_shared<AstarSuccessorChecker_VertexExcludeSet_Exceptions1>( getExcludeVertices_initMainRoute(graph, astarParams.goal_vt) ) );
+        //@todo check if a FutureVisits checker is needed
 
         const Astar::AStarSettings& astarSettings_original = plannerParameters;
         Astar::AStarSettings astarSettings = astarSettings_original;
@@ -1824,13 +1588,20 @@ std::map<MachineId_t, Route> FieldProcessPlanner::getInitialPathToWorkingRoutes(
                        astarSettings,
                        RoutePoint::TRANSIT,
                        foldername_planData,
-                       &m_logger);
+                       loggerPtr());
 
         if( !planner.plan(graph, edgeCostCalculator) ){
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, 10, "Error getting initial path for machine ", machine.id);
+
+            //set again the timestamp of the vertex corresponding to the first route point
+            resetTimestampsFromBaseRoute(graph, route, 0, 0, route.route_points.front().time_stamp);
+
+            logger().printOut(LogLevel::ERROR, __FUNCTION__, 10, "Error getting initial path for machine ", machine.id);
             routesInit[route.machine_id] = routeInit;
             continue;
         }
+
+        //set again the timestamp of the vertex corresponding to the first route point
+        resetTimestampsFromBaseRoute(graph, route, 0, 0, route.route_points.front().time_stamp);
 
         AstarPlan plan = planner.getPlan();
 
@@ -1849,23 +1620,40 @@ std::map<MachineId_t, Route> FieldProcessPlanner::getInitialPathToWorkingRoutes(
                 routeInit.route_points.at(i).type = RoutePoint::TRANSIT;
         }
         routesInit[route.machine_id] = routeInit;
+
+//        if(plannerParameters.collisionAvoidanceOption != Astar::WITHOUT_COLLISION_AVOIDANCE)
+//            updateVisitPeriods(graph, machine, routeInit.route_points, 0, routeInit.route_points.size()-1);
+
     }
 
 
     //adjust timestamps of route and vertices
-    for(auto & route : mainRoutes){
+    for(auto & route : baseRoutes){
         auto it_ir = routesInit.find(route.machine_id);
         if(it_ir == routesInit.end())
             continue;
 
         auto& routeInit = it_ir->second;
-        if(routeInit.route_points.empty())
+        if(routeInit.route_points.empty() || route.route_points.empty())
             continue;
 
         double delta_time = routeInit.route_points.back().time_stamp;
+        double timestamp_0 = route.route_points.front().time_stamp;
+        if(timestamp_0 > -1e-6){
+            if(delta_time > timestamp_0)
+                delta_time -= timestamp_0;
+            else
+                delta_time = 0;
+        }
 
-        OLVPlan::addDelayToHarvRoute(graph, route, 0, delta_time);//this also sets the right timestamps to the vertices (until now, the vertices had the timestamps of the initial headland and infield harvester routes)
-
+        if(delta_time > 1e-6){ // add delay to base route
+            for(auto& rp : route.route_points){
+                if(rp.time_stamp > -1e-6)
+                    rp.time_stamp += delta_time;
+            }
+        }
+        // add delay to vertex_properties
+        updateTimestampsFromBaseRoute(graph, route, 0, 0, -1, 0);
     }
 
     return routesInit;
@@ -1904,7 +1692,7 @@ void FieldProcessPlanner::addWMVisitPeriods(DirectedGraph::Graph &graph,
 
         for(size_t i = 0 ; i < route.route_points.size() ; ++i ){
             auto &rp = route.route_points.at(i);
-            auto vp = getVisitPeriod(route.machine_id, route.route_points, r, i, &graph, &m_logger);
+            auto vp = getVisitPeriod(route.machine_id, route.route_points, r, i, &graph, loggerPtr());
 
             bool addedToVertex = false;
 
@@ -1935,7 +1723,7 @@ void FieldProcessPlanner::addWMVisitPeriods(DirectedGraph::Graph &graph,
                 }
             }
             if(!addedToVertex){
-                m_logger.printOut(LogLevel::WARNING, __FUNCTION__, 10,
+                logger().printOut(LogLevel::WARNING, __FUNCTION__, 10,
                                   "No visit period was added corresponding to point [", i, "] of the route of machine ", route.machine_id);
             }
         }
@@ -1958,7 +1746,9 @@ std::set<DirectedGraph::vertex_t> FieldProcessPlanner::getExcludeVertices_initMa
             continue;
 
         //exclude the vertices that are connected to the goal vertex and belong to an adjacent track
-        if( std::abs( goal_prop.route_point.track_id - successor_prop.route_point.track_id ) == 1 )
+        if( goal_prop.route_point.type != RoutePoint::TRACK_START
+                && goal_prop.route_point.type != RoutePoint::TRACK_END
+                && std::abs( goal_prop.route_point.track_id - successor_prop.route_point.track_id ) == 1 )
             exclude.insert(successor);
 
     }
@@ -2009,10 +1799,10 @@ void FieldProcessPlanner::addInitialPointsToMainRoutes(std::vector<Route> &mainR
             const MachineDynamicInfo& mdi = it->second;
             RoutePoint rp;
             rp.type = RoutePoint::INITIAL_POSITION;
-            rp.time_stamp = 0;
+            rp.time_stamp = mdi.timestamp;
             rp.point() = mdi.position;
-            rp.harvested_mass = 0;
-            rp.harvested_volume = 0;
+            rp.bunker_mass = mdi.bunkerMass;
+            rp.bunker_volume = mdi.bunkerVolume;
             route.route_points.insert( route.route_points.begin(), rp );
         }
     }
@@ -2143,7 +1933,7 @@ double FieldProcessPlanner::getHarvestedMassLimit(const Subfield &subfield,
     double mult = 1.3 * m_partialPlanAreaThreshold / fieldAreaRem - 0.3;
     auto val = std::max((countOLVs+1)/countOLVs * bunkerMassTotal, fieldYield * mult);
 
-    m_logger.printOut(arolib::LogLevel::INFO, __FUNCTION__, "Using a maximum harvested mass for the OLV planner of " + std::to_string(val)
+    logger().printOut(arolib::LogLevel::INFO, __FUNCTION__, "Using a maximum harvested mass for the OLV planner of " + std::to_string(val)
                                                             + " Kg from a total yield in the subfield of " + std::to_string(fieldYield) + " Kg (" + std::to_string((val/fieldYield)*100) + "%)");
 
     return val;
@@ -2161,19 +1951,71 @@ void FieldProcessPlanner::addRoutesOverruns(DirectedGraph::Graph &graph, const s
         for(size_t i = 0 ; i+1 < route.route_points.size() ; ++i){
             auto & rp0 = route.route_points.at(i);
             auto & rp1 = route.route_points.at(i+1);
+
+            DirectedGraph::vertex_t vt0, vt1;
+            bool vt0ok = false, vt1ok = false;
+
+            std::vector<DirectedGraph::vertex_t> vts0, vts1;
+
+
             auto it_0 = graph.routepoint_vertex_map().find( rp0 );
-            if(it_0 == graph.routepoint_vertex_map().end())
-                continue;
+            if(it_0 != graph.routepoint_vertex_map().end()){
+                vt0 = it_0->second;
+                vt0ok = true;
+            }
+            else{
+                //try searching close vertex
+                auto vts0 = graph.getVerticesInRadius(rp0, 1e-3);
+                if(vts0.empty())
+                    continue;
+                std::sort(vts0.begin(), vts0.end(), [&rp0, &graph](const DirectedGraph::vertex_t &a, const DirectedGraph::vertex_t &b)->bool{
+                    return geometry::calc_dist(rp0, graph[a].route_point) < geometry::calc_dist(rp0, graph[b].route_point);
+                });
+            }
+
             auto it_1 = graph.routepoint_vertex_map().find( rp1 );
-            if(it_1 == graph.routepoint_vertex_map().end())
-                continue;
+            if(it_1 != graph.routepoint_vertex_map().end()){
+                vt1 = it_1->second;
+                vt1ok = true;
+            }
+            else{
+                //try searching close vertex
+                auto vts1 = graph.getVerticesInRadius(rp0, 1e-3);
+                if(vts1.empty())
+                    continue;
+                std::sort(vts1.begin(), vts1.end(), [&rp0, &graph](const DirectedGraph::vertex_t &a, const DirectedGraph::vertex_t &b)->bool{
+                    return geometry::calc_dist(rp0, graph[a].route_point) < geometry::calc_dist(rp0, graph[b].route_point);
+                });
+            }
+
+            if(!vt0ok || !vt1ok){
+                bool found = false;
+                if(vt0ok)
+                    vts0.push_back(vt0);
+                if(vt1ok)
+                    vts1.push_back(vt1);
+                for(size_t i0 = 0 ; i0 < vts0.size() ; ++i0){
+                    auto connVts = getConnectedVerticesSet(graph, vts0.at(i0));
+                    for(size_t i1 = 0 ; i1 < vts1.size() ; ++i1){
+                        if(connVts.find(vts1.at(i1)) != connVts.end()){
+                            vt0 = vts0.at(i0);
+                            vt1 = vts1.at(i1);
+                            found = true;
+                            break;
+                        }
+                    }
+                    if(found) break;
+                }
+                if(!found)
+                    continue;
+            }
 
             DirectedGraph::overroll_property overrun;
             overrun.duration = rp1.time_stamp - rp0.time_stamp;
             overrun.machine_id = it_m->second.id;
             overrun.weight = it_m->second.weight;
 
-            graph.addOverrun( it_0->second, it_1->second, overrun );
+            graph.addOverrun( vt0, vt1, overrun );
         }
 
     }

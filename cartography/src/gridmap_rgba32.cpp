@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -133,7 +133,7 @@ bool RGBA32Gridmap::saveGridAsPNG32(const std::string &_filename) const  {
     }
     std::ofstream outMeta(metadata.c_str());
     if(!outMeta.is_open()){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error creating/opening file for metadata.");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error creating/opening file for metadata.");
         return false;
     }
     outMeta << std::setprecision(12) << m_layout.getCellsize()
@@ -142,7 +142,7 @@ bool RGBA32Gridmap::saveGridAsPNG32(const std::string &_filename) const  {
 
     std::ofstream image_out(filename);
     if(!image_out.is_open()){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error creating/opening image file.");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error creating/opening image file.");
         return false;
     }
 
@@ -150,7 +150,7 @@ bool RGBA32Gridmap::saveGridAsPNG32(const std::string &_filename) const  {
     image_out.close();
 
     if(ok)
-        m_logger.printOut(LogLevel::DEBUG, __FUNCTION__, "Grid saved successfully.");
+        logger().printOut(LogLevel::DEBUG, __FUNCTION__, "Grid saved successfully.");
 
     return ok;
 }
@@ -162,7 +162,7 @@ bool RGBA32Gridmap::saveGridAsPNG32(std::ostringstream &image_out) const  {
         return saveGridAsPNG32(image_out_ref) && image_out.good();
     }
     catch (std::exception &e){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error converting grid to png: " + std::string( e.what() ) );
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error converting grid to png: " + std::string( e.what() ) );
         return false;
     }
 }
@@ -195,7 +195,7 @@ bool RGBA32Gridmap::saveGridAsPNG32(std::ostream &image_out) const{
         return true;
     }
     catch (std::exception &e){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error converting grid to png: " + std::string( e.what() ) );
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error converting grid to png: " + std::string( e.what() ) );
         return false;
     }
 }
@@ -222,7 +222,7 @@ bool RGBA32Gridmap::saveValuesCsv(std::ostream &out, const std::string &sep, con
 
 bool RGBA32Gridmap::readGridFromPNG32(const std::string &filename) {
 
-    m_logger.printOut(LogLevel::DEBUG, __FUNCTION__, "Reading grid from " + filename);
+    logger().printOut(LogLevel::DEBUG, __FUNCTION__, "Reading grid from " + filename);
     std::string metadata = filename;
     size_t index = metadata.find(".png");
     if (index != std::string::npos) {
@@ -230,23 +230,23 @@ bool RGBA32Gridmap::readGridFromPNG32(const std::string &filename) {
     }
     std::ifstream inMeta(metadata.c_str());
     if (!inMeta.is_open()) {
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Cannot read from file " + metadata);
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Cannot read from file " + metadata);
         return false;
     }
 
-    m_logger.printOut(LogLevel::DEBUG, __FUNCTION__, "Meta information read from " + metadata);
+    logger().printOut(LogLevel::DEBUG, __FUNCTION__, "Meta information read from " + metadata);
     double cellsize,dataMinX,dataMinY;
     inMeta >> cellsize >> dataMinX >> dataMinY;
     inMeta.close();
 
     if (cellsize <= 0 ) {
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error in cellsize input parameter");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error in cellsize input parameter");
         return false;
     }
 
     std::ifstream image_in(filename.c_str());
     if (!image_in.is_open()) {
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Cannot read from file " + filename);
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Cannot read from file " + filename);
         return false;
     }
 
@@ -265,23 +265,23 @@ bool RGBA32Gridmap::readGridFromPNG32(std::istream &image_in, double cellsize, d
 
         image_in.seekg(0, image_in.beg);
 
-        m_logger.printOut(LogLevel::DEBUG, __FUNCTION__, "Generating grid with size: " + std::to_string(image.get_width())
+        logger().printOut(LogLevel::DEBUG, __FUNCTION__, "Generating grid with size: " + std::to_string(image.get_width())
                           + " x " + std::to_string(image.get_height()));
 
         int width = image.get_width();
         int height = image.get_height();
         if(width <= 0 || height <= 0){
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Invalid image size");
+            logger().printOut(LogLevel::ERROR, __FUNCTION__, "Invalid image size");
             return false;
         };
 
         if( !m_layout.init(minX, minY, width, height, cellsize) ){
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error setting geometric layout");
+            logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error setting geometric layout");
             return false;
         }
 
         if ( !allocate() ){
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error allocating new grid");
+            logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error allocating new grid");
             return false;
         };
 
@@ -295,12 +295,12 @@ bool RGBA32Gridmap::readGridFromPNG32(std::istream &image_in, double cellsize, d
             }
         }
 
-        m_logger.printOut(LogLevel::DEBUG, __FUNCTION__, "Grid generated successfully.");
+        logger().printOut(LogLevel::DEBUG, __FUNCTION__, "Grid generated successfully.");
 
         return true;
     }
     catch (std::exception &e){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error creating grid from png: " + std::string( e.what() ) );
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error creating grid from png: " + std::string( e.what() ) );
         return false;
     }
 }
@@ -314,7 +314,7 @@ bool RGBA32Gridmap::readGridFromPNG32(std::istream &image_in, double minX, doubl
         int width = image.get_width();
         int height = image.get_height();
         if(width <= 0 || height <= 0){
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Invalid image size");
+            logger().printOut(LogLevel::ERROR, __FUNCTION__, "Invalid image size");
             return false;
         };
 
@@ -323,7 +323,7 @@ bool RGBA32Gridmap::readGridFromPNG32(std::istream &image_in, double minX, doubl
         return readGridFromPNG32(image_in, cellsize, minX, minY);
     }
     catch (std::exception &e){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error creating grid from png: " + std::string( e.what() ) );
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error creating grid from png: " + std::string( e.what() ) );
         return false;
     }
 }
@@ -341,7 +341,7 @@ bool RGBA32Gridmap::readGridFromPNG32(const std::string &image_in, double cellsi
                                  minY);
     }
     catch (std::exception &e){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error creating grid from png: " + std::string( e.what() ) );
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error creating grid from png: " + std::string( e.what() ) );
         return false;
     }
 }
@@ -360,7 +360,7 @@ bool RGBA32Gridmap::readGridFromPNG32(const std::string &image_in, double minX, 
                                  maxY);
     }
     catch (std::exception &e){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error creating grid from png: " + std::string( e.what() ) );
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error creating grid from png: " + std::string( e.what() ) );
         return false;
     }
 }
@@ -379,7 +379,7 @@ bool RGBA32Gridmap::readGridFromPNG32(const char *image_in, unsigned int size, d
                                   minY );
     }
     catch (std::exception &e){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error creating grid from png: " + std::string( e.what() ) );
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error creating grid from png: " + std::string( e.what() ) );
         return false;
     }
 }
@@ -399,7 +399,7 @@ bool RGBA32Gridmap::readGridFromPNG32(const char *image_in, unsigned int size, d
                                   maxY );
     }
     catch (std::exception &e){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error creating grid from png: " + std::string( e.what() ) );
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error creating grid from png: " + std::string( e.what() ) );
         return false;
     }
 }

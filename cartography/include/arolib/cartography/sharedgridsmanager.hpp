@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,8 +32,9 @@ namespace gridmap{
 class SharedGridsManager : public LoggingComponent
 {
 public:
-    using GridPtr = std::shared_ptr<ArolibGrid_t>;
-    using ConstGridPtr = std::shared_ptr<const ArolibGrid_t>;
+    using GridType = ArolibGrid_t;
+    using GridPtr = std::shared_ptr<GridType>;
+    using ConstGridPtr = std::shared_ptr<const GridType>;
 
     /**
      * @brief Type for calculations
@@ -129,13 +130,10 @@ protected:
     virtual void removeGridsFromCIM();
 
 protected:
-    mutable std::mutex m_mutex; /**< Mutex. */
     int m_id; /**< Internal id of the SharedGridsManager object. */
     std::string m_prefix; /**< Internal prefix for the SharedGridsManager. */
     std::map< std::string, ConstGridPtr > m_grids; /**< Shared grids. */
     std::shared_ptr<gridmap::GridCellsInfoManager> m_cellsInfoManager = nullptr; /**< GridCellsInfoManager. */
-
-    static std::set<int> m_ids; /**< Id count for SharedGridsManager objects. */
 
 };
 

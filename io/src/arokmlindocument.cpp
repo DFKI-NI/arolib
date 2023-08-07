@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -38,7 +38,7 @@ AroKMLInDocument::~AroKMLInDocument()
 bool AroKMLInDocument::read(const ReadHandler & base, Point &pt, std::string *description)
 {
     if(!m_isDocOpen){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
         return false;
     }
 
@@ -61,7 +61,7 @@ bool AroKMLInDocument::read(const ReadHandler & base, Point &pt, std::string *de
 bool AroKMLInDocument::read(const ReadHandler & base, std::vector<Point> &pts, std::string *description)
 {
     if(!m_isDocOpen){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
         return false;
     }
 
@@ -83,7 +83,7 @@ bool AroKMLInDocument::read(const ReadHandler & base, std::vector<Point> &pts, s
 
 bool AroKMLInDocument::read(const ReadHandler & base, Linestring &ls, std::string *description){
     if(!m_isDocOpen){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
         return false;
     }
 
@@ -110,7 +110,7 @@ bool AroKMLInDocument::read(const ReadHandler & base, Linestring &ls, std::strin
         return true;
     }
     catch(std::exception &e){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, std::string("Linestring: ") + e.what());
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, std::string("Linestring: ") + e.what());
         return false;
     }
 }
@@ -118,7 +118,7 @@ bool AroKMLInDocument::read(const ReadHandler & base, Linestring &ls, std::strin
 bool AroKMLInDocument::read(const ReadHandler & base, Polygon &poly, std::string *description){
 
     if(!m_isDocOpen){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
         return false;
     }
 
@@ -146,7 +146,7 @@ bool AroKMLInDocument::read(const ReadHandler & base, Polygon &poly, std::string
         return true;
     }
     catch(std::exception &e){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, std::string("Polygon: ") + e.what());
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, std::string("Polygon: ") + e.what());
         return false;
     }
 }
@@ -155,7 +155,7 @@ bool AroKMLInDocument::read( const ReadHandler & base, FieldAccessPoint &pt){
 
     pt = FieldAccessPoint();
     if(!m_isDocOpen){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
         return false;
     }
 
@@ -169,7 +169,7 @@ bool AroKMLInDocument::read( const ReadHandler & base, FieldAccessPoint &pt){
         return true;
     }
     catch(std::exception &e){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, std::string("FieldAccessPoint: ") + e.what());
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, std::string("FieldAccessPoint: ") + e.what());
         return false;
     }
 }
@@ -182,7 +182,7 @@ bool AroKMLInDocument::read( const ReadHandler & base, ResourcePoint &pt){
 
     pt = ResourcePoint();
     if(!m_isDocOpen){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
         return false;
     }
 
@@ -202,7 +202,7 @@ bool AroKMLInDocument::read( const ReadHandler & base, ResourcePoint &pt){
         return true;
     }
     catch(std::exception &e){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, std::string("ResourcePoint: ") + e.what());
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, std::string("ResourcePoint: ") + e.what());
         return false;
     }
 }
@@ -214,7 +214,7 @@ bool AroKMLInDocument::read( const ReadHandler & base, std::vector<ResourcePoint
 bool AroKMLInDocument::read( const ReadHandler & base, RoutePoint &pt){
     pt = RoutePoint();
     if(!m_isDocOpen){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
         return false;
     }
 
@@ -228,7 +228,7 @@ bool AroKMLInDocument::read( const ReadHandler & base, RoutePoint &pt){
         return true;
     }
     catch(std::exception &e){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, std::string("RoutePoint: ") + e.what());
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, std::string("RoutePoint: ") + e.what());
         return false;
     }
 }
@@ -237,37 +237,11 @@ bool AroKMLInDocument::read( const ReadHandler & base, std::vector<RoutePoint> &
     return readMultiple(base, pts, KmlTag( RoutePoint() ), true);
 }
 
-bool AroKMLInDocument::read( const ReadHandler & base, HeadlandPoint &pt){
-    pt = HeadlandPoint();
-    if(!m_isDocOpen){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
-        return false;
-    }
-
-    try{
-        if(!readFromDescription(base, pt))
-            return false;
-
-        if(!read(base, pt.point()))
-            return false;
-
-        return true;
-    }
-    catch(std::exception &e){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, std::string("RoutePoint: ") + e.what());
-        return false;
-    }
-}
-
-bool AroKMLInDocument::read( const ReadHandler & base, std::vector<HeadlandPoint> &pts){
-    return readMultiple(base, pts, KmlTag( HeadlandPoint() ), true);
-}
-
 bool AroKMLInDocument::read( const ReadHandler & base, Track &track){
     track = Track();
 
     if(!m_isDocOpen){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
         return false;
     }
 
@@ -295,7 +269,7 @@ bool AroKMLInDocument::read( const ReadHandler & base, Track &track){
         return true;
     }
     catch(std::exception &e){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, std::string("Track: ") + e.what());
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, std::string("Track: ") + e.what());
         return false;
     }
 }
@@ -308,7 +282,7 @@ bool AroKMLInDocument::read(const AroKMLInDocument::ReadHandler &base, Headlands
 {
     headlands = Headlands();
     if(!m_isDocOpen){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
         return false;
     }
 
@@ -323,10 +297,15 @@ bool AroKMLInDocument::read(const AroKMLInDocument::ReadHandler &base, Headlands
                 return false;
         }
 
+        if(getKmlBranch(base, KmlTag( headlands.partial ), branch)){
+            if(!read(branch, headlands.partial))
+                return false;
+        }
+
         return true;
     }
     catch(std::exception &e){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, std::string("Headlands: ") + e.what());
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, std::string("Headlands: ") + e.what());
         return false;
     }
 
@@ -336,7 +315,7 @@ bool AroKMLInDocument::read(const AroKMLInDocument::ReadHandler &base, CompleteH
 {
     hl = CompleteHeadland();
     if(!m_isDocOpen){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
         return false;
     }
 
@@ -375,17 +354,57 @@ bool AroKMLInDocument::read(const AroKMLInDocument::ReadHandler &base, CompleteH
         return true;
     }
     catch(std::exception &e){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, std::string("CompleteHeadland: ") + e.what());
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, std::string("CompleteHeadland: ") + e.what());
         return false;
     }
 
+}
+
+bool AroKMLInDocument::read(const AroKMLInDocument::ReadHandler &base, PartialHeadland &hl)
+{
+    hl = PartialHeadland();
+    if(!m_isDocOpen){
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
+        return false;
+    }
+
+    try{
+        ReadHandler branch;
+        bool ok_ob = false;
+
+        if(!readFromDescription(base, hl))
+            return false;
+
+        if(getKmlBranch(base, KmlTag( hl.boundary, "boundary" ), branch)){
+            if(!read(branch, hl.boundary))
+                return false;
+            ok_ob = true;
+        }
+
+        if(getKmlBranch(base, KmlTag( hl.tracks ), branch)){
+            if(!read(branch, hl.tracks))
+                return false;
+        }
+
+        return ( !m_strict || (ok_ob) );
+    }
+    catch(std::exception &e){
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, std::string("PartialHeadland: ") + e.what());
+        return false;
+    }
+
+}
+
+bool AroKMLInDocument::read(const AroKMLInDocument::ReadHandler &base, std::vector<PartialHeadland> &headlands)
+{
+    return readMultiple(base, headlands, KmlTag( PartialHeadland() ), true);
 }
 
 bool AroKMLInDocument::read(const AroKMLInDocument::ReadHandler &base, Obstacle &obs)
 {
     obs = Obstacle();
     if(!m_isDocOpen){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
         return false;
     }
 
@@ -403,7 +422,7 @@ bool AroKMLInDocument::read(const AroKMLInDocument::ReadHandler &base, Obstacle 
         return true;
     }
     catch(std::exception &e){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, std::string("Obstacle: ") + e.what());
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, std::string("Obstacle: ") + e.what());
         return false;
     }
 
@@ -418,7 +437,7 @@ bool AroKMLInDocument::read( const ReadHandler & base, Subfield &sf){
 
     sf = Subfield();
     if(!m_isDocOpen){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
         return false;
     }
 
@@ -483,7 +502,7 @@ bool AroKMLInDocument::read( const ReadHandler & base, Subfield &sf){
         return ( !m_strict || (ok_ob) );
     }
     catch(std::exception &e){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, std::string("Subfield: ") + e.what());
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, std::string("Subfield: ") + e.what());
         return false;
     }
 
@@ -495,7 +514,7 @@ bool AroKMLInDocument::read( const ReadHandler & base, std::vector<Subfield> &sf
 
 bool AroKMLInDocument::read( const ReadHandler & base, Field &field){
     if(!m_isDocOpen){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
         return false;
     }
 
@@ -526,7 +545,7 @@ bool AroKMLInDocument::read( const ReadHandler & base, Field &field){
         return true;
     }
     catch(std::exception &e){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, std::string("Field: ") + e.what());
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, std::string("Field: ") + e.what());
         return false;
     }
 }
@@ -599,14 +618,14 @@ bool AroKMLInDocument::openDoc()
         read_xml(*m_is, RHTree(m_base));
 
         if(!getBranchHandler(m_base, {"kml", m_docTag}, m_base)){
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Cannot open document tag.");
+            logger().printOut(LogLevel::ERROR, __FUNCTION__, "Cannot open document tag.");
             return false;
         }
 
         return true;
     }
     catch (std::exception& e){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, std::string("Error reading input stream/file: '") + e.what() + "'");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, std::string("Error reading input stream/file: '") + e.what() + "'");
         return false;
     }
 }
@@ -622,7 +641,7 @@ bool AroKMLInDocument::stringToPoint(std::string coordinates, Point &pt){
         else if (xyz.size() == 3)
             pt_in = Point(string2double(xyz[0]), string2double(xyz[1]), string2double(xyz[2]));
         else{
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Cannot parse/split the point '" + coordinates + "'");
+            logger().printOut(LogLevel::ERROR, __FUNCTION__, "Cannot parse/split the point '" + coordinates + "'");
             return false;
         }
 
@@ -637,7 +656,7 @@ bool AroKMLInDocument::stringToPoint(std::string coordinates, Point &pt){
         return true;
     }
     catch(std::exception &e){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Cannot parse/split the point '" + coordinates + "': " + e.what());
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Cannot parse/split the point '" + coordinates + "': " + e.what());
         return false;
     }
 }
@@ -653,7 +672,7 @@ bool AroKMLInDocument::stringToPointList(std::string coordinates, std::vector<Po
             continue;
         Point pt;
         if( !stringToPoint(strs.at(i), pt) ){
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error reading point " + std::to_string(i));
+            logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error reading point " + std::to_string(i));
             return false;
         }
         pts.push_back(pt);
@@ -690,7 +709,7 @@ bool AroKMLInDocument::getKmlBranch(const boost::property_tree::ptree & base, co
     branch = base;
     for(size_t i = 0 ; i < kmlTags.size() ; ++i){
         if(!getKmlBranch(branch, kmlTags.at(i), branch)){
-            m_logger.printOut(LogLevel::WARNING, __FUNCTION__, "Cannot open tag '" + std::to_string(i) + ": '" + kmlTags.at(i).kml_tag + "' - '" + kmlTags.at(i).name + "'");
+            logger().printOut(LogLevel::WARNING, __FUNCTION__, "Cannot open tag '" + std::to_string(i) + ": '" + kmlTags.at(i).kml_tag + "' - '" + kmlTags.at(i).name + "'");
             return false;
         }
     }
@@ -868,29 +887,6 @@ bool AroKMLInDocument::readFromDescription(ResourcePoint &pt, const std::string 
     return ( !strict || (ok_id) );
 }
 
-bool AroKMLInDocument::readFromDescription(HeadlandPoint &pt, const std::string &description, bool strict)
-{
-
-    bool ok_ti = false;
-
-    auto items = getDescriptionItems(description);
-    for(auto & item : items){
-        auto& key = item.first;
-        auto& value = item.second;
-        try{
-            if(key == "track_id"){
-                pt.track_id = std::stoi(value);
-                ok_ti = true;
-            }
-        }
-        catch(...){
-
-        }
-    }
-
-    return ( !strict || (ok_ti) );
-}
-
 bool AroKMLInDocument::readFromDescription(RoutePoint &pt, const std::string &description, bool strict)
 {
     bool ok_ts = false;
@@ -922,20 +918,17 @@ bool AroKMLInDocument::readFromDescription(RoutePoint &pt, const std::string &de
                 pt.bunker_volume = string2double(value);
                 ok_bv = true;
             }
-            else if(key == "harvested_mass"){
-                pt.harvested_mass = string2double(value);
+            else if(key == "worked_mass"){
+                pt.worked_mass = string2double(value);
                 ok_hm = true;
             }
-            else if(key == "harvested_volume"){
-                pt.harvested_volume = string2double(value);
+            else if(key == "worked_volume"){
+                pt.worked_volume = string2double(value);
                 ok_hv = true;
             }
             else if(key == "track_id"){
                 pt.track_id = std::stoi(value);
                 ok_ti = true;
-            }
-            else if(key == "track_idx"){
-                pt.track_idx = std::stoi(value);
             }
         }
         catch(...){
@@ -1003,18 +996,41 @@ bool AroKMLInDocument::readFromDescription(CompleteHeadland &hl, const std::stri
         auto& value = item.second;
         try{
             if(key == "width"){
-                try{
-                    hl.headlandWidth = string2double( value );
-                }
-                catch(...){
-                    return false;
-                }
+                hl.headlandWidth = string2double( value );
             }
         }
         catch(...){
         }
     }
     return true;
+}
+
+bool AroKMLInDocument::readFromDescription(PartialHeadland &hl, const std::string &description, bool strict)
+{
+    bool ok_id = false;
+    auto connectingHeadlandId1 = hl.connectingHeadlandIds.first;
+    auto connectingHeadlandId2 = hl.connectingHeadlandIds.second;
+    auto items = getDescriptionItems(description);
+    for(auto & item : items){
+        auto& key = item.first;
+        auto& value = item.second;
+        try{
+            if(key == "id"){
+                hl.id = std::stoi(value);
+                ok_id = true;
+            }
+            else if(key == "connectingHeadlandId1"){
+                connectingHeadlandId1 = std::stoi(value);
+            }
+            else if(key == "connectingHeadlandId2"){
+                connectingHeadlandId2 = std::stoi(value);
+            }
+        }
+        catch(...){
+        }
+    }
+    hl.connectingHeadlandIds = std::make_pair(connectingHeadlandId1, connectingHeadlandId2);
+    return ( !strict || (ok_id) );
 }
 
 std::vector<std::pair<std::string, std::string> > AroKMLInDocument::getDescriptionItems(const std::string& description)

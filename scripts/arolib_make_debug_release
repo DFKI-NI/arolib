@@ -1,0 +1,5 @@
+#!/bin/bash
+
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+
+$SCRIPT_DIR/arolib_make_debug && $SCRIPT_DIR/arolib_make

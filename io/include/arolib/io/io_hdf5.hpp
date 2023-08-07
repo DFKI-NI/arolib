@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH and Universität Osnabrück
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@
 #define H5_USE_BOOST
 
 #include <boost/multi_array.hpp>
+#include "arolib/misc/logger.h"
 #include "arolib/types/field.hpp"
 #include "arolib/types/resourcepoint.hpp"
 #include "arolib/cartography/common.hpp"

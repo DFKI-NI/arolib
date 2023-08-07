@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,8 @@ namespace arolib{
 
 std::mutex Logger::m_mutex;
 
+LogLevel Logger::DefaultLogLevel = LogLevel::INFO;
+
 Logger::Logger(const arolib::LogLevel &logLevel, const std::string &baseName) :
     m_logLevel(logLevel),
     m_baseName(baseName)
@@ -27,7 +29,7 @@ Logger::Logger(const arolib::LogLevel &logLevel, const std::string &baseName) :
     //m_timestamp = std::chrono::steady_clock::now();
 }
 
-Logger::Logger(Logger *parent, const std::string &baseName):
+Logger::Logger(std::shared_ptr<Logger> parent, const std::string &baseName):
     m_parent(parent),
     m_baseName(baseName)
 {
@@ -159,18 +161,17 @@ void Logger::setBaseName(const std::string &baseName)
 }
 
 
-void Logger::setParent(const Logger *parent)
+void Logger::setParent(const std::shared_ptr<Logger> parent)
 {
-    if(!parent)
+    if(parent.get() == this) // @todo: this check might fail. Is there a way to check this more robustly?
         return;
-    m_logLevel = parent->logLevel();
-    m_os = parent->os();
+    m_parent = parent;
+//    m_logLevel = parent->logLevel();
+//    m_os = parent->os();
 }
 
 void Logger::resetParent()
 {
-    if(!m_parent)
-        return;
     m_parent = nullptr;
 }
 
@@ -254,11 +255,13 @@ std::string Logger::getHeader(LogLevel _logLevel, const std::string& function) c
     m_timestamp.setNow();
 
     std::string ts_hdr;
-    if(m_includeTimestamp){
+    //if(m_includeTimestamp){
+    if(getIncludeTimestamp()){
         //ts_hdr += "{" + DateTime().getTimeStr(true) + "}";
         ts_hdr += "[" + m_timestamp.getTimeStr(true) + "]";
     }
-    if(m_includeElapsedTime){
+    //if(m_includeElapsedTime){
+    if(getIncludeElapsedTime()){
         //ts_hdr += "{" + std::to_string( std::chrono::duration_cast<std::chrono::microseconds>(m_timestamp - timestamp).count() ) + "us}";
         std::string timeElapsedStr;
         auto timeElapsed = m_timestamp.timeSince(timestamp);
@@ -275,15 +278,15 @@ std::string Logger::getHeader(LogLevel _logLevel, const std::string& function) c
 }
 
 bool Logger::getIncludeTimestamp() const {
-    if(m_parent)
-        return m_parent->getIncludeTimestamp();
+//    if(m_parent)
+//        return m_parent->getIncludeTimestamp();
     return m_includeTimestamp;
 }
 
 bool Logger::getIncludeElapsedTime() const {
 
-    if(m_parent)
-        return m_parent->getIncludeElapsedTime();
+//    if(m_parent)
+//        return m_parent->getIncludeElapsedTime();
     return m_includeElapsedTime;
 }
 

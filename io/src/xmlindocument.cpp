@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ namespace io {
 XMLInDocument::XMLInDocument(LogLevel logLevel):
     AroInDocument(logLevel)
 {
-    m_logger = Logger(logLevel, __FUNCTION__);
+    logger() = Logger(logLevel, __FUNCTION__);
 }
 
 XMLInDocument::~XMLInDocument()
@@ -57,7 +57,7 @@ bool XMLInDocument::hasBranch(const std::string &name)
     return hasBranch(m_base, name);
 }
 
-bool XMLInDocument::getBranchHandler(const XMLInDocument::ReadHandler &base, const std::string &name, XMLInDocument::ReadHandler &branch, Logger *_logger)
+bool XMLInDocument::getBranchHandler(const XMLInDocument::ReadHandler &base, const std::string &name, XMLInDocument::ReadHandler &branch,std::shared_ptr<Logger>_logger)
 {
     try{
         auto ochild = base.t.get_child_optional(name);
@@ -72,7 +72,7 @@ bool XMLInDocument::getBranchHandler(const XMLInDocument::ReadHandler &base, con
 
 }
 
-bool XMLInDocument::getBranchHandler(const ReadHandler &base, const std::vector<std::string> &tags, ReadHandler &branch, Logger* _logger)
+bool XMLInDocument::getBranchHandler(const ReadHandler &base, const std::vector<std::string> &tags, ReadHandler &branch, std::shared_ptr<Logger> _logger)
 {
     branch = base;
     Logger logger(LogLevel::CRITIC, "XMLInDocument");
@@ -91,7 +91,7 @@ bool XMLInDocument::getBranchHandler(const std::string &name, ReadHandler &branc
 {
     if(!m_isDocOpen)
         return false;
-    return getBranchHandler(m_base, name, branch, &m_logger);
+    return getBranchHandler(m_base, name, branch, loggerPtr());
 
 }
 
@@ -99,14 +99,14 @@ bool XMLInDocument::getBranchHandler(const std::vector<std::string> &tags, ReadH
 {
     if(!m_isDocOpen)
         return false;
-    return getBranchHandler(m_base, tags, branch, &m_logger);
+    return getBranchHandler(m_base, tags, branch, loggerPtr());
 }
 
 bool XMLInDocument::getMultiBranchHandlers(const ReadHandler &base,
                                            const std::string &tag,
                                            const std::function<bool (const XMLInDocument::ReadHandler &)> funct,
                                            const std::vector<std::string> &parentTags,
-                                           Logger *_logger)
+                                           std::shared_ptr<Logger> _logger)
 {
     ReadHandler branch;
     if(!getBranchHandler(base, parentTags, branch, _logger))
@@ -126,15 +126,15 @@ bool XMLInDocument::getMultiBranchHandlers(const std::string &tag,
                                            const std::vector<std::string> &parentTags)
 {
     if(!m_isDocOpen){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
         return false;
     }
-    return getMultiBranchHandlers(m_base, tag, funct, parentTags, &m_logger);
+    return getMultiBranchHandlers(m_base, tag, funct, parentTags, loggerPtr());
 }
 
 bool XMLInDocument::read(const ReadHandler &base, std::string &value){
     if(!m_isDocOpen){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
         return false;
     }
 
@@ -148,7 +148,7 @@ bool XMLInDocument::read(const ReadHandler &base, std::string &value){
 bool XMLInDocument::read( const ReadHandler & base, std::map<std::string, std::map<std::string, std::string> > &values){ // map<tag, map< name , value > >
 
     if(!m_isDocOpen){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
         return false;
     }
 
@@ -161,7 +161,7 @@ bool XMLInDocument::read( const ReadHandler & base, std::map<std::string, std::m
         return true;
     }
     catch(std::exception &e){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, std::string("Values map: ") + e.what());
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, std::string("Values map: ") + e.what());
         return false;
     }
 }
@@ -177,14 +177,14 @@ bool XMLInDocument::openDoc()
         read_xml(*m_is, m_base.t);
 
         if(!getBranchHandler(m_base, m_docTag, m_base)){
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Cannot open document tag.");
+            logger().printOut(LogLevel::ERROR, __FUNCTION__, "Cannot open document tag.");
             return false;
         }
 
         return true;
     }
     catch (std::exception& e){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, std::string("Error reading input stream/file: '") + e.what() + "'");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, std::string("Error reading input stream/file: '") + e.what() + "'");
         return false;
     }
 }

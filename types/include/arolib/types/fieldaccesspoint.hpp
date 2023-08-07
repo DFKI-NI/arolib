@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -55,6 +55,11 @@ public:
     explicit FieldAccessPoint();
 
     /**
+      * @brief Copy constructor
+      */
+    FieldAccessPoint(const FieldAccessPoint&) = default;
+
+    /**
       * @brief Constructor with location arguments
       * @param _x x-coordinate
       * @param _y y-coordinate
@@ -76,7 +81,7 @@ public:
       */
     explicit FieldAccessPoint( const Point & point,
                                const FieldAccessPointId_t & _id,
-                               const AccessPointType & _accessPointType = AccessPointType::AP_ENTRY_EXIT );
+                               AccessPointType _accessPointType = AccessPointType::AP_ENTRY_EXIT );
 
     /**
       * @brief Create a vector of access points from a vector of basic points (with default access point properties)
@@ -88,8 +93,14 @@ public:
 public:
     FieldAccessPointId_t id; /**< Access point unique id */
     AccessPointType accessType; /**< Access type */
-
 };
+
+inline bool operator==(const FieldAccessPoint& lhs, const FieldAccessPoint& rhs) {
+  return (lhs.x == rhs.x) &&\
+         (lhs.y == rhs.y) &&\
+        (lhs.z == rhs.z) &&\
+        (lhs.accessType == rhs.accessType);
+}
 
 }
 

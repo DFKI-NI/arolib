@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,7 +28,6 @@
 
 namespace arolib {
 namespace io {
-
 
 /**
  * @brief Arolib XML input document for Arolib types
@@ -253,23 +252,6 @@ public:
 
 
     /**
-     * @brief Add/write a HeadlandPoint with a given name and tag.
-     * @param pt HeadlandPoint to be written
-     * @param tag Tag (if empty, no XML-tag will be opened)
-     * @return True on success
-     */
-    bool add(const HeadlandPoint &pt, std::string tag = "");
-
-    /**
-     * @brief Add/write HeadlandPoints with a given name and tag.
-     * @param pts HeadlandPoints to be written
-     * @param tag Tag (if empty, no XML-tag will be opened)
-     * @return True on success
-     */
-    bool add(const std::vector<HeadlandPoint>& pts, std::string tag = "");
-
-
-    /**
      * @brief Add/write a Track with a given name and tag.
      * @param track Track to be written
      * @param tag Tag (if empty, no XML-tag will be opened)
@@ -302,14 +284,22 @@ public:
      */
     bool add(const CompleteHeadland& hl, std::string tag = "");
 
-
     /**
-     * @brief Add/write an obstacle with a given name and tag.
-     * @param obs Obstacle to be written
+     * @brief Add/write a partial headland with a given name and tag.
+     * @param hl Partial headland to be written
      * @param tag Tag (if empty, no XML-tag will be opened)
      * @return True on success
      */
-    bool add(const Obstacle& obs, std::string tag = "");
+    bool add(const PartialHeadland& hl, std::string tag = "");
+
+    /**
+     * @brief Add/write partial headlands with a given name and tag.
+     * @param headlands Partial headlands to be written
+     * @param tag Tag (if empty, no XML-tag will be opened)
+     * @return True on success
+     */
+    bool add(const std::vector<PartialHeadland>& headlands, std::string tag = "");
+
 
     /**
      * @brief Add/write Obstacles with a given name and tag.
@@ -317,6 +307,7 @@ public:
      * @param tag Tag (if empty, no XML-tag will be opened)
      * @return True on success
      */
+    bool add(const Obstacle& obs, std::string tag = "");
     bool add(const std::vector<Obstacle>& obstacles, std::string tag = "");
 
 
@@ -377,23 +368,6 @@ public:
      * @return True on success
      */
     bool add(const std::vector<Route>& routes, std::string tag = "");
-
-    /**
-     * @brief Add/write a HeadlandRoute with a given name and tag.
-     * @param route HeadlandRoute to be written
-     * @param tag Tag (if empty, no XML-tag will be opened)
-     * @return True on success
-     */
-    bool add(const HeadlandRoute& route, std::string tag = "");
-
-    /**
-     * @brief Add/write HeadlandRoutes with a given name and tag.
-     * @param routes HeadlandRoutes to be written
-     * @param tag Tag (if empty, no XML-tag will be opened)
-     * @return True on success
-     */
-    bool add(const std::vector<HeadlandRoute>& routes, std::string tag = "");
-
 
     /**
      * @brief Add/write MachineDynamicInfo for a machine with a given name and tag.
@@ -478,12 +452,21 @@ public:
 
 
     /**
+     * @brief Add/write a several gridmaps with a given name and tag.
+     * @param grid Gridmap to be written
+     * @param tag Tag (if empty, no XML-tag will be opened)
+     * @return True on success
+     */
+    bool add(const std::map<std::string, const ArolibGrid_t *> &gridmaps, std::string tag = "" );
+
+
+    /**
      * @brief Add/write a Graph with a given name and tag.
      * @param graph Graph to be written
      * @param tag Tag (if empty, no XML-tag will be opened)
      * @return True on success
      */
-    bool add( const DirectedGraph::Graph& graph, std::string tag = "" );
+    bool add(const DirectedGraph::Graph& graph, std::string tag = "" , bool with_meta = false);
 
     /**
      * @brief Add/write a Graph vertex_pair with a given name and tag.
@@ -547,6 +530,15 @@ public:
      * @return True on success
      */
     bool add( const DirectedGraph::overroll_property& o, std::string tag = "" );
+
+
+    /**
+     * @brief Add/write the graph metadata
+     * @param meta meta data
+     * @param tag Tag (if empty, no XML-tag will be opened)
+     * @return True on success
+     */
+    bool add(const DirectedGraph::Graph::GraphMetaData &meta, std::string tag);
 
 
     /**
@@ -622,6 +614,27 @@ public:
                                     const std::map<std::string, std::map<std::string, std::string> > &configParameters,
                                     const OutFieldInfo &outFieldInfo = OutFieldInfo(),
                                     const std::map<MachineId_t, MachineDynamicInfo>& machinesDynamicInfo = {},
+                                    const std::map<std::string, const ArolibGrid_t*> gridmaps = {},
+                                    Point::ProjectionType coordinatesType_in = Point::UTM,
+                                    Point::ProjectionType coordinatesType_out = Point::WGS );
+
+    /**
+     * @brief Save plan parameters in a XML file
+     * @param filename Filename
+     * @param workingGroup Working group (machines) to be written
+     * @param configParameters Configuration parameters (given as string map) to be written
+     * @param OutFieldInfo OutFieldInfo to be written
+     * @param machinesDynamicInfo MachineDynamicInfo-map to be written
+     * @param coordinatesType_in Projection type of the coordinates in the source
+     * @param coordinatesType_out Projection type of the coordinates in the target (file)
+     * @return True on success
+     */
+    static bool savePlanParameters( const std::string& filename,
+                                    const std::vector<Machine>& workingGroup,
+                                    const std::map<std::string, std::map<std::string, std::string> > &configParameters,
+                                    const OutFieldInfo &outFieldInfo = OutFieldInfo(),
+                                    const std::map<MachineId_t, MachineDynamicInfo>& machinesDynamicInfo = {},
+                                    const std::map<std::string, const ArolibGrid_t*> gridmaps = {},
                                     Point::ProjectionType coordinatesType_in = Point::UTM,
                                     Point::ProjectionType coordinatesType_out = Point::WGS );
 
@@ -680,32 +693,6 @@ public:
                           Point::ProjectionType coordinatesType_out = Point::WGS );
 
     /**
-     * @brief Save headland routes in a XML file
-     * @param filename Filename
-     * @param routes Headland routes to be written
-     * @param coordinatesType_in Projection type of the coordinates in the source
-     * @param coordinatesType_out Projection type of the coordinates in the target (file)
-     * @return True on success
-     */
-    static bool savePlan( const std::string &filename,
-                          const std::map<int, std::vector<HeadlandRoute> > &routes,
-                          Point::ProjectionType coordinatesType_in = Point::UTM,
-                          Point::ProjectionType coordinatesType_out = Point::WGS );
-
-    /**
-     * @brief Save headland routes in a XML file
-     * @param filename Filename
-     * @param routes Headland routes to be written
-     * @param coordinatesType_in Projection type of the coordinates in the source
-     * @param coordinatesType_out Projection type of the coordinates in the target (file)
-     * @return True on success
-     */
-    static bool savePlan( const std::string &filename,
-                          const std::vector< std::vector<HeadlandRoute> > &routes,
-                          Point::ProjectionType coordinatesType_in = Point::UTM,
-                          Point::ProjectionType coordinatesType_out = Point::WGS );
-
-    /**
      * @brief Save plan in a XML file
      * @param filename Filename
      * @param field Field to be written
@@ -790,56 +777,6 @@ public:
                           const std::vector<Machine>& workingGroup,
                           const std::vector< std::vector<Route> > &routes,
                           const std::map<std::string, ArolibGrid_t* > &gridmaps,
-                          Point::ProjectionType coordinatesType_in = Point::UTM,
-                          Point::ProjectionType coordinatesType_out = Point::WGS );
-
-    /**
-     * @brief Save plan in a XML file
-     * @param filename Filename
-     * @param field Field to be written
-     * @param workingGroup Working group (machines) to be written
-     * @param routes Headland routes to be written
-     * @param yieldmap_tifBase64 Yield-map (base64-encoded) to be written (disregarded if empty)
-     * @param drynessmap_tifBase64 Dryness-map (base64-encoded) to be written (disregarded if empty)
-     * @param soilmap_tifBase64 Soil-map (base64-encoded) to be written (disregarded if empty)
-     * @param remainingAreaMap_tifBase64 Remaining-area-map (base64-encoded) to be written (disregarded if empty)
-     * @param coordinatesType_in Projection type of the coordinates in the source
-     * @param coordinatesType_out Projection type of the coordinates in the target (file)
-     * @return True on success
-     */
-    static bool savePlan( const std::string &filename,
-                          const Field& field,
-                          const std::vector<Machine>& workingGroup,
-                          const std::map<int, std::vector<HeadlandRoute> > &routes,
-                          const std::string &yieldmap_tifBase64 = "",
-                          const std::string &drynessmap_tifBase64 = "",
-                          const std::string &soilmap_tifBase64 = "",
-                          const std::string &remainingAreaMap_tifBase64 = "",
-                          Point::ProjectionType coordinatesType_in = Point::UTM,
-                          Point::ProjectionType coordinatesType_out = Point::WGS );
-
-    /**
-     * @brief Save plan in a XML file
-     * @param filename Filename
-     * @param field Field to be written
-     * @param workingGroup Working group (machines) to be written
-     * @param routes Headland routes to be written
-     * @param yieldmap_tifBase64 Yield-map (base64-encoded) to be written (disregarded if empty)
-     * @param drynessmap_tifBase64 Dryness-map (base64-encoded) to be written (disregarded if empty)
-     * @param soilmap_tifBase64 Soil-map (base64-encoded) to be written (disregarded if empty)
-     * @param remainingAreaMap_tifBase64 Remaining-area-map (base64-encoded) to be written (disregarded if empty)
-     * @param coordinatesType_in Projection type of the coordinates in the source
-     * @param coordinatesType_out Projection type of the coordinates in the target (file)
-     * @return True on success
-     */
-    static bool savePlan( const std::string &filename,
-                          const Field& field,
-                          const std::vector<Machine>& workingGroup,
-                          const std::vector< std::vector<HeadlandRoute> > &routes,
-                          const std::string &yieldmap_tifBase64 = "",
-                          const std::string &drynessmap_tifBase64 = "",
-                          const std::string &soilmap_tifBase64 = "",
-                          const std::string &remainingAreaMap_tifBase64 = "",
                           Point::ProjectionType coordinatesType_in = Point::UTM,
                           Point::ProjectionType coordinatesType_out = Point::WGS );
 
@@ -853,6 +790,7 @@ public:
      */
     static bool saveGraph( const std::string &filename,
                            const DirectedGraph::Graph &graph,
+                           bool with_meta,
                            Point::ProjectionType coordinatesType_in = Point::UTM,
                            Point::ProjectionType coordinatesType_out = Point::WGS );
 

@@ -1,5 +1,7 @@
 ADD_EXECUTABLE( example_harvesting example_harvesting.cpp )
 
+set_target_properties(example_harvesting PROPERTIES DEBUG_POSTFIX ${CMAKE_DEBUG_POSTFIX})
+
 target_link_libraries( example_harvesting AROLIB_types AROLIB_misc AROLIB_geometry AROLIB_planning AROLIB_components AROLIB_cartography )
 
 # install(TARGETS example_harvesting

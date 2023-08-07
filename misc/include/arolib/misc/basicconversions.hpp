@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -102,17 +102,10 @@ namespace arolib
                     return false;
                 continue;
             }
-            try
-            {
-                if (std::is_floating_point<T>::value)
-                    *it.second = string2double(it2->second);
-                else
-                    *it.second = std::stoi(it2->second);
-            }
-            catch (...)
-            {
-                return false;
-            }
+            if (std::is_floating_point<T>::value)
+                *it.second = string2double(it2->second);
+            else
+                *it.second = std::stoi(it2->second);
         }
         return true;
     }

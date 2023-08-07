@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -65,7 +65,7 @@ bool GPSSimulator::setPlan(const std::vector<Route> &plan){
 bool GPSSimulator::setUpdateFrequency(float updateFrequency){
 
     if(updateFrequency <= 0){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Disregarding invalid updateFrequency " + std::to_string(updateFrequency) );
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Disregarding invalid updateFrequency " + std::to_string(updateFrequency) );
         return false;
     }
     {
@@ -73,13 +73,13 @@ bool GPSSimulator::setUpdateFrequency(float updateFrequency){
         m_updateFrequency = updateFrequency;
     }
 
-    m_logger.printOut(LogLevel::INFO, __FUNCTION__, "Update frequency set to " + std::to_string(m_updateFrequency) );
+    logger().printOut(LogLevel::INFO, __FUNCTION__, "Update frequency set to " + std::to_string(m_updateFrequency) );
     return true;
 }
 
 bool GPSSimulator::setTimeScale(float timeScale){
 //    if(timeScale == 0){
-//        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Disregarding invalid timeScale " + std::to_string(timeScale) );
+//        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Disregarding invalid timeScale " + std::to_string(timeScale) );
 //        return false;
 //    }
     {
@@ -87,25 +87,33 @@ bool GPSSimulator::setTimeScale(float timeScale){
         m_timescale = timeScale;
     }
 
-    m_logger.printOut(LogLevel::INFO, __FUNCTION__, "Time scale set to " + std::to_string(m_timescale) );
+    logger().printOut(LogLevel::INFO, __FUNCTION__, "Time scale set to " + std::to_string(m_timescale) );
+    return true;
+}
+
+bool GPSSimulator::setDistanceDeviation(float dev)
+{
+    m_distanceDeviation = dev;
+
+    logger().printOut(LogLevel::INFO, __FUNCTION__, "DistanceDeviation set to " + std::to_string(m_distanceDeviation) );
     return true;
 }
 
 AroResp GPSSimulator::start(handlePointFunction sendPoint)
 {
     if (isRunning()){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Sim already running." );
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Sim already running." );
         return AroResp(1, "Sim already running." );
     }
 
     if (m_plan.empty()){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Current plan has no routes." );
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Current plan has no routes." );
         return AroResp(1, "Current plan has no routes." );
     }
-    m_logger.printOut(LogLevel::INFO, __FUNCTION__, std::string("Starting simulation with the following parameters:\n" +
+    logger().printOut(LogLevel::INFO, __FUNCTION__, std::string("Starting simulation with the following parameters:\n" +
                                                        std::string("   Update frequency : ") + std::to_string(m_updateFrequency) +
                                                        std::string("   Time scale       : ") + std::to_string(m_timescale) + "\n" ) );
-    m_stopSim = false;
+    m_stopSim = false;  
 
     //@todo doest't look very safe if the GPSSimulator instance is destroyed while the thread is running
     {
@@ -128,7 +136,7 @@ void GPSSimulator::stop(){
 bool GPSSimulator::isRunning()
 {
     std::lock_guard<std::mutex> guard(m_mutex);
-    return !m_stopSim && !m_threadRunning;
+    return !m_stopSim && m_threadRunning;
 }
 
 
@@ -144,20 +152,29 @@ void GPSSimulator::startSimulation(handlePointFunction sendPoint, int threadId, 
 
     double currTime = 0.;
 
-    double startTime, nowTime;
+    double startTime, nowTime, deltaTime = 0;
     startTime = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
     std::vector<int> refInexes(m_plan.size(), -1);
 
+    struct SampleData{
+        RoutePoint rp_plan;
+        Point rp_sim;
+        double bearing;
+    };
+
+    std::map<MachineId_t, SampleData> prevSamples; /**< Previous points and orientations */
+
     do {
         bool stopSim = true;
-        float updateFrequency = 1, timescale = 1;
+        float updateFrequency = 1, timescale = 1, distanceDeviation;
         int threadId2;
         {
             std::lock_guard<std::mutex> guard(m_mutex);
             stopSim = m_stopSim;
             updateFrequency = m_updateFrequency;
             timescale = m_timescale;
+            distanceDeviation = m_distanceDeviation;
             threadId2 = m_threadId;
         }
 
@@ -166,9 +183,9 @@ void GPSSimulator::startSimulation(handlePointFunction sendPoint, int threadId, 
             return;
         }
 
-        if (m_stopSim) {  // stop the simulation if the stop command has been received
+        if (stopSim) {  // stop the simulation if the stop command has been received
             planStillRunning = false;
-            logger.printOut(LogLevel::INFO, __FUNCTION__, "Stoping simulation..." );
+            logger.printOut(LogLevel::INFO, __FUNCTION__, "Stopping simulation..." );
             break;
         }
 
@@ -188,18 +205,53 @@ void GPSSimulator::startSimulation(handlePointFunction sendPoint, int threadId, 
                 continue;
             bool routeFinished = (currTime > route.route_points.back().time_stamp);
 
-
+            SampleData sampleData;
             SimData data;
             data.machineId = route.machine_id;
 
             if(refInexes.at(i) < 0)
-                data.routePoint = route.calcPoint(currTime, &refInexes.at(i));
+                sampleData.rp_plan = route.calcPoint(currTime, &refInexes.at(i));
             else
-                data.routePoint = route.calcPoint2(currTime, refInexes.at(i));
+                sampleData.rp_plan = route.calcPoint2(currTime, refInexes.at(i));
+            sampleData.rp_sim = sampleData.rp_plan.point();
 
-            data.speed = route.calcSpeed(currTime, refInexes.at(i));
-            data.orientation = route.calcBearing(currTime, refInexes.at(i));
+            if(distanceDeviation > 1e-9){
+                std::random_device rd;
+                std::mt19937 gen(rd());
+                std::uniform_real_distribution<> dis_ang(0.0, 2*M_PI);
+                std::uniform_real_distribution<> dis_dist(0.0, distanceDeviation);
+
+                sampleData.rp_sim.x += dis_dist(gen);
+                sampleData.rp_sim.point() = geometry::rotate(sampleData.rp_plan, sampleData.rp_sim, dis_ang(gen), false);
+            }
+
+            auto it_mp = prevSamples.find(route.machine_id);
+            if(it_mp != prevSamples.end()){
+                SampleData & sampleDataPrev = it_mp->second;
+                double dist = geometry::calc_dist(sampleDataPrev.rp_plan, sampleData.rp_plan);
+
+                if(dist < 1e-9 || std::fabs(deltaTime) < 1e-9)
+                    sampleData = sampleDataPrev;
+                else{
+                    dist = geometry::calc_dist(sampleDataPrev.rp_sim, sampleData.rp_sim);
+                    if(dist < 1e-9 || std::fabs(deltaTime) < 1e-9)
+                        sampleData.bearing = sampleDataPrev.bearing;
+                    else{
+                        data.speed = dist / deltaTime;
+                        Point p0_geo, p1_geo;
+                        CoordTransformer::GetInstance().convert_to_geodetic(sampleDataPrev.rp_sim, p0_geo);
+                        CoordTransformer::GetInstance().convert_to_geodetic(sampleData.rp_sim, p1_geo);
+                        sampleData.bearing = Point::bearing(p0_geo, p1_geo);
+                    }
+                }
+            }
             data.routeInd = i;
+
+            data.routePoint = sampleData.rp_plan;
+            data.routePoint.point() = sampleData.rp_sim.point();
+            data.orientation = sampleData.bearing;
+
+            prevSamples[route.machine_id] = sampleData;
 
             data.refPointInd = refInexes.at(i);
             if(data.refPointInd + 1 < route.route_points.size()){
@@ -209,15 +261,24 @@ void GPSSimulator::startSimulation(handlePointFunction sendPoint, int threadId, 
                     ++data.refPointInd;
             }
 
-            sendPoint(data);
+            {
+                std::lock_guard<std::mutex> guard(m_mutex);
+                if(m_stopSim){
+                    logger.printOut(LogLevel::INFO, __FUNCTION__, "Simulation thread stopped." );
+                    m_threadRunning = false;
+                    return;
+                }
+            }
 
+            sendPoint(data);
 
             planStillRunning = planStillRunning || !routeFinished;
         }
 
         std::this_thread::sleep_for(std::chrono::microseconds( (int)(1e6/updateFrequency) )); // send the GPS pose every x seconds
         nowTime   = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-        currTime += (nowTime - startTime)/1000.0 * timescale;
+        deltaTime = (nowTime - startTime)/1000.0;
+        currTime += deltaTime * timescale;
 
         startTime = nowTime; // -> set the start time for the next iteration
     } while (planStillRunning);

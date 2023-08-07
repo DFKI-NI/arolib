@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -86,12 +86,12 @@ bool CoordTransformer::convert_to_cartesian(const Point &from, Point &to) {
 
     if(!m_isUtmZoneSet){//allow utm zone changes only once
         if( !computeUTMZone(from.x, from.y,zone,designator) ){
-            m_logger.printOut(LogLevel::WARNING, __FUNCTION__, 10, "Error computing UTM zone for point ", from.toString(10));
+            logger().printOut(LogLevel::WARNING, __FUNCTION__, 10, "Error computing UTM zone for point ", from.toString(10));
             return false;
         }
         //m_isUtmZoneSet = true;// do the initialization just once (@TODO or again in case the utm_zone changes?)
         if(zone != m_utm_zone) {
-            m_logger.printOut(LogLevel::WARNING, __FUNCTION__, -1, "Change of UTM zone:  ", m_utm_zone, m_utm_designator,
+            logger().printOut(LogLevel::WARNING, __FUNCTION__, -1, "Change of UTM zone:  ", m_utm_zone, m_utm_designator,
                               " --> ", zone, designator,
                               " :: ", from.toString(10));
             m_utm_zone = zone;
@@ -119,6 +119,10 @@ bool CoordTransformer::convert_to_geodetic(const Point &from, Point &to, int zon
         m_utm_zone = zone;
         m_utm_designator = designator;
     }
+
+    //@warning
+    //if using m_utm_zone and m_utm_designator, it is needed that the zone and designator are up-to-date and correspond to the correct area (e.g. by calling convert_to_cartesian on a point in the area)
+    //it can happen that a geometry/field/etc was saved in UTM and never calls convert_to_cartesian when reading it, hence when converting to WGS it might use an incorrect zone (e.g. if the last geometry/field/... tha was read from WGS bolongs to another zone)
 
 //Note: at the moment of testing, gdal v3.x had significant performance issues
 //@todo; should the defailt be boost if available?
@@ -199,7 +203,7 @@ bool CoordTransformer::convert_with_boost(const arolib::Point &from, arolib::Poi
     using boost_point_wgs_t = boost::geometry::model::d2::point_xy<double, boost::geometry::cs::geographic<boost::geometry::degree> >;
     using boost_point_utm_t = boost::geometry::model::d2::point_xy<double>;
 
-    static int zone = 31;
+    static int zone = 32;
     static boost::geometry::srs::projection<> proj = boost::geometry::srs::proj4("+proj=utm +ellps=WGS84 +units=m +no_defs +zone=" + std::to_string(zone));
     
     if(zone != m_utm_zone){
@@ -308,7 +312,7 @@ bool CoordTransformer::convert_to_geodetic__gdal(const Point &from, Point &to)
 
         gdalError = geom->transform(raw);
         if (gdalError != OGRERR_NONE ){
-            m_logger.printOut(LogLevel::WARNING, __FUNCTION__, 10, "gdalError =  ", gdalError);
+            logger().printOut(LogLevel::WARNING, __FUNCTION__, 10, "gdalError =  ", gdalError);
             delete raw;
             delete geom;
             return false;

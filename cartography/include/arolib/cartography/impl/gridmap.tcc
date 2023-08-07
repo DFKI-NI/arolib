@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,7 +35,7 @@ Gridmap<T>::Gridmap(const GridmapLayout &lo, LogLevel logLevel):
     m_layout(lo),
     m_allocated(false)
 {
-    m_layout.logger().setParent(&logger());
+    m_layout.logger().setParent(loggerPtr());
 
     if(m_layout.getSizeX() == 0 || m_layout.getSizeY() == 0)
         m_layout.setSize(0,0);
@@ -54,7 +54,7 @@ template<typename T>
 Gridmap<T>::Gridmap(LogLevel logLevel):
   LoggingComponent(logLevel, __FUNCTION__),
   m_allocated(false) {
-    m_layout.logger().setParent(&logger());
+    m_layout.logger().setParent(loggerPtr());
 }
 
 /**
@@ -66,7 +66,7 @@ Gridmap<T>::Gridmap(const Gridmap<T>& other):
       m_allocated(false)
 {
     m_layout = other.m_layout;
-    m_layout.logger().setParent(&logger());
+    m_layout.logger().setParent(loggerPtr());
 
     m_units = other.m_units;
     m_computeInMultiThread = other.m_computeInMultiThread;
@@ -141,19 +141,7 @@ bool Gridmap<T>::equals(const Gridmap<T>& other, const std::function<bool(const 
 */
 template<typename T>
 bool Gridmap<T>::equalGeometry(const Gridmap<T>& other) const{
-    const double eps = 1e-6;
-    if ( !isAllocated() && !other.isAllocated() )
-        return true;
-    if ( isAllocated() != other.isAllocated() ||
-         m_layout.getSizeX() != other.m_layout.getSizeX() ||
-         m_layout.getSizeY() != other.m_layout.getSizeY() ||
-         std::fabs(m_layout.getCellsize() - other.m_layout.getCellsize()) > eps ||
-         std::fabs(m_layout.getMaxPointX() - other.m_layout.getMaxPointX()) > eps ||
-         std::fabs(m_layout.getMaxPointY() - other.m_layout.getMaxPointY()) > eps ||
-         std::fabs(m_layout.getMinPointX() - other.m_layout.getMinPointX()) > eps ||
-         std::fabs(m_layout.getMinPointY() - other.m_layout.getMinPointY()) > eps )
-        return false;
-    return true;
+    return m_layout == other.m_layout;
 }
 
 
@@ -275,17 +263,17 @@ bool Gridmap<T>::setPointLimits_min(double minX, double minY, double cellsize)
  * Creates the grid from a given polygon.
  */
 template<typename T>
-bool Gridmap<T>::convertPolygonToGrid(const std::vector<Point>& boundry,
+bool Gridmap<T>::convertPolygonToGrid(const std::vector<Point>& boundary,
                                       double resolution,
                                       const T *_val,
                                       bool only_perimeter){
 
     if (resolution <= 0){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "The resolution must be positive");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "The resolution must be positive");
         return false;
     }
-    if (boundry.size() < 3){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "The boundary must have at least 3 different points");
+    if (boundary.size() < 3){
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "The boundary must have at least 3 different points");
         return false;
     }
 
@@ -295,15 +283,15 @@ bool Gridmap<T>::convertPolygonToGrid(const std::vector<Point>& boundry,
     double xMax = std::numeric_limits<double>::lowest();
     double yMax = std::numeric_limits<double>::lowest();
 
-    for (size_t i=0; i < boundry.size(); i++) {
-        if (boundry[i].x < xMin) xMin = boundry[i].x;
-        if (boundry[i].x > xMax) xMax = boundry[i].x;
-        if (boundry[i].y < yMin) yMin = boundry[i].y;
-        if (boundry[i].y > yMax) yMax = boundry[i].y;
+    for (size_t i=0; i < boundary.size(); i++) {
+        if (boundary[i].x < xMin) xMin = boundary[i].x;
+        if (boundary[i].x > xMax) xMax = boundary[i].x;
+        if (boundary[i].y < yMin) yMin = boundary[i].y;
+        if (boundary[i].y > yMax) yMax = boundary[i].y;
     }
 
     if (xMin == xMax || yMin == yMax){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "The boundary must have at least 3 different points which don't belong to the same line");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "The boundary must have at least 3 different points which don't belong to the same line");
         return false;
     }
 
@@ -313,14 +301,14 @@ bool Gridmap<T>::convertPolygonToGrid(const std::vector<Point>& boundry,
     if(_val){
         if ( !only_perimeter ){
             Polygon poly;
-            poly.points = boundry;
+            poly.points = boundary;
             arolib::geometry::correct_polygon(poly);
             setPolygon(poly, _val);
         }
         else{
             double width0 = 0;
-            for (size_t i=0; i+1 < boundry.size(); i++){
-                setLine(boundry.at(i), boundry.at(i+1), width0, _val);
+            for (size_t i=0; i+1 < boundary.size(); i++){
+                setLine(boundary.at(i), boundary.at(i+1), width0, _val);
             }
         }
     }
@@ -332,15 +320,15 @@ bool Gridmap<T>::convertPolygonToGrid(const std::vector<Point>& boundry,
  * Takes the current grid and expands it (if necesary) to include the given polygon.
  */
 template<typename T>
-bool Gridmap<T>::expandGridFromPolygon(const std::vector<Point>& boundry,
+bool Gridmap<T>::expandGridFromPolygon(const std::vector<Point>& boundary,
                                        const T *_val,
                                        bool only_perimeter,
                                        bool reduceToPolygon){
     if(!checkInternalParameters(true, __FUNCTION__))
         return false;
 
-    if (boundry.size() < 3){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "The boundary must have at least 3 different points");
+    if (boundary.size() < 3){
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "The boundary must have at least 3 different points");
         return false;
     }
 
@@ -350,20 +338,20 @@ bool Gridmap<T>::expandGridFromPolygon(const std::vector<Point>& boundry,
     double xMax = std::numeric_limits<double>::lowest();
     double yMax = std::numeric_limits<double>::lowest();
 
-    for (size_t i=0; i < boundry.size(); i++) {
-        if (boundry[i].x < xMin) xMin = boundry[i].x;
-        if (boundry[i].x > xMax) xMax = boundry[i].x;
-        if (boundry[i].y < yMin) yMin = boundry[i].y;
-        if (boundry[i].y > yMax) yMax = boundry[i].y;
+    for (size_t i=0; i < boundary.size(); i++) {
+        if (boundary[i].x < xMin) xMin = boundary[i].x;
+        if (boundary[i].x > xMax) xMax = boundary[i].x;
+        if (boundary[i].y < yMin) yMin = boundary[i].y;
+        if (boundary[i].y > yMax) yMax = boundary[i].y;
     }
 
     if (xMin == xMax || yMin == yMax){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "The boundary must have at least 3 different points which don't belong to the same line");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "The boundary must have at least 3 different points which don't belong to the same line");
         return false;
     }
 
     if (xMin >= m_layout.getMaxPointX() || xMax <= m_layout.getMinPointX() || yMin >= m_layout.getMaxPointY() || yMax <= m_layout.getMinPointY()){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "The boundary must lie at least partially inside the grid's boundary");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "The boundary must lie at least partially inside the grid's boundary");
         return false;
     }
 
@@ -404,7 +392,7 @@ bool Gridmap<T>::expandGridFromPolygon(const std::vector<Point>& boundry,
         if( !m_layout.init( xMinOld - m_layout.getCellsize()*cellsLeft,
                             yMinOld - m_layout.getCellsize()*cellsDown,
                             sizeX, sizeY, m_layout.getCellsize() ) ){
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error setting new layout");
+            logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error setting new layout");
             *(this) = gridOld;
             return false;
         }
@@ -413,29 +401,29 @@ bool Gridmap<T>::expandGridFromPolygon(const std::vector<Point>& boundry,
         if( !m_layout.init( std::min( xMinOld - m_layout.getCellsize()*cellsLeft  , gridOld.m_layout.getMinPointX() ),
                             std::min( yMinOld - m_layout.getCellsize()*cellsDown  , gridOld.m_layout.getMinPointY() ),
                             sizeX, sizeY, m_layout.getCellsize() ) ){
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error setting new layout");
+            logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error setting new layout");
             *(this) = gridOld;
             return false;
         }
     }
 
-    m_logger.printOut(LogLevel::DEBUG, __FUNCTION__, "Allocate new grid of size " + std::to_string(sizeX) + " x " + std::to_string(sizeY));
+    logger().printOut(LogLevel::DEBUG, __FUNCTION__, "Allocate new grid of size " + std::to_string(sizeX) + " x " + std::to_string(sizeY));
     if (!allocate()) {
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Unable to allocate grid. The new grid might be too large");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Unable to allocate grid. The new grid might be too large");
         *(this) = gridOld;
         return false;
     }
 
     if ( !only_perimeter ){
         Polygon poly;
-        poly.points = boundry;
+        poly.points = boundary;
         arolib::geometry::correct_polygon(poly);
         setPolygon(poly, _val);
     }
     else{
         double width0 = 0;
-        for (size_t i=0; i+1 < boundry.size(); i++){
-            setLine(boundry.at(i), boundry.at(i+1), width0, _val);
+        for (size_t i=0; i+1 < boundary.size(); i++){
+            setLine(boundary.at(i), boundary.at(i+1), width0, _val);
         }
     }
 
@@ -467,18 +455,18 @@ bool Gridmap<T>::expandGridFromPolygon(const std::vector<Point>& boundry,
  * The values of the new cells that lie inside the polygon will be set to the desired input value.
  */
 template<typename T>
-bool Gridmap<T>::reduceGridToPolygon(const std::vector<Point>& boundry,
+bool Gridmap<T>::reduceGridToPolygon(const std::vector<Point>& boundary,
                                  bool  expandToPolygon,
                                  const T *_val,
                                  bool only_perimeter){
     if (expandToPolygon)
-        return expandGridFromPolygon(boundry, _val, only_perimeter, true);
+        return expandGridFromPolygon(boundary, _val, only_perimeter, true);
 
     if(!checkInternalParameters(true, __FUNCTION__))
         return false;
 
-    if (boundry.size() < 3){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "The boundary must have at least 3 different points");
+    if (boundary.size() < 3){
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "The boundary must have at least 3 different points");
         return false;
     }
 
@@ -488,20 +476,20 @@ bool Gridmap<T>::reduceGridToPolygon(const std::vector<Point>& boundry,
     double xMax = std::numeric_limits<double>::lowest();
     double yMax = std::numeric_limits<double>::lowest();
 
-    for (size_t i=0; i < boundry.size(); i++) {
-        if (boundry[i].x < xMin) xMin = boundry[i].x;
-        if (boundry[i].x > xMax) xMax = boundry[i].x;
-        if (boundry[i].y < yMin) yMin = boundry[i].y;
-        if (boundry[i].y > yMax) yMax = boundry[i].y;
+    for (size_t i=0; i < boundary.size(); i++) {
+        if (boundary[i].x < xMin) xMin = boundary[i].x;
+        if (boundary[i].x > xMax) xMax = boundary[i].x;
+        if (boundary[i].y < yMin) yMin = boundary[i].y;
+        if (boundary[i].y > yMax) yMax = boundary[i].y;
     }
 
     if (xMin == xMax || yMin == yMax){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "The boundary must have at least 3 different points which don't belong to the same line");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "The boundary must have at least 3 different points which don't belong to the same line");
         return false;
     }
 
     if (xMin >= m_layout.getMaxPointX() || xMax <= m_layout.getMinPointX() || yMin >= m_layout.getMaxPointY() || yMax <= m_layout.getMinPointY()){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "The boundary must lie at least partially inside the grid's boundary");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "The boundary must lie at least partially inside the grid's boundary");
         return false;
     }
 
@@ -529,30 +517,30 @@ bool Gridmap<T>::reduceGridToPolygon(const std::vector<Point>& boundry,
     if( !m_layout.init( xMinOld - m_layout.getCellsize()*cellsLeft,
                         yMinOld - m_layout.getCellsize()*cellsDown,
                         sizeX, sizeY, m_layout.getCellsize() ) ){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error setting new layout");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error setting new layout");
         *(this) = gridOld;
         return false;
     }
 
     destroy();
 
-    m_logger.printOut(LogLevel::DEBUG, __FUNCTION__, "Allocating new grid of size " + std::to_string(sizeX) + " x " + std::to_string(sizeY));
+    logger().printOut(LogLevel::DEBUG, __FUNCTION__, "Allocating new grid of size " + std::to_string(sizeX) + " x " + std::to_string(sizeY));
     if (!allocate()) {
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Unable to allocate grid. The new grid might be too large.");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Unable to allocate grid. The new grid might be too large.");
         *(this) = gridOld;
         return false;
     }
 
     if ( !only_perimeter ){
         Polygon poly;
-        poly.points = boundry;
+        poly.points = boundary;
         arolib::geometry::correct_polygon(poly);
         setPolygon(poly, _val);
     }
     else{
         double width0 = 0;
-        for (size_t i=0; i+1 < boundry.size(); i++){
-            setLine(boundry.at(i), boundry.at(i+1), width0, _val);
+        for (size_t i=0; i+1 < boundary.size(); i++){
+            setLine(boundary.at(i), boundary.at(i+1), width0, _val);
         }
     }
 
@@ -581,11 +569,11 @@ bool Gridmap<T>::reduceGridToPolygon(const std::vector<Point>& boundry,
 template<typename T>
 bool Gridmap<T>::scaleResolution(int scale){
     if(scale == 0){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "The scale must be different from zero");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "The scale must be different from zero");
         return false;
     }
     if(scale < 0){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Negative values (0<scale<1) are not supported at the moment");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Negative values (0<scale<1) are not supported at the moment");
         return false;
     }
     if(!checkInternalParameters(true, __FUNCTION__))
@@ -595,14 +583,14 @@ bool Gridmap<T>::scaleResolution(int scale){
     destroy();
 
     if(!m_layout.scaleResolution(scale)){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error scaling layout");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error scaling layout");
         *(this) = originalGrid;
         return false;
     }
 
-    m_logger.printOut(LogLevel::DEBUG, __FUNCTION__, "Allocating new grid of size " + std::to_string(m_layout.getSizeX()) + " x " + std::to_string(m_layout.getSizeY()));
+    logger().printOut(LogLevel::DEBUG, __FUNCTION__, "Allocating new grid of size " + std::to_string(m_layout.getSizeX()) + " x " + std::to_string(m_layout.getSizeY()));
     if (!allocate()) {
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Unable to allocate grid. The new grid might be too large.");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Unable to allocate grid. The new grid might be too large.");
         *(this) = originalGrid;
         return false;
     }
@@ -654,7 +642,7 @@ bool Gridmap<T>::setValue(unsigned int x,
         return false;
 
     if ( !checkIndexesInRange(x,y) ){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Indexes out of range");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Indexes out of range");
         return false;
     }
 
@@ -670,7 +658,7 @@ bool Gridmap<T>::setValue(const Point& p,
                       const T *value) {
 
     if ( !checkPointInRange(p) ) {
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Input point " + p.toString()
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Input point " + p.toString()
                                                          + "out of range : range(x) = [ " + std::to_string(m_layout.getMinPointX())
                                                          + "," + std::to_string(m_layout.getMaxPointX())
                                                          + " ] ; range(y) = [ " + std::to_string(m_layout.getMinPointY())
@@ -702,6 +690,56 @@ bool Gridmap<T>::setAllValues(const T* _value){
 }
 
 /**
+ * Sets a new cell value based on the given callback function.
+ */
+template<typename T>
+bool Gridmap<T>::setValue(unsigned int x,
+                      unsigned int y,
+                      const FuncGetNewValue& funcGetNewValue)
+{
+    if ( !this->checkInternalParameters(true,__FUNCTION__) )
+        return false;
+
+    if ( !this->checkIndexesInRange(x,y) ){
+        this->logger().printOut(LogLevel::ERROR, __FUNCTION__, "Indexes out of range");
+        return false;
+    }
+
+    std::shared_ptr<T> valNew = nullptr;
+    bool isCellSet = this->isSet(x, y);
+    if(isCellSet)
+        valNew = funcGetNewValue( std::make_shared<T>( this->get(x, y) ), x, y );
+    else
+        valNew = funcGetNewValue( nullptr, x, y );
+
+    if(!valNew)
+        return this->unSet(x, y);
+    return set(x, y, *valNew);
+}
+
+/**
+ * Sets a new cell value based on the given callback function.
+ * @return True on success
+ */
+template<typename T>
+bool Gridmap<T>::setValue(const Point& p,
+                      const FuncGetNewValue& funcGetNewValue)
+{
+    if ( !checkPointInRange(p) ) {
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Input point " + p.toString()
+                                                         + "out of range : range(x) = [ " + std::to_string(m_layout.getMinPointX())
+                                                         + "," + std::to_string(m_layout.getMaxPointX())
+                                                         + " ] ; range(y) = [ " + std::to_string(m_layout.getMinPointY())
+                                                         + "" + std::to_string(m_layout.getMaxPointY()) + " ]");
+        return false;
+    }
+
+    unsigned int gridX, gridY;
+    point2index(p, gridX, gridY);
+    return setValue(gridX, gridY, funcGetNewValue);
+}
+
+/**
  * Set the data(value) of a cell within the grid to 'noDataValue', specified by the cell's x- and y- indexes.
  */
 template<typename T>
@@ -711,7 +749,7 @@ bool Gridmap<T>::setNoValue(unsigned int x, unsigned int y)
         return false;
 
     if ( !checkIndexesInRange(x,y) ){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Indexes out of range");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Indexes out of range");
         return false;
     }
 
@@ -725,7 +763,7 @@ template<typename T>
 bool Gridmap<T>::setNoValue(const Point& p) {
 
     if ( !checkPointInRange(p) ) {
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Input point " + p.toString()
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Input point " + p.toString()
                                                          + "out of range : range(x) = [ " + std::to_string(m_layout.getMinPointX())
                                                          + "," + std::to_string(m_layout.getMaxPointX())
                                                          + " ] ; range(y) = [ " + std::to_string(m_layout.getMinPointY())
@@ -756,23 +794,23 @@ bool Gridmap<T>::setLine(unsigned int startX,
         return false;
 
     if( !checkIndexesInRange(startX,startY) ){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Start indexes out of range");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Start indexes out of range");
         return false;
     }
 
     if( !checkIndexesInRange(stopX,stopY) ){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Stop indexes out of range");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Stop indexes out of range");
         return false;
     }
 
 //        if( width<=0 ){
-//            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "The width must have a positive value");
+//            logger().printOut(LogLevel::ERROR, __FUNCTION__, "The width must have a positive value");
 //            return false;
 //        }
 
 
     if (startX == stopX && startY == stopY){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Start and Stop indexes corespond to the same cell");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Start and Stop indexes corespond to the same cell");
         return false;
     }
 
@@ -831,7 +869,7 @@ bool Gridmap<T>::setLine2(const Point& start,
         return false;
 
 //        if (width<=0){
-//            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "The line width must have a positive value");
+//            logger().printOut(LogLevel::ERROR, __FUNCTION__, "The line width must have a positive value");
 //            return false;
 //        }
 
@@ -928,6 +966,63 @@ bool Gridmap<T>::setCellsValue(const T *_value,
     return ok;
 }
 
+/**
+ * Sets the cells in the list with the value obtained from the callback function
+ */
+template<typename T>
+template<typename K, typename>
+bool Gridmap<T>::setCellsValue(const std::vector<K>& cells, const FuncGetNewValue& funcGetNewValue)
+{
+    if ( !checkInternalParameters(true,__FUNCTION__) )
+        return false;
+
+    bool ok = true;
+    for (auto& cell : cells){
+        if(cell.x < 0 || cell.y < 0){
+            ok = false;
+            continue;
+        }
+        ok &= setValue(cell.x, cell.y, funcGetNewValue);
+    }
+    return ok;
+}
+
+/**
+ * Sets the cells in the list with the value obtained from the callback function
+ */
+template<typename T>
+bool Gridmap<T>::setCellsValue(const std::vector<GridmapLayout::GridCellOverlap>& cells,
+                               FuncGetNewValueGCOverlap funcGetNewValue)
+{
+    if ( !checkInternalParameters(true,__FUNCTION__) )
+        return false;
+
+    bool ok = true;
+    for (auto& cell : cells){
+        if(cell.x < 0 || cell.y < 0){
+            ok = false;
+            continue;
+        }
+        if ( !this->checkIndexesInRange(cell.x, cell.y) ){
+            ok = false;
+            continue;
+        }
+
+        std::shared_ptr<T> valNew = nullptr;
+        bool isCellSet = this->isSet(cell.x, cell.y);
+        if(isCellSet)
+            valNew = funcGetNewValue( std::make_shared<T>( this->get(cell.x, cell.y) ), cell );
+        else
+            valNew = funcGetNewValue( nullptr, cell );
+
+        if(!valNew)
+            ok &= this->unSet(cell.x, cell.y);
+        else
+            ok &= set(cell.x, cell.y, *valNew);
+    }
+    return ok;
+}
+
 
 /**
  * Sets the cells in the list with the corresponding value
@@ -969,14 +1064,14 @@ bool Gridmap<T>::setPolygon(const Polygon& _poly, const T *value, const float ov
     if ( !checkInternalParameters(true,__FUNCTION__) )
         return false;
     if (_poly.points.size() < 3){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "The polygon must have at least 3 points");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "The polygon must have at least 3 points");
         return false;
     }
 
     indexMap = getCellsUnderPolygon(poly);
 
     if (indexMap.empty()){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Polygon outside of the grid (resulting polygon indexMap is empty)");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Polygon outside of the grid (resulting polygon indexMap is empty)");
         return false;
     }
 
@@ -1079,19 +1174,19 @@ bool Gridmap<T>::intersect(const Polygon& _poly, const T *valueOut, float overla
     if ( !checkInternalParameters(true,__FUNCTION__) )
         return false;
     if (_poly.points.size() < 3){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "The polygon must have at least 3 points");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "The polygon must have at least 3 points");
         return false;
     }
 
     Gridmap<bool> gridTmp(m_layout, logger().logLevel());
 
     if(!gridTmp.isAllocated()){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error creating temporal gridmap");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error creating temporal gridmap");
         return false;
     }
 
     if( !gridTmp.setPolygon(_poly, true, overlapThreshold) ){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error setting initial polygon cell values");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error setting initial polygon cell values");
         return false;
     }
     for(size_t x = 0 ; x < gridTmp.getSizeX() ; x++){
@@ -1221,7 +1316,7 @@ bool Gridmap<T>::hasValue(unsigned int x,
     }
 
     if ( !checkIndexesInRange(x,y) ){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Indexes out of range");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Indexes out of range");
         if(_error_) *_error_ = true;
         return false;
     }
@@ -1230,10 +1325,16 @@ bool Gridmap<T>::hasValue(unsigned int x,
 }
 
 template<typename T>
+bool Gridmap<T>::hasValue(unsigned int x,
+                      unsigned int y) const{
+    return hasValue(x, y, nullptr); 
+}
+
+template<typename T>
 bool Gridmap<T>::hasValue(const Point& p, bool *_error_) const{
 
     if ( !checkPointInRange(p) ) {
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Input point " + p.toString()
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Input point " + p.toString()
                                                          + "out of range : range(x) = [ " + std::to_string(m_layout.getMinPointX())
                                                          + "," + std::to_string(m_layout.getMaxPointX())
                                                          + " ] ; range(y) = [ " + std::to_string(m_layout.getMinPointY())
@@ -1265,7 +1366,7 @@ T Gridmap<T>::getValue(unsigned int x,
     }
 
     if ( !checkIndexesInRange(x,y) ){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Indexes out of range");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Indexes out of range");
         if(_error_) *_error_ = true;
         return val;
     }
@@ -1274,6 +1375,16 @@ T Gridmap<T>::getValue(unsigned int x,
     return val;
 }
 
+template<typename T>
+T Gridmap<T>::getValueThrows(unsigned int x,
+                       unsigned int y) const
+{
+    bool error = false;
+    T val = getValue(x,y,&error);
+    if (error)
+        throw std::runtime_error("Gridmap getValue failed! Maybe there is no value at the coords you provided?");
+    return val;
+}
 
 /**
  * Obtain the data(value) of a grid point, given in *real world coordinates*.
@@ -1290,7 +1401,7 @@ T Gridmap<T>::getValue(const Point& p,
     }
 
     if ( !checkPointInRange(p) ) {
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Input point " + p.toString()
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Input point " + p.toString()
                                                          + "out of range : range(x) = [ " + std::to_string(m_layout.getMinPointX())
                                                          + "," + std::to_string(m_layout.getMaxPointX())
                                                          + " ] ; range(y) = [ " + std::to_string(m_layout.getMinPointY())
@@ -1588,12 +1699,12 @@ bool Gridmap<T>::checkInternalParameters(bool printError, const std::string & fu
 {
     if (!isAllocated()){
         if (printError)
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Grid is not allocated yet");
+            logger().printOut(LogLevel::ERROR, __FUNCTION__, "Grid is not allocated yet");
         return false;
     }
     if (!m_layout.isValid()){
         if (printError)
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Grid geometric layout is not valid");
+            logger().printOut(LogLevel::ERROR, __FUNCTION__, "Grid geometric layout is not valid");
         return false;
     }
     return true;

@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -39,7 +39,7 @@ namespace io {
 /**
  * @brief Arolib XML input document for Arolib types
  */
-class AroXMLInDocument : public XMLInDocument{
+class AroXMLInDocument : public XMLInDocument, public DirectedGraph::GraphDataAccessor{
 
 public:
 
@@ -155,23 +155,6 @@ public:
 
 
     /**
-     * @brief Read a headland point from the given base handler.
-     * @param base Base handler.
-     * @param [out] pt Headland point read from the base handler
-     * @return True on success.
-     */
-    bool read( const ReadHandler & base, HeadlandPoint &pt );
-
-    /**
-     * @brief Read headland point from the given base handler.
-     * @param base Base handler.
-     * @param [out] pts Headland points read from the base handler
-     * @return True on success.
-     */
-    bool read( const ReadHandler & base, std::vector<HeadlandPoint> &pts );
-
-
-    /**
      * @brief Read a track from the given base handler.
      * @param base Base handler.
      * @param [out] track Track read from the base handler
@@ -203,6 +186,22 @@ public:
      * @return True on success.
      */
     bool read( const ReadHandler & base, CompleteHeadland &hl );
+
+    /**
+     * @brief Read a partial headland from the given base handler.
+     * @param base Base handler.
+     * @param [out] hl Partial headland read from the base handler
+     * @return True on success.
+     */
+    bool read( const ReadHandler & base, PartialHeadland &hl );
+
+    /**
+     * @brief Read partial headlands from the given base handler.
+     * @param base Base handler.
+     * @param [out] headlands Partial headlands read from the base handler
+     * @return True on success.
+     */
+    bool read( const ReadHandler & base, std::vector<PartialHeadland> &headlands );
 
 
     /**
@@ -281,22 +280,6 @@ public:
     bool read( const ReadHandler & base, std::vector<Route>& routes );
 
     /**
-     * @brief Read a headland route from the given base handler.
-     * @param base Base handler.
-     * @param [out] route Headland route read from the base handler
-     * @return True on success.
-     */
-    bool read( const ReadHandler & base, HeadlandRoute& route );
-
-    /**
-     * @brief Read headland routes from the given base handler.
-     * @param base Base handler.
-     * @param [out] routes Headland routes read from the base handler
-     * @return True on success.
-     */
-    bool read( const ReadHandler & base, std::vector<HeadlandRoute>& routes );
-
-    /**
      * @brief Read MachineDynamicInfo for a machine from the given base handler.
      * @param base Base handler.
      * @param [out] dynamicInfo MachineDynamicInfo read from the base handler
@@ -364,6 +347,16 @@ public:
 
 
     /**
+     * @brief Read a map of gridmaps.
+     * @param base Base handler.
+     * @param [out] map Map of OutFieldInfo read from the base handler
+     * @return True on success.
+     */
+    bool read( const ReadHandler & base,
+               std::map< std::string , ArolibGrid_t >& gridmaps );
+
+
+    /**
      * @brief Read a Graph from the given base handler.
      * @param base Base handler.
      * @param [out] graph Graph read from the base handler
@@ -426,6 +419,14 @@ public:
     bool read( const ReadHandler & base, DirectedGraph::overroll_property& o );
 
     /**
+     * @brief Read a Graph meta data.
+     * @param base Base handler.
+     * @param [out] meta Graph metadata
+     * @return True on success.
+     */
+    bool read(const ReadHandler & base, DirectedGraph::Graph::GraphMetaData& meta, const std::unordered_map<DirectedGraph::vertex_t, DirectedGraph::vertex_t> &verticesMap );
+
+    /**
      * @brief Read object/value from base ReadHandler.
      *
      * Note: needed because overloading is not managed in inheritance, but we want to use the available (standard) reads from XMLInDocument
@@ -473,7 +474,7 @@ public:
         if(!wasOpen){
             if(!openDocument()){
                 if(isReadyToRead())
-                    m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Cannot open document");
+                    logger().printOut(LogLevel::ERROR, __FUNCTION__, "Cannot open document");
                 return false;
             }
         }
@@ -499,7 +500,7 @@ public:
     bool read(T& value, const ReadHandler & base, std::string tag = UseDefaultTag, const std::vector<std::string>& parentTags = {}){
 
         if(!m_isDocOpen){
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
+            logger().printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
             return false;
         }
 
@@ -509,12 +510,12 @@ public:
 
         tag = getTag<T>(tag);
         if(tag.empty()){
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Invalid tag");
+            logger().printOut(LogLevel::ERROR, __FUNCTION__, "Invalid tag");
             return false;
         }
 
         if(!getBranch(branch, tag, branch)){
-            m_logger.printOut(LogLevel::WARNING, __FUNCTION__, "Cannot open main tag '" + tag + "'");
+            logger().printOut(LogLevel::WARNING, __FUNCTION__, "Cannot open main tag '" + tag + "'");
             return false;
         }
         bool resp = read(branch, value);
@@ -540,14 +541,14 @@ public:
         if(!wasOpen){
             if(!openDocument()){
                 if(isReadyToRead())
-                    m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Cannot open document");
+                    logger().printOut(LogLevel::ERROR, __FUNCTION__, "Cannot open document");
                 return false;
             }
         }
 
         tag = getTag<T>(tag);
         if(tag.empty()){
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Invalid tag");
+            logger().printOut(LogLevel::ERROR, __FUNCTION__, "Invalid tag");
             return false;
         }
 
@@ -563,10 +564,10 @@ public:
                 if(!read( createRH(v.second) , values.back())){
                     values.pop_back();
                     if(strict){
-                        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error reading element # " + std::to_string(count));
+                        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error reading element # " + std::to_string(count));
                         return false;
                     }
-                    m_logger.printOut(LogLevel::WARNING, __FUNCTION__, "Error reading element # " + std::to_string(count));
+                    logger().printOut(LogLevel::WARNING, __FUNCTION__, "Error reading element # " + std::to_string(count));
                 }
             }
         }
@@ -593,13 +594,13 @@ public:
         values.clear();
 
         if(!m_isDocOpen){
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
+            logger().printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
             return false;
         }
 
         tag = getTag<T>(tag);
         if(tag.empty()){
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Invalid tag");
+            logger().printOut(LogLevel::ERROR, __FUNCTION__, "Invalid tag");
             return false;
         }
 
@@ -611,10 +612,10 @@ public:
                 if(!read( createRH(v.second) , values.back())){
                     values.pop_back();
                     if(strict){
-                        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error reading element # " + std::to_string(count));
+                        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error reading element # " + std::to_string(count));
                         return false;
                     }
-                    m_logger.printOut(LogLevel::WARNING, __FUNCTION__, "Error reading element # " + std::to_string(count));
+                    logger().printOut(LogLevel::WARNING, __FUNCTION__, "Error reading element # " + std::to_string(count));
                 }
             }
         }
@@ -722,6 +723,67 @@ public:
                                  LogLevel logLevel = LogLevel::INFO);
 
     /**
+     * @brief Read resource points from a (arolib-formatted) XML file
+     * @param filename File name/path
+     * @param [out] resource_points Read resource points
+     * @param parentTags Parent tags to reach the location of the data to be read
+     * @param logLevel Log level
+     * @return true on success
+     */
+    static bool readResourcePoints(const std::string& filename,
+                                   std::vector<ResourcePoint> &resource_points,
+                                   const std::vector<std::string>& parentTags = {},
+                                   LogLevel logLevel = LogLevel::INFO);
+
+    /**
+     * @brief Read plan parameters from a (Arolib-formatted) XML file.
+     * @param filename Filename
+     * @param [out] field Read field
+     * @param [out] workingGroup Read working group (machines)
+     * @param [out] configParameters Read configuration parameters (as string map)
+     * @param [out] outFieldInfo Read OutFieldInfo
+     * @param [out] machinesDynamicInfo Read MachineDynamicInfo
+     * @param [out] gridmaps Read gridmaps
+     * @param coordinatesType_out Projection type for the target coordinates
+     * @param parentTags Parent tags to reach the location of the data to be read
+     * @param logLevel Log level
+     * @return True on success
+     */
+    static bool readPlanParameters(const std::string& filename,
+                                   Field& field,
+                                   std::vector<Machine>& workingGroup,
+                                   std::map<std::string, std::map<std::string, std::string> > &configParameters,
+                                   OutFieldInfo &outFieldInfo,
+                                   std::map<MachineId_t, MachineDynamicInfo>& machinesDynamicInfo,
+                                   std::map<std::string, ArolibGrid_t> &gridmaps,
+                                   Point::ProjectionType coordinatesType_out = Point::UTM,
+                                   const std::vector<std::string>& parentTags = {},
+                                   LogLevel logLevel = LogLevel::INFO);
+
+    /**
+     * @brief Read plan parameters from a (Arolib-formatted) XML file.
+     * @param filename Filename
+     * @param [out] workingGroup Read working group (machines)
+     * @param [out] configParameters Read configuration parameters (as string map)
+     * @param [out] outFieldInfo Read OutFieldInfo
+     * @param [out] machinesDynamicInfo Read MachineDynamicInfo
+     * @param [out] gridmaps Read gridmaps
+     * @param coordinatesType_out Projection type for the target coordinates
+     * @param parentTags Parent tags to reach the location of the data to be read
+     * @param logLevel Log level
+     * @return True on success
+     */
+    static bool readPlanParameters(const std::string& filename,
+                                   std::vector<Machine>& workingGroup,
+                                   std::map<std::string, std::map<std::string, std::string> > &configParameters,
+                                   OutFieldInfo &outFieldInfo,
+                                   std::map<MachineId_t, MachineDynamicInfo>& machinesDynamicInfo,
+                                   std::map<std::string, ArolibGrid_t>& gridmaps,
+                                   Point::ProjectionType coordinatesType_out = Point::UTM,
+                                   const std::vector<std::string>& parentTags = {},
+                                   LogLevel logLevel = LogLevel::INFO);
+
+    /**
      * @brief Read plan parameters from a (Arolib-formatted) XML file.
      * @param filename Filename
      * @param [out] field Read field
@@ -798,23 +860,6 @@ public:
                           const std::vector<std::string>& parentTags = {},
                           LogLevel logLevel = LogLevel::INFO );
 
-    /**
-     * @brief Read a headland routes from a (Arolib-formatted) XML file.
-     * @param filename Filename
-     * @param [out] routes Read headland routes
-     * @param syncRoutes Should the routes's base timestamp be synchronized so that all have the same one?
-     * @param coordinatesType_out Projection type for the target coordinates
-     * @param parentTags Parent tags to reach the location of the data to be read
-     * @param logLevel Log level
-     * @return True on success
-     */
-    static bool readPlan( const std::string &filename,
-                          std::map<int, std::vector<HeadlandRoute> > &routes,
-                          bool syncRoutes = true,
-                          Point::ProjectionType coordinatesType_out = Point::UTM,
-                          const std::vector<std::string>& parentTags = {},
-                          LogLevel logLevel = LogLevel::INFO );
-
 
     /**
      * @brief Read plan data from a (Arolib-formatted) XML file.
@@ -864,35 +909,6 @@ public:
                           std::vector<Machine>& workingGroup,
                           std::map<int, std::vector<Route> > &routes,
                           std::map<std::string, ArolibGrid_t > &gridmaps,
-                          bool syncRoutes = true,
-                          Point::ProjectionType coordinatesType_out = Point::UTM,
-                          const std::vector<std::string>& parentTags = {},
-                          LogLevel logLevel = LogLevel::INFO );
-
-    /**
-     * @brief Read plan data from a (Arolib-formatted) XML file.
-     * @param filename Filename
-     * @param [out] field Read field
-     * @param [out] workingGroup Read working group (machines)
-     * @param [out] routes Read headland routes
-     * @param [out] yieldmap_tifBase64 Read yieldmap (base64-encoded)
-     * @param [out] drynessmap_tifBase64 Read drynessmap (base64-encoded)
-     * @param [out] soilmap_tifBase64 Read soilmap (base64-encoded)
-     * @param [out] remainingAreaMap_tifBase64 Read remaining-area map (base64-encoded)
-     * @param syncRoutes Should the routes's base timestamp be synchronized so that all have the same one?
-     * @param coordinatesType_out Projection type for the target coordinates
-     * @param parentTags Parent tags to reach the location of the data to be read
-     * @param logLevel Log level
-     * @return True on success
-     */
-    static bool readPlan( const std::string &filename,
-                          Field& field,
-                          std::vector<Machine>& workingGroup,
-                          std::map<int, std::vector<HeadlandRoute> > &routes,
-                          std::string &yieldmap_tifBase64,
-                          std::string &drynessmap_tifBase64,
-                          std::string &soilmap_tifBase64,
-                          std::string &remainingAreaMap_tifBase64,
                           bool syncRoutes = true,
                           Point::ProjectionType coordinatesType_out = Point::UTM,
                           const std::vector<std::string>& parentTags = {},

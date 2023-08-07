@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,4 +20,6 @@
 #include <boost/test/unit_test.hpp>
 
 #include "test_mock.cpp"
+//#include "test_machinedb.cpp"
+#include "test_fieldgeometryprocessor.cpp"
 #include "test_tracksconnector.cpp"

@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,7 +23,6 @@
 #include "resourcepoint.hpp"
 #include "fieldaccesspoint.hpp"
 #include "linestring.hpp"
-#include "headlandpoint.hpp"
 #include "track.hpp"
 
 namespace arolib {
@@ -40,19 +39,66 @@ public:
 };
 
 /**
+ * @brief Partial headland class
+ */
+class PartialHeadland {
+public:
+    static const int NoConnectingHeadlandId;
+
+    int id; /**< Headland id */
+    Polygon boundary; /**< Headland boundary*/
+    std::vector<Track> tracks; /**< Tracks*/
+    std::pair<int, int> connectingHeadlandIds = std::make_pair(NoConnectingHeadlandId, NoConnectingHeadlandId); /**< If the partial headland is a connecting headland, these are the ids of the headlands being connected*/
+
+    /**
+     * @brief Check if the headland is a connecting headland based on the connectingHeadlandIds
+     * @param twoSided if false, it will be enough to be connected from one side
+     * @return True if the headland is a connecting headland
+     */
+    virtual bool isConnectingHeadland(bool twoSided = true) const;
+
+    /**
+     * @brief Get the headland connection sequence to connect two partial headlands
+     * @param hls Headlands
+     * @param ind_from Index of the first headland
+     * @param ind_to Index of the last headland
+     * @return Connection sequences (indexes)
+     */
+    static std::vector<std::vector<size_t>> getHeadlandConnectionSequences(const std::vector<PartialHeadland>& hls, size_t ind_from, size_t ind_to);
+};
+
+/**
  * @brief Headlands class
  */
 class Headlands {
 
 public:
     CompleteHeadland complete; /**< Complete/surrounding headland */
+    std::vector<PartialHeadland> partial; /**< Partial headlands */
 
     /**
      * @brief Check if a complete headland exits
      * @return True if a complete headland exits
      */
     virtual bool hasCompleteHeadland() const;
+
+    /**
+     * @brief Clear headlands geometries
+     */
+    virtual void clear();
 };
+
+inline bool operator==(const CompleteHeadland& lhs, const CompleteHeadland& rhs) {
+  return (lhs.middle_track == rhs.middle_track) && (lhs.tracks == rhs.tracks) && (lhs.boundaries == rhs.boundaries);
+}
+
+inline bool operator==(const PartialHeadland& lhs, const PartialHeadland& rhs) {
+  return (lhs.boundary == rhs.boundary) && (lhs.tracks == rhs.tracks);
+}
+
+inline bool operator==(const Headlands& lhs, const Headlands& rhs) {
+  return (lhs.complete == rhs.complete) && (lhs.partial == rhs.partial);
+}
 
 }
 

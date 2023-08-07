@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -170,15 +170,15 @@ bool GridmapLayout::setTolerance(double tolerance)
 
 bool GridmapLayout::scaleResolution(int scale){
     if(scale == 0){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "The scale must be different from zero");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "The scale must be different from zero");
         return false;
     }
     if(scale < 0){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Negative values (0<scale<1) are not supported at the moment");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Negative values (0<scale<1) are not supported at the moment");
         return false;
     }
     if(!isValid()){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "The grid layout is not valid");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "The grid layout is not valid");
         return false;
     }
 
@@ -305,7 +305,7 @@ CellsRangeList GridmapLayout::getCellsUnderLine(const Point& start, const Point&
     unsigned int indX_start, indY_start, indX_finish, indY_finish;
 
     if ( !isValid() ){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "The grid layout is not valid");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "The grid layout is not valid");
         return indexMap;
     }
 
@@ -474,7 +474,7 @@ CellsRangeList GridmapLayout::getCellsUnderLine2(const Point& start, const Point
     unsigned int indX, indY;
 
     if ( !isValid() ){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "The grid layout is not valid");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "The grid layout is not valid");
         return indexMap;
     }
 
@@ -594,7 +594,7 @@ CellsRangeList GridmapLayout::getCellsUnderLine3(const Point& start, const Point
    unsigned int indX, indY;
 
    if ( !isValid() ){
-       m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "The grid layout is not valid");
+       logger().printOut(LogLevel::ERROR, __FUNCTION__, "The grid layout is not valid");
        return indexMap;
    }
 
@@ -708,7 +708,7 @@ CellsRangeList GridmapLayout::getCellsUnderLine(const Point& start,
     Point p, p_parallel, p0_shift, p1_shift;
 
     if ( !isValid() ){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "The grid layout is not valid");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "The grid layout is not valid");
         return indexMap;
     }
 
@@ -899,7 +899,7 @@ std::vector< GridmapLayout::GridCellOverlap > GridmapLayout::getCellsOverlapUnde
     double areaCell = getCellArea();
 
     if ( !isValid() ){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "The grid layout is not valid");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "The grid layout is not valid");
         return cellsList;
     }
 
@@ -1041,12 +1041,12 @@ CellsRangeList GridmapLayout::getCellsUnderPolygon(const Polygon& _poly, std::un
         boundaryCells->clear();
 
     if ( !isValid() ){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "The grid layout is not valid");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "The grid layout is not valid");
         return indexMap;
     }
 
     if (_poly.points.size() < 3){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "The polygon must have at least 3 points");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "The polygon must have at least 3 points");
         return indexMap;
     }
 
@@ -1167,12 +1167,12 @@ CellsRangeList GridmapLayout::getCellsUnderPolygon2(const Polygon& _poly, bool s
     std::vector<Polygon> intersectionPoly;
 
     if ( !isValid() ){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "The grid layout is not valid");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "The grid layout is not valid");
         return indexMap;
     }
 
     if (_poly.points.size() < 3){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "The polygon must have at least 3 points");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "The polygon must have at least 3 points");
         return indexMap;
     }
 
@@ -1281,7 +1281,7 @@ std::vector< GridmapLayout::GridCellOverlap > GridmapLayout::getCellsOverlapUnde
     double areaCell = getCellArea();
 
     if ( !isValid() ){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "The grid layout is not valid");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "The grid layout is not valid");
         return cellsList;
     }
 
@@ -1380,7 +1380,7 @@ std::vector< GridmapLayout::GridCellOverlap > GridmapLayout::getCellsOverlapUnde
     double areaCell = getCellArea();
 
     if ( !isValid() ){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "The grid layout is not valid");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "The grid layout is not valid");
         return cellsList;
     }
 
@@ -1491,7 +1491,7 @@ std::vector< GridmapLayout::GridCellOverlap > GridmapLayout::getCellsOverlapUnde
     Polygon poly = _poly;
 
     if ( !isValid() ){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "The grid layout is not valid");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "The grid layout is not valid");
         return cellsList;
     }
 
@@ -1610,14 +1610,14 @@ bool GridmapLayout::getCellCenter(unsigned int cellX, unsigned int cellY, Point 
 bool GridmapLayout::getCellMinCorner (unsigned int cellX, unsigned int cellY, Point &corner) const
 {
     if ( !isValid() ){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "The grid layout is not valid");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "The grid layout is not valid");
         return false;
     }
 
     corner.x = m_minPointX + (double)cellX * m_cellsize;
     corner.y = m_minPointY + (double)cellY * m_cellsize;
     if ( !checkIndexesInRange(cellX,cellY) ) {
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Input cell indexes (" + std::to_string(cellX)
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Input cell indexes (" + std::to_string(cellX)
                                                          + "," + std::to_string(cellY)
                                                          + ") out of range : range(x) = [0," + std::to_string(m_sizeX-1)
                                                          + "] ; range(y) = [0," + std::to_string(m_sizeY-1) + " ]");
@@ -1633,7 +1633,7 @@ bool GridmapLayout::getCellMinCorner (unsigned int cellX, unsigned int cellY, Po
 bool GridmapLayout::getCellPolygonAsLine (unsigned int cellX, unsigned int cellY, Point &p0, Point &p1, double &width) const
 {
     if ( !isValid() ){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "The grid layout is not valid");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "The grid layout is not valid");
         return false;
     }
 
@@ -1657,7 +1657,7 @@ bool GridmapLayout::getCellPolygonAsLine (unsigned int cellX, unsigned int cellY
 bool GridmapLayout::getCellPolygon (unsigned int cellX, unsigned int cellY, Polygon &poly) const
 {
     if ( !isValid() ){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "The grid layout is not valid");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "The grid layout is not valid");
         return false;
     }
 
@@ -1687,7 +1687,7 @@ Polygon GridmapLayout::getGridPolygon(bool *_error_) const
     if(_error_) *_error_ = false;
 
     if(!isValid()){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "The grid layout is not valid");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "The grid layout is not valid");
         if(_error_) *_error_ = true;
         return poly;
     }
@@ -1706,7 +1706,7 @@ double GridmapLayout::getGridArea(bool *_error_) const
     if(_error_) *_error_ = false;
 
     if(!isValid()){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "The grid layout is not valid");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "The grid layout is not valid");
         if(_error_) *_error_ = true;
         return 0;
     }
@@ -1829,7 +1829,7 @@ bool GridmapLayout::point2index(const Point& _p, unsigned int &x, unsigned int &
 {
 
     if ( !isValid() ){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "The grid layout is not valid");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "The grid layout is not valid");
         return false;
     }
 

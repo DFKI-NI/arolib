@@ -2,37 +2,38 @@ set(AROLIB_LIB_NAME "${AROLIB_LIB_PREFIX}${AROLIB_LIB_COMPONENTS}")
 
 add_library(${AROLIB_LIB_NAME} SHARED
     src/fieldprovider.cpp
-    src/baseroutesinfieldplanner.cpp
-    src/headlandplanner.cpp
+    src/fieldgeometryprocessor.cpp
+    src/infieldbaseroutesplanner.cpp
+    src/headlandbaseroutesplanner.cpp
+    src/baseroutesplanner.cpp
     src/fieldprocessplanner.cpp
     src/generalrouteplanner.cpp
     src/machinedb.cpp
     src/planpostprocessor.cpp
-    src/tracksgenerator.cpp
     src/workedareamanager.cpp
+    src/drivenmassareamanager.cpp
     src/gpssimulator.cpp
     src/componentparametershelper.cpp
     src/baseroutesprocessor.cpp
     src/graphprocessor.cpp
     include/arolib/components/fieldprovider.h
-    include/arolib/components/baseroutesinfieldplanner.h
-    include/arolib/components/headlandplanner.h
+    include/arolib/components/fieldgeometryprocessor.h
+    include/arolib/components/infieldbaseroutesplanner.h
+    include/arolib/components/headlandbaseroutesplanner.h
+    include/arolib/components/baseroutesplanner.h
     include/arolib/components/fieldprocessplanner.h
     include/arolib/components/generalrouteplanner.h
     include/arolib/components/machinedb.h
     include/arolib/components/planpostprocessor.h
-    include/arolib/components/tracksgenerator.h
     include/arolib/components/workedareamanager.h
+    include/arolib/components/drivenmassareamanager.h
     include/arolib/components/gpssimulator.h
     include/arolib/components/componentparametershelper.h
     include/arolib/components/baseroutesprocessor.h
     include/arolib/components/graphprocessor.h
 )
 
-#set_property(TARGET ${AROLIB_LIB_NAME} PROPERTY CXX_STANDARD 11)  # 98, 11 or 14
-#set_property(TARGET ${AROLIB_LIB_NAME} PROPERTY CXX_STANDARD_REQUIRED ON)
-
-
+#set_target_properties(${AROLIB_LIB_NAME} PROPERTIES DEBUG_POSTFIX ${CMAKE_DEBUG_POSTFIX})
 
 target_include_directories(${AROLIB_LIB_NAME}
   PUBLIC
@@ -42,7 +43,7 @@ target_include_directories(${AROLIB_LIB_NAME}
 )
 
 target_link_libraries(${AROLIB_LIB_NAME}
-    INTERFACE
+    PUBLIC
       ${AROLIB_LIB_PREFIX}${AROLIB_LIB_TYPES}
       ${AROLIB_LIB_PREFIX}${AROLIB_LIB_MISC}
       ${AROLIB_LIB_PREFIX}${AROLIB_LIB_GEOMETRY}

@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,3 +21,4 @@
 
 #include "test_mock.cpp"
 #include "test_polygon.cpp"
+#include "test_tracksGenerator.cpp"

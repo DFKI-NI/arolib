@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,21 +37,21 @@ bool PlanAnalyserBase::setData(const Field &field)
     m_field = field;
 
     if(!arolib::geometry::closePolygon(m_field.outer_boundary) || m_field.outer_boundary.points.size() < 4){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Invalid field (outer boundary)");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Invalid field (outer boundary)");
         return false;
     }
     if(m_field.subfields.empty()){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Invalid field (no subfields)");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Invalid field (no subfields)");
         return false;
     }
     for (size_t i = 0 ; i < m_field.subfields.size() ; ++i){
         auto sf = field.subfields.at(i);
         if(!arolib::geometry::closePolygon(sf.boundary_outer) || sf.boundary_outer.points.size() < 4){
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Invalid subfield [" + std::to_string(i) + "] (outer boundary)");
+            logger().printOut(LogLevel::ERROR, __FUNCTION__, "Invalid subfield [" + std::to_string(i) + "] (outer boundary)");
             return false;
         }
         if(!arolib::geometry::closePolygon(sf.boundary_inner) || sf.boundary_inner.points.size() < 4){
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Invalid subfield [" + std::to_string(i) + "] (inner boundary)");
+            logger().printOut(LogLevel::ERROR, __FUNCTION__, "Invalid subfield [" + std::to_string(i) + "] (inner boundary)");
             return false;
         }
     }
@@ -63,15 +63,15 @@ bool PlanAnalyserBase::setData(const Field &field)
 bool PlanAnalyserBase::addRoute(size_t subfieldId, const MachineId_t &machineId, const Route &route1, const Route &route2)
 {
     if(!m_fieldReady){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "No valid field has been set");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "No valid field has been set");
         return false;
     }
     if(subfieldId >= m_field.subfields.size()){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Invalid subfield id");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Invalid subfield id");
         return false;
     }
     if(route1.route_points.empty() && route2.route_points.empty()){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Invalid routes: none of them have route points.");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Invalid routes: none of them have route points.");
         return false;
     }
 

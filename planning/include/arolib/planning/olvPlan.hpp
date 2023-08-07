@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,10 +19,11 @@
 
 #include <ctime>
 
-#include "directedgraph.hpp"
-#include "astar.hpp"
+#include "arolib/planning/path_search/directedgraph.hpp"
+#include "arolib/planning/path_search/astar.hpp"
 #include "planningException.hpp"
-#include "graphhelper.hpp"
+#include "arolib/planning/path_search/graphhelper.hpp"
+#include "arolib/planning/path_search/astar_successor_checkers.hpp"
 
 #include "arolib/misc/loggingcomponent.h"
 #include "arolib/misc/filesystem_helper.h"
@@ -88,7 +89,7 @@ public:
                      const std::vector<DirectedGraph::vertex_t> &resource_vertices,
                      const std::vector<DirectedGraph::vertex_t> &accessPoints_vertices,
                      const PlannerSettings &settings,
-                     double initialBunkerMass,
+                     const MachineDynamicInfo& initialState,
                      std::shared_ptr<IEdgeCostCalculator> edgeCostCalculator,
                      const std::string& outputFolder = "",
                      LogLevel logLevel = LogLevel::INFO);
@@ -106,13 +107,13 @@ public:
      * @param is_overloading (deprecated) Is the OLV overloading?
      * @return True on success
      */
-    bool planOverload(DirectedGraph::Graph &graph,
-                      Route &harvester_route,
-                      const std::shared_ptr<Machine> harv,
-                      const OverloadInfo &overload_info,
-                      const std::vector< std::pair<MachineId_t, double> >& overload_info_prev = {},
-                      double maxWaitingTime = 0,
-                      bool is_overloading = false);//is_overloading is useless in actual state
+   bool planOverload(DirectedGraph::Graph &graph,
+                     Route &harvester_route,
+                     const std::shared_ptr<Machine> harv,
+                     const OverloadInfo &overload_info,
+                     const std::vector< std::pair<MachineId_t, double> >& overload_info_prev = {},
+                     double maxWaitingTime = 0,
+                     bool is_overloading = false);//is_overloading is useless in actual state
 
     /**
      * @brief Finishes the plan for the OLV (i.e. computes the last route segments to, for intance, send the olv to a resource point)
@@ -237,8 +238,9 @@ private:
         double olv_time = 0.0; /**< Total duration [s] of the OLV planned routes (including the routes of previous overload plans) */
         double olv_bunker_mass = 0.0; /**< Last OLV bunker mass [Kg] */
         int route_id = 0; /**< Route Id */
-        std::set<DirectedGraph::vertex_t> excludePrevOverloading_vt; /**< Set containing the vertices to be excluded in the search because they correspond to the overloading points of previous overloading activities which should be excluded during the search (e.g. to avoid reverse directions in the route segment following overloading)  */
+        std::set<DirectedGraph::vertex_t> excludeVts; /**< Set containing the vertices to be excluded in the search  */
         Route route; /**< (complete) planned route (including the costs of previous overload plans) */
+        std::vector<RoutePoint> route_points_prev; /**< Route points (previous state) */
         double planningDuration_toHarv = 0; /**< Time [s] needed to plan the route segment to arrive to the overload-start of the corresponding overload activity */
         double planningDuration_toRP = 0; /**< Time [s] needed to plan the route segment to arrive to the resource point (from an overloading-end) of the corresponding overload activity */
         double planningDuration_toRP_init = 0; /**< Time [s] needed to plan the route segment to arrive to the resource point (from the initial location) of the corresponding overload activity */
@@ -258,6 +260,7 @@ private:
     };
 
     PlanState m_state; /**< Current working planning state */
+    std::map<size_t, PlanState> m_states; /**< Current working planning states (one per resource point) */
     std::vector<PlanState> m_statesMemory; /**< Previous planning states */
     PlannerSettings m_settings; /**< Planner parameters/settings */
     bool m_start_at_resource = true; /**< Flag to know if the OLV has to start at a resource point */
@@ -265,13 +268,13 @@ private:
     Machine m_olv; /**< OLV machine */
     std::vector<DirectedGraph::vertex_t> m_resource_vertices; /**< Resource/silo vertices */
     std::vector<DirectedGraph::vertex_t> m_accessPoints_vertices; /**< Field access points' vertices */
-    double m_olv_initial_bunker_mass; /**< Initial OLV bunker mass */
+    MachineDynamicInfo m_olv_initial_state; /**< Initial OLV state */
     bool m_found_plan = false; /**< Flag indicating if a plan was found for the last overload activity */
     std::shared_ptr<IEdgeCostCalculator> m_edgeCostCalculator = nullptr; /**< Edge cost calculator */
 
     std::vector<Route> m_planned_routes;  /**< Planned route segments so far */
 
-    int m_prev_overloading_end_index;  /**< (deprecated) Route-point index of the harvester route corresponding to the last/previous overload-end */
+    int m_prev_overloading_end_index = -1;  /**< (deprecated) Route-point index of the harvester route corresponding to the last/previous overload-end */
 
     std::string m_outputFolder = ""; /**< Folder where the planning (search) information will be stored (if empty-string, no data will be saved) */
     size_t m_countPlans = 0; /**< Counter of route-segment plans */
@@ -306,30 +309,6 @@ private:
      */
     bool getBestInitialVertex(const DirectedGraph::Graph &graph, const Route &harvester_route, DirectedGraph::vertex_t &vt, bool &isEntryPoint, bool includeEntryPoints);
 
-    /**
-     * @brief Plan the route-segment from the current vertex to a valid point adjacent to the switching (overload-start) vertex
-     * @param [in/out] graph Current graph, updated after planning
-     * @param [out] plan Plan results
-     * @param switching_vt Switching (overload-start) vertex
-     * @param switching_time (original) Switching timestamp (without delays). i.e. timestamp when the harvester is at the switching point
-     * @param machine_speed OLV speed [m/s]
-     * @param harvester_route Harvester route
-     * @param harvester_rp_index Index of the route point (of the harvester route) corresponding to the switching (overload-start) point
-     * @param maxDelay Maximum (harvester) delay (waiting time) [s] allowed so that the OLV reaches the switching (overload-start) point
-     * @param [out] olvWaitingTime Time the olv has to wait for the harvester to arrive to the switching point
-     * @return True on success
-     */
-    bool planPathToAdjacentPoint_2(DirectedGraph::Graph &graph,
-                                   AstarPlan &plan,
-                                   const DirectedGraph::vertex_t &switching_vt,
-                                   double switching_time,
-                                   double machine_speed,
-                                   const Route &harvester_route,
-                                   int harvester_rp_index,
-                                   double clearanceDist,
-                                   double maxDelay,
-                                   double &olvWaitingTime,
-                                   const std::vector< std::pair<MachineId_t, double> >& overload_info_prev = {});
 
     /**
      * @brief Plan the route-segment from the current vertex to a valid point adjacent to the switching (overload-start) vertex
@@ -361,6 +340,32 @@ private:
                                  const std::vector< std::pair<MachineId_t, double> >& overload_info_prev = {});
 
     /**
+     * @brief Plan the route-segment from the current vertex to a valid point adjacent to the switching (overload-start) vertex
+     * @param [in/out] graph Current graph, updated after planning
+     * @param [out] plan Plan results
+     * @param switching_vt Switching (overload-start) vertex
+     * @param switching_time (original) Switching timestamp (without delays). i.e. timestamp when the harvester is at the switching point
+     * @param machine_speed OLV speed [m/s]
+     * @param harvester_route Harvester route
+     * @param harvester_rp_index Index of the route point (of the harvester route) corresponding to the switching (overload-start) point
+     * @param maxDelay Maximum (harvester) delay (waiting time) [s] allowed so that the OLV reaches the switching (overload-start) point
+     * @param [out] olvWaitingTime Time the olv has to wait for the harvester to arrive to the switching point
+     * @return True on success
+     */
+    bool planPathToAdjacentPoint_2(DirectedGraph::Graph &graph,
+                                   AstarPlan &plan,
+                                   const DirectedGraph::vertex_t &switching_vt,
+                                   double switching_time,
+                                   double machine_speed,
+                                   const Route &harvester_route,
+                                   int harvester_rp_index,
+                                   double clearanceDist,
+                                   double maxDelay,
+                                   double &olvWaitingTime,
+                                   const OverloadInfo &overload_info,
+                                   const std::vector< std::pair<MachineId_t, double> >& overload_info_prev = {});
+
+    /**
      * @brief Plan the route-segment from the current vertex to the switching (overload-start) vertex
      * @param [in/out] graph Current graph, updated after planning
      * @param [out] plan Plan results
@@ -381,6 +386,7 @@ private:
                                   int harvester_rp_index,
                                   double clearanceDist,
                                   double &olvWaitingTime,
+                                  const OverloadInfo &overload_info,
                                   const std::vector< std::pair<MachineId_t, double> >& overload_info_prev = {});
 
     /**
@@ -413,10 +419,12 @@ private:
      * @param maxTimeGoal Maximum time(-stamp) in which the goal (resource/silo vertex) must be reached (A* max_time_goal). If < 0, no limit is applied
      * @return True on success
      */
+
     bool planPathToResource(DirectedGraph::Graph &graph,
+                            DirectedGraph::vertex_t *pResVt,
                             AstarPlan &plan,
                             double nextSwitchingPointTimestamp,
-                            MachineId_t harvesterId,
+                            const Route &harvester_route,
                             double maxTimeGoal = std::numeric_limits<double>::max());
 
     /**
@@ -429,7 +437,9 @@ private:
      * @return True on success
      */
     bool planPathToExitPoint(DirectedGraph::Graph &graph,
-                             AstarPlan &plan);
+                             AstarPlan &plan,
+                             double lastOverloadTimestamp,
+                             const Route &harvester_route);
 
     /**
      * @brief Plan the route-segment related to overloading following the harvester behind
@@ -458,17 +468,20 @@ private:
                                        const std::shared_ptr<Machine> harv);
 
     /**
-     * @brief Plan the route-segment related to overloading following the harvester in the side(s)
-     * @param [in/out] graph Current graph, updated after planning
-     * @param [in/out] harvester_route Current harvester route, updated after planning
-     * @param overload_info Overload information
+     * @brief Check if overloading a the given side is doable
+     * @param graph Current graph, updated after planning
+     * @param harvester_route Current harvester route, updated after planning
+     * @param startInd Start route-point index index (harvester_route)
+     * @param endInd End route-point index index (harvester_route)
+     * @param downloadSide Side
      * @param harv Harverster (if = null, not used)
      * @return True on success
      */
-    bool planOverloadingPath_alongside_2(DirectedGraph::Graph &graph,
-                                         Route &harvester_route,
-                                         const OverloadInfo &overload_info,
-                                         const std::shared_ptr<Machine> harv);
+    bool checkSideOverloading(const DirectedGraph::Graph &graph,
+                              const Route &harvester_route,
+                              size_t startInd, size_t endInd,
+                              DownloadSide &downloadSide,
+                              const std::shared_ptr<Machine> harv);
     /**
      * @brief Plan inter-track connection during overloading
      * @param [in/out] graph Current graph, updated after planning
@@ -510,6 +523,12 @@ private:
                                             const std::shared_ptr<Machine> harv,
                                             double initial_bunker_mass,
                                             double clearanceTime);
+    std::vector<RoutePoint> followHarvesterNoLength(DirectedGraph::Graph &graph,
+                                                    const OverloadInfo &info,
+                                                    const Route &harvester_route,
+                                                    const std::shared_ptr<Machine> harv,
+                                                    double initial_bunker_mass,
+                                                    double clearanceTime);
 
     /**
      * @brief Get the points of the route-segment corresponding to overloading (follow harvester alonside)
@@ -544,6 +563,11 @@ private:
                                  const std::shared_ptr<Machine> harv,
                                  size_t ind_from = 0,
                                  int ind_to = -1 );
+
+    /**
+     * @brief Removed the points from the state route that cause spikes in the initial segments of the route after planning to a resource point or an exit
+     */
+    void removeSpikePointsFromTransitRoute();
 
     /**
      * @brief Get the set of vertices under a route segment
@@ -600,6 +624,19 @@ private:
                                   const Machine &harv,
                                   std::vector<std::pair<DirectedGraph::vertex_t, DownloadSide> >& adjacent_vts);
 
+    std::set<DirectedGraph::vertex_t> addSuccCheckerForReverseDriving_start(std::vector<std::shared_ptr<const Astar::ISuccesorChecker>>& succCheckers,
+                                                                            const DirectedGraph::Graph &graph,
+                                                                            double angTH = 45);
+    std::set<DirectedGraph::edge_t> replaceSuccCheckerForReverseDriving_OLStart(std::vector<std::shared_ptr<const Astar::ISuccesorChecker>>& succCheckers,
+                                                                                size_t indSC,
+                                                                                const DirectedGraph::Graph &graph,
+                                                                                const Route &harvester_route,
+                                                                                const OverloadInfo &overload_info, const DirectedGraph::vertex_t &vt_goal, const DirectedGraph::vertex_property &vt_prop_goal,
+                                                                                double angTH = 100);
+    void addSuccCheckerForPrevOLEnd(std::vector<std::shared_ptr<const Astar::ISuccesorChecker>>& succCheckers,
+                                    const DirectedGraph::Graph& graph,
+                                    const Route &harvester_route);
+
     /**
      * @brief Update the set of vertices to be excluded during the search, adding more necessary vertices when necessary
      * @param graph Current graph
@@ -621,34 +658,31 @@ private:
                                          double clearanceDist);
 
     /**
-     * @brief Update the visit periods corresponding to a machine with a given delay. The visits of this machine that happened before the given timestamp will not be changed.
-     *
-     * Adds a delay to all visit periods of the given machine that happened during/after the given timestamp.
-     * @param [in/out] visitPeriods Visit periods' map to be updated
-     * @param machineId Id of the machine whose visit periods must be updated
-     * @param timestamp Reference timestamp. The visits of this machine that happened before this timestamp will not be updated/changed.
-     * @param delay Delay [s] to be applyed to the visit periods
-     * @param onlyTimeOut If true, the delay will only be applyed to the visits' time-out (i.e. the visits' time-in and timestamp are not changed))
+     * @brief Get the clearance distance when following the harvester behind
+     * @param harv Harvester
+     * @return Clearance distance
      */
-    static void updateVisitPeriods(std::multimap<double, DirectedGraph::VisitPeriod>& visitPeriods, MachineId_t machineId, double timestamp, double delay, bool onlyTimeOut );
-
-    /**
-     * @brief Update the visit periods corresponding to a machine with a given delay. The visits of this machine that happened before the given timestamp will not be changed.
-     *
-     * Adds a delay to all visit periods of the given machine that happened during/after the given timestamp.
-     * @param [in/out] visitPeriods Visit periods' map to be updated
-     * @param machineId Id of the machine whose visit periods must be updated
-     * @param timestamp Reference timestamp. The visits of this machine that happened before this timestamp will not be updated/changed.
-     * @param delay Delay [s] to be applyed to the visit periods
-     * @param onlyTimeOutFct If true, the delay will only be applyed to the visits' time-out (i.e. the visits' time-in and timestamp are not changed))
-     */
-    static void updateVisitPeriods(std::multimap<double, DirectedGraph::VisitPeriod>& visitPeriods, MachineId_t machineId, double timestamp, double delay, std::function<bool(const DirectedGraph::VisitPeriod&)> onlyTimeOutFct );
+    double getClearanceDistBehindHarv(const Machine &harv);
 
 
     /**
      * @brief Updates the current olv vertex with the one that is valid and closest to the last route point.
      */
     bool updateCurrentVertexWithClosest(DirectedGraph::Graph &graph, const Route &harvester_route);
+    bool updateCurrentVertexWithClosest(size_t key, DirectedGraph::Graph &graph, const Route &harvester_route);
+
+    /**
+     * @brief Get the list of vertices adjascent (i.e. connected) closest to a given vertex, from the previous and next tracks, and (if applicable) the headland
+     * @param graph Graph
+     * @param allowBoundaryVtsIfNeeded If Not enough vertices are found and the vt connects to the boundary vts, take into account the boundary vts
+     * @return List of resulting vertices
+     */
+    std::set<DirectedGraph::vertex_t> getAdjacentVerticesForSideOverloading(const DirectedGraph::Graph &graph,
+                                                                               const Route &harvester_route,
+                                                                               const DirectedGraph::vertex_t switching_vt,
+                                                                               int harvester_rp_index,
+                                                                               bool allowBoundaryVtsIfNeeded = false) const;
+
 
     /**
      * @brief Get the folder where the planning (search) information will be stored depending on the plan type
@@ -656,6 +690,31 @@ private:
      */
     std::string getOutputFolder(const std::string& planType);
 
+
+    class AstarSuccessorChecker_prevOLEnd: public Astar::ISuccesorChecker{
+    public:
+        /**
+         * @brief Constructor.
+         */
+        AstarSuccessorChecker_prevOLEnd(double timestamp_nextOLStart, const DirectedGraph::vertex_t& vt_prevOLEnd);
+
+        /**
+         * @brief Check if a sucesor is valid during AStar search
+         * @sa Astar::ISuccesorChecker::isSuccessorValid
+        */
+        virtual Astar::ISuccesorChecker::Validity isSuccessorValid(const Astar::ISuccesorChecker::IsSuccessorValidParams&) const override {return Astar::ISuccesorChecker::VALID;}
+
+        /**
+         * @brief Get the minimum duration [s] for a machine planning to go over the edge
+         * @param params Input parameters
+         * @return Minimum duration [s]. If < 0, no minimum duration applies (disregarded during search)
+        */
+        virtual double getMinDurationAtEdge(const GetMinDurationAtEdgeParams& params) const override;
+
+    protected:
+        double m_timestamp_nextOLStart;
+        DirectedGraph::vertex_t m_vt_prevOLEnd;
+    };
 };
 
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,12 +26,12 @@ const std::map<std::type_index, std::string> AroTagsManager::m_tags = { { std::t
                                                                         { std::type_index(typeid(Track::TrackType)), "type" },
                                                                         { std::type_index(typeid(Headlands)), "headlands" },
                                                                         { std::type_index(typeid(CompleteHeadland)), "complete_headland" },
+                                                                        { std::type_index(typeid(PartialHeadland)), "partial_headland" },
                                                                         { std::type_index(typeid(Obstacle)), "obstacle" },
                                                                         { std::type_index(typeid(Obstacle::ObstacleType)), "type" },
                                                                         { std::type_index(typeid(Point)), "coordinates" },
                                                                         { std::type_index(typeid(RoutePoint)), "route_point" },
                                                                         { std::type_index(typeid(RoutePoint::RoutePointType)), "type" },
-                                                                        { std::type_index(typeid(HeadlandPoint)), "headland_point" },
                                                                         { std::type_index(typeid(ResourcePoint)), "resource_point" },
                                                                         { std::type_index(typeid(FieldAccessPoint)), "access_point" },
                                                                         { std::type_index(typeid(FieldAccessPoint::AccessPointType)), "accessType" },
@@ -39,7 +39,6 @@ const std::map<std::type_index, std::string> AroTagsManager::m_tags = { { std::t
                                                                         { std::type_index(typeid(Machine::MachineType)), "machinetype" },
                                                                         { std::type_index(typeid(Machine::MachineAssignment)), "machineassignment" },
                                                                         { std::type_index(typeid(Route)), "route" },
-                                                                        { std::type_index(typeid(HeadlandRoute)), "route" },
                                                                         { std::type_index(typeid(Linestring)), "linestring" },
                                                                         { std::type_index(typeid(Polygon)), "polygon" },
                                                                         { std::type_index(typeid(OutFieldInfo)), "outFieldInfo" },
@@ -63,19 +62,23 @@ const std::map<std::type_index, std::string> AroTagsManager::m_tags = { { std::t
                                                                         { std::type_index(typeid(DirectedGraph::EdgeType)), "type" },
                                                                         { std::type_index(typeid(DirectedGraph::VisitPeriod)), "visit_period" },
                                                                         { std::type_index(typeid(DirectedGraph::overroll_property)), "overrun" },
+                                                                        { std::type_index(typeid(DirectedGraph::Graph::GraphMetaData)), "meta" },
                                                                         { std::type_index(typeid(std::vector<Field>)),"fields" },
                                                                         { std::type_index(typeid(std::vector<Subfield>)),"subfields" } ,
                                                                         { std::type_index(typeid(std::vector<Obstacle>)),"obstacles" } ,
                                                                         { std::type_index(typeid(std::vector<Track>)),"tracks" } ,
+                                                                        { std::type_index(typeid(std::vector<PartialHeadland>)),"partial_headlands" } ,
                                                                         { std::type_index(typeid(std::vector<Point>)),"coordinates" },
                                                                         { std::type_index(typeid(std::vector<RoutePoint>)),"route_points" },
-                                                                        { std::type_index(typeid(std::vector<HeadlandPoint>)),"headland_points" },
                                                                         { std::type_index(typeid(std::vector<ResourcePoint>)),"resource_points" },
                                                                         { std::type_index(typeid(std::vector<FieldAccessPoint>)),"access_points" },
                                                                         { std::type_index(typeid(std::vector<Machine>)),"machines" },
                                                                         { std::type_index(typeid(std::vector<Route>)),"routes" },
-                                                                        { std::type_index(typeid(std::vector<HeadlandRoute>)),"headland_routes" } ,
+                                                                        { std::type_index(typeid(std::vector<Route>)),"headland_routes" } ,
                                                                         { std::type_index(typeid(std::set<ResourcePoint::ResourceType>)),"resource_types" },
+                                                                        { std::type_index(typeid(std::map<std::string, const ArolibGrid_t*>)), "gridmaps" },
+                                                                        { std::type_index(typeid(std::map<std::string, ArolibGrid_t*>)), "gridmaps" },
+                                                                        { std::type_index(typeid(std::map<std::string, ArolibGrid_t>)), "gridmaps" },
                                                                         { std::type_index(typeid(std::vector<DirectedGraph::overroll_property>)),"overruns" }};
 
 

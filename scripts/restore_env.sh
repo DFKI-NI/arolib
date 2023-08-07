@@ -1,7 +1,7 @@
 #!/bin/bash
 
-#WARNING: this will clear arolib install paths from some environment variables! 
-#         Problems will arrise if the user contains the words "arolib"
+#WARNING: this will clear arolib and odil install paths from some environment variables! 
+#         Problems will arrise if the user contains the words "arolib" and "odil"
 
 
 declare -a envVars=("PATH" "CMAKE_PREFIX_PATH" "CPATH" "LD_LIBRARY_PATH" "LIBRARY_PATH" "PKG_CONFIG_PATH")

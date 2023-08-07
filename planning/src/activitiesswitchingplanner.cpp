@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,25 +21,21 @@ namespace arolib{
 bool ASP_GeneralSettings::parseFromStringMap(ASP_GeneralSettings &params, const std::map<std::string, std::string> &map, bool strict)
 {
     ASP_GeneralSettings tmp;
+    std::map<std::string, bool*> bMap = { {"switchOnlyAtTrackEnd" , &tmp.switchOnlyAtTrackEnd},
+                                          {"switchOnlyAtTrackEndHL" , &tmp.switchOnlyAtTrackEndHL} };
 
-    try{
-        std::map<std::string, bool*> bMap = { {"switchOnlyAtTrackEnd" , &tmp.switchOnlyAtTrackEnd} };
-
-        if( !setValuesFromStringMap( map, bMap, strict) )
-            return false;
-
-    } catch(...){ return false; }
+    if( !setValuesFromStringMap( map, bMap, strict) )
+        return false;
 
     params = tmp;
-
     return true;
-
 }
 
 std::map<std::string, std::string> ASP_GeneralSettings::parseToStringMap(const ASP_GeneralSettings &params)
 {
     std::map<std::string, std::string> ret;
     ret["switchOnlyAtTrackEnd"] = std::to_string( params.switchOnlyAtTrackEnd );
+    ret["switchOnlyAtTrackEndHL"] = std::to_string( params.switchOnlyAtTrackEndHL );
     return ret;
 }
 

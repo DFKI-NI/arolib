@@ -1,7 +1,12 @@
+.EXPORT_ALL_VARIABLES:
+
 # These definitions happen when arolib config env variables are missing:
 AROLIB_AROLIB_ROOT 			?= ${CURDIR}
 AROLIB_AROLIB_BUILD_PATH    ?= ${CURDIR}/build
 AROLIB_AROLIB_INSTALL_PATH  ?= ${CURDIR}/install
+
+RELEASE_PATH := ${AROLIB_AROLIB_BUILD_PATH}/release
+BUILD_PATH := ${RELEASE_PATH}/build
 
 # This happens often when running an arolib command with "sudo" because this doesn't copy over the user's env variables (but "sudo -E" does)
 # With these definitions we make some reasonable assumptions
@@ -26,14 +31,8 @@ AROLIB_DOCKER_CMD :=	echo ${UBUNTU_VER} && \
 						-v /etc/passwd:/etc/passwd:ro \
 						-v /etc/shadow:/etc/shadow:ro 
 
-AROLIB_ENV	:=			AROLIB_AROLIB_ROOT="${AROLIB_AROLIB_ROOT}"
-						#AROLIB_AROLIB_BUILD_PATH="${AROLIB_AROLIB_BUILD_PATH}"
-						#AROLIB_AROLIB_INSTALL_PATH="${AROLIB_AROLIB_INSTALL_PATH}"
-
-AROLIB_SET_ENV := 		${AROLIB_ENV} && . ${AROLIB_AROLIB_ROOT}/scripts/env.sh
-
-AROLIB_BUILD_CMD := 	mkdir -p ${AROLIB_AROLIB_BUILD_PATH}/build; \
-						cd ${AROLIB_AROLIB_BUILD_PATH}/build &&\
+AROLIB_BUILD_CMD := 	mkdir -p ${BUILD_PATH}; \
+						cd ${BUILD_PATH} &&\
 						cmake ${AROLIB_AROLIB_ROOT} -DCMAKE_INSTALL_PREFIX=${AROLIB_AROLIB_INSTALL_PATH} -DCMAKE_BUILD_TYPE=Release &&\
 						make -j$$(nproc --ignore=2) &&\
 						make install
@@ -41,7 +40,19 @@ AROLIB_BUILD_CMD := 	mkdir -p ${AROLIB_AROLIB_BUILD_PATH}/build; \
 
 .PHONY: build
 build: create_dirs
-	${AROLIB_SET_ENV} && ${AROLIB_BUILD_CMD}
+	${AROLIB_BUILD_CMD}
+
+# Linux install locations: https://stackoverflow.com/questions/41360283/subfolders-in-usr-local-lib
+.PHONY: install
+install:
+	rm -rf /usr/local/include/arolib && cp -R ${AROLIB_AROLIB_INSTALL_PATH}/include/arolib /usr/local/include
+	cp ${AROLIB_AROLIB_INSTALL_PATH}/lib/*.so /usr/local/lib
+	echo "/usr/local/lib" > /etc/ld.so.conf.d/arolib.conf && ldconfig
+
+.PHONY: uninstall
+uninstall:
+	rm -rf /usr/local/include/arolib
+	cd /usr/local/lib && rm -f libAROLIB_* 
 
 .PHONY: build/docs
 build/docs:
@@ -49,39 +60,29 @@ build/docs:
 
 .PHONY: clear
 clear:
-	rm -r ${AROLIB_AROLIB_BUILD_PATH}/build
-	rm -r ${AROLIB_AROLIB_BUILD_PATH}/bin
-	rm -r ${AROLIB_AROLIB_BUILD_PATH}/lib
-
-# ${AROLIB_AROLIB_INSTALL_PATH} ${AROLIB_AROLIB_BUILD_PATH}/build:
-# 	echo $@
-# 	mkdir -p $@
-# 	chown -R $$(id -u $(REAL_USER)):$$(id -g $(REAL_USER)) $@
+	rm -r ${RELEASE_PATH}/build
+	rm -r ${RELEASE_PATH}/bin
+	rm -r ${RELEASE_PATH}/lib
 
 .PHONY: create_dirs
 create_dirs: 
 	mkdir -p ${AROLIB_AROLIB_INSTALL_PATH}
 	chown -R $$(id -u $(REAL_USER)):$$(id -g $(REAL_USER)) ${AROLIB_AROLIB_INSTALL_PATH}
-	mkdir -p ${AROLIB_AROLIB_BUILD_PATH}/build
-	chown -R $$(id -u $(REAL_USER)):$$(id -g $(REAL_USER)) ${AROLIB_AROLIB_BUILD_PATH}/build
-	# ${AROLIB_AROLIB_INSTALL_PATH} ${AROLIB_AROLIB_BUILD_PATH}/build
+	mkdir -p ${BUILD_PATH}
+	chown -R $$(id -u $(REAL_USER)):$$(id -g $(REAL_USER)) ${BUILD_PATH}
 
 .PHONY: test/integration
 test/integration:
-	${AROLIB_SET_ENV} && cd ${AROLIB_AROLIB_BUILD_PATH}/build && ctest --output-on-failure -R integration*
+	cd ${BUILD_PATH} && ctest --output-on-failure -R integration*
 
 .PHONY: test/units
 test/units:
-	${AROLIB_SET_ENV} && cd ${AROLIB_AROLIB_BUILD_PATH}/build && ctest --output-on-failure -R unittest*
+	cd ${BUILD_PATH} && ctest --output-on-failure -R unittest*
 
 .PHONY: test
 test:	
-	${AROLIB_SET_ENV} && cd ${AROLIB_AROLIB_BUILD_PATH}/build && ctest --output-on-failure
-
-.PHONY: docker/build_image/bionic
-docker/build_image/bionic: 
-	docker build -t arolib/bionic:latest -f Dockerfile.bionic .
-
+	cd ${BUILD_PATH} && ctest --output-on-failure
+	
 .PHONY: docker/build_image/focal
 docker/build_image/focal: 
 	docker build -t arolib/focal:latest -f Dockerfile.focal .
@@ -90,17 +91,12 @@ docker/build_image/focal:
 # (because sudo uses a different set of env variables)
 # one way is to use the sudo -E, which copies all the env variables of the user
 # e.g. `sudo make ...`
-.PHONY: docker/build_arolib/bionic
-docker/build_arolib/bionic: create_dirs
-	${AROLIB_DOCKER_CMD} arolib/bionic:latest bash -c "cd ${AROLIB_AROLIB_ROOT} && make build"
+
 
 .PHONY: docker/build_arolib/focal
 docker/build_arolib/focal: create_dirs
 	${AROLIB_DOCKER_CMD} arolib/focal:latest bash -c "cd ${AROLIB_AROLIB_ROOT} && make build"
 
-.PHONY: docker/run/bionic
-docker/run/bionic: 
-	${AROLIB_DOCKER_CMD} arolib/bionic:latest
 
 .PHONY: docker/run/focal
 docker/run/focal: 

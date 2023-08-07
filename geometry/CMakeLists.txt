@@ -4,6 +4,7 @@ add_library(${AROLIB_LIB_NAME} SHARED
   src/boost_geometries_wrapper.cpp
   src/geometry_helper.cpp
   src/field_geometry_processing.cpp
+  src/tracksgenerator.cpp
   src/curves_helper.cpp
   src/pathsmoother.cpp
   src//3rdParty/dubins/dubins.cpp
@@ -13,6 +14,7 @@ add_library(${AROLIB_LIB_NAME} SHARED
   include/arolib/geometry/geometry_helper.hpp
   include/arolib/geometry/impl/geometry_helper.tcc
   include/arolib/geometry/field_geometry_processing.hpp
+  include/arolib/geometry/tracksgenerator.h
   include/arolib/geometry/curves_helper.hpp
   include/arolib/geometry/pathsmoother.hpp
   include/arolib/geometry/3rdParty/dubins/dubins.h
@@ -22,6 +24,8 @@ add_library(${AROLIB_LIB_NAME} SHARED
   include/arolib/geometry/3rdParty/spline/splines.inl
 )
 
+#set_target_properties(${AROLIB_LIB_NAME} PROPERTIES DEBUG_POSTFIX ${CMAKE_DEBUG_POSTFIX})
+
 target_include_directories(${AROLIB_LIB_NAME}
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -30,9 +34,9 @@ target_include_directories(${AROLIB_LIB_NAME}
 )
 
 target_link_libraries(${AROLIB_LIB_NAME}
-    INTERFACE
-    ${AROLIB_LIB_PREFIX}${AROLIB_LIB_TYPES}
-    ${AROLIB_LIB_PREFIX}${AROLIB_LIB_MISC}
+    PUBLIC
+      ${AROLIB_LIB_PREFIX}${AROLIB_LIB_TYPES}
+      ${AROLIB_LIB_PREFIX}${AROLIB_LIB_MISC}
 )
 
 install(TARGETS ${AROLIB_LIB_NAME}

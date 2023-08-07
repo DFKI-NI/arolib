@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,15 +20,16 @@
 #include <fstream>
 #include <vector>
 #include <set>
+#include <thread>
+#include <functional>
+#include <mutex>
+#include <random>
 #include <boost/tokenizer.hpp>
 
 #include "arolib/types/machine.hpp"
 #include "arolib/types/route.hpp"
+#include "arolib/geometry/geometry_helper.hpp"
 #include "arolib/misc/loggingcomponent.h"
-#include <thread>
-#include <functional>
-#include <mutex>
-
 #include "arolib/misc/basic_responses.h"
 
 namespace arolib {
@@ -45,11 +46,11 @@ public:
      */
     struct SimData{
         RoutePoint routePoint; /**< Route point */
-        MachineId_t machineId; /**< Machine ID */
-        double orientation; /**< Orientation */
-        double speed; /**< Speed */
-        size_t routeInd; /**< Route index */
-        size_t refPointInd; /**< Reference point index */
+        MachineId_t machineId = -1; /**< Machine ID */
+        double orientation = 0.0; /**< Orientation */
+        double speed = 0.0; /**< Speed */
+        size_t routeInd = 0; /**< Route index */
+        size_t refPointInd = 0; /**< Reference point index */
     };
 
     typedef std::function< void(const SimData&) > handlePointFunction; /**< Callback function to handle route points */
@@ -101,6 +102,13 @@ public:
     bool setTimeScale(float timeScale);
 
     /**
+     * @brief Set the deviation [m] from the planned location
+     * @param dev Deviation [m] (if <0 -> no deviation)
+     * @return True on success
+     */
+    bool setDistanceDeviation(float dev);
+
+    /**
      * @brief Start the simulation
      * @param sendPoint Callback function to handle the information of the currently simulated route point
      * @return AroResp with error id (0:=OK) and message
@@ -140,7 +148,8 @@ protected:
     bool m_threadRunning = false; /**< Flag used to know if the thread is running */
     int m_threadId; /**< Thread Id */
     float m_updateFrequency; /**< Simulation update (samplling) frequency */
-    float m_timescale ; /**< Actual simulation time scale value, computed from the frequency & timescale values */
+    float m_timescale; /**< Actual simulation time scale value, computed from the frequency & timescale values */
+    float m_distanceDeviation = -1; /**< Deviation from planned location */
     std::vector<Route>  m_plan; /**< Plan/routes */
     std::set<MachineId_t> m_machineIds; /**< Machine Ids */
     std::mutex m_mutex; /**< Mutex */

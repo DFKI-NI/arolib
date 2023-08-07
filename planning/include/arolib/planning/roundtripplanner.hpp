@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,10 +19,11 @@
 
 #include <ctime>
 
-#include "directedgraph.hpp"
-#include "astar.hpp"
+#include "arolib/planning/path_search/directedgraph.hpp"
+#include "arolib/planning/path_search/astar.hpp"
 #include "planningException.hpp"
-#include "graphhelper.hpp"
+#include "arolib/planning/path_search/graphhelper.hpp"
+#include "arolib/planning/path_search/astar_successor_checkers.hpp"
 
 #include "arolib/misc/loggingcomponent.h"
 #include "arolib/misc/filesystem_helper.h"
@@ -85,10 +86,9 @@ public:
      * @param rp_index Route point index from which to plan the trip
      * @param rp_ret_index Index of the route point where the machine has to return (i.e. where the trip ends). If >= route_points size, it stays at the destination
      * @param destinationVertices Possible destination vertices
-     * @param timeAtDestination Time the machine will spend at the (intermediate) destination
-     * @param maxVisitTime_toDest Time constrain to visit vertices when planning to the destination (@sa AStar::PlanParameters max_time_visit)
-     * @param maxVisitTime_toRoute Time constrain to visit vertices when planning back to the route (@sa AStar::PlanParameters max_time_visit)
-     * @param restrictedMachineIds Ids of the machines for which the max_time_visit applies (@sa AStar::PlanParameters restrictedMachineIds)
+     * @param successorCheckers_toDest Checkers used to know if a transition to a certain successor node is valid  when planning to the destination (@sa Astar::PlanParameters::successorCheckers)
+     * @param successorCheckers_toRoute Checkers used to know if a transition to a certain successor node is valid  when planning back to the route (@sa Astar::PlanParameters::successorCheckers)
+     * @param allowReverseDriving Allow reverse driving
      * @param functAtDest this function will be called to the last route point of the 'to the destination' route segment to get the first route point of the 'back to the route' segment
      * @return True on success
      */
@@ -97,13 +97,10 @@ public:
                   size_t rp_index,
                   size_t rp_ret_index,
                   const std::vector<DirectedGraph::vertex_t> & destinationVertices,
-                  const std::set<DirectedGraph::vertex_t> & excludeVts_toDest,
-                  const std::set<DirectedGraph::vertex_t> & excludeVts_toRoute,
-                  double maxVisitTime_toDest,
-                  double maxVisitTime_toRoute,
-                  const std::set<MachineId_t> &restrictedMachineIds,
+                  std::vector<std::shared_ptr<const Astar::ISuccesorChecker>> successorCheckers_toDest,
+                  std::vector<std::shared_ptr<const Astar::ISuccesorChecker>> successorCheckers_toRoute,
                   bool allowReverseDriving,
-                  RoutePoint functAtDest(const RoutePoint& ));
+                  std::function<RoutePoint(const RoutePoint&, const DirectedGraph::vertex_t&)> functAtDest);
 
     /**
      * @brief Get the updated graph
@@ -228,26 +225,23 @@ private:
      * @brief Plan the route-segment to the best destination vertex
      * @param [out] plan Plan results
      * @param destinationVertices Possible destination vertices
-     * @param maxVisitTime Time constrain to visit vertices when planning to the destination (@sa AStar::PlanParameters max_time_visit)
+     * @param successorCheckers Checkers used to know if a transition to a certain successor node is valid when planning (@sa Astar::PlanParameters::successorCheckers)
+     * @param allowReverseDriving Allow reverse driving
      * @return True on success
      */
     bool planPathToDestination(AstarPlan &plan,
                                const std::vector<DirectedGraph::vertex_t> & destinationVertices,
-                               double maxVisitTime,
-                               const std::set<MachineId_t> &restrictedMachineIds,
-                               const std::set<DirectedGraph::vertex_t> & excludeVts, bool allowReverseDriving);
+                               std::vector<std::shared_ptr<const Astar::ISuccesorChecker>> successorCheckers,
+                               bool allowReverseDriving);
 
     /**
      * @brief Plan the route-segment from the current vertex to the last route-point
      * @param [out] plan Plan results
-     * @param timeAtDestination Time spent by the machine at the destination
-     * @param maxVisitTime Time constrain to visit vertices when planning back to the route (@sa AStar::PlanParameters max_time_visit)
+     * @param successorCheckers Checkers used to know if a transition to a certain successor node is valid when planning (@sa Astar::PlanParameters::successorCheckers)
      * @return True on success
      */
     bool planPathToRoutePoint(AstarPlan &plan,
-                              double maxVisitTime,
-                              const std::set<MachineId_t> &restrictedMachineIds,
-                              const std::set<DirectedGraph::vertex_t> & excludeVts);
+                              std::vector<std::shared_ptr<const Astar::ISuccesorChecker>> successorCheckers);
 
     /**
      * @brief Updates the base routein m_state with the planned trip
@@ -260,7 +254,7 @@ private:
      * @param graph Current graph
      * @param [in/out] exclude Set of exclude vertices to be updated
      */
-    void updateExcludeSet_toRP(std::set<DirectedGraph::vertex_t>& exclude,
+    void updateExcludeSet_toDest(std::set<DirectedGraph::vertex_t>& exclude,
                             bool allowReverseDriving) const;
 
 

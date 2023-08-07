@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -96,7 +96,6 @@ std::size_t RoutePoint::KeyHash::get(const RoutePoint &rp, std::size_t seed)
     seed = Point::KeyHash::get( rp.point(), seed );
     boost::hash_combine(seed, (int)rp.type);
     boost::hash_combine(seed, rp.track_id);
-    boost::hash_combine(seed, rp.track_idx);
     boost::hash_combine(seed, rp.time_stamp);
     return seed;
 }
@@ -105,8 +104,6 @@ bool RoutePoint::operator <(const RoutePoint &rp) const
 {
     if (track_id != rp.track_id)
         return track_id < rp.track_id;
-    if (track_idx != rp.track_idx)
-        return track_idx < rp.track_idx;
     if (type != rp.type)
         return type < rp.type;
     return this->point() < rp.point();
@@ -120,8 +117,8 @@ bool RoutePoint::operator ==(const RoutePoint &other) const
            && std::fabs(time_stamp - other.time_stamp) < 1e-3
            && std::fabs(bunker_mass - other.bunker_mass) < 1e-3
            && std::fabs(bunker_volume - other.bunker_volume) < 1e-3
-           && std::fabs(harvested_mass - other.harvested_mass) < 1e-3
-           && std::fabs(harvested_volume - other.harvested_volume) < 1e-3
+           && std::fabs(worked_mass - other.worked_mass) < 1e-3
+           && std::fabs(worked_volume - other.worked_volume) < 1e-3
               && machineRelations == other.machineRelations );
 }
 
@@ -249,8 +246,8 @@ size_t RoutePoint::getNextIndByType(const std::vector<RoutePoint> &route_points,
 
 void RoutePoint::copyBasicWorkingValuesFrom(const RoutePoint &from)
 {
-    harvested_mass = from.harvested_mass;
-    harvested_volume = from.harvested_volume;
+    worked_mass = from.worked_mass;
+    worked_volume = from.worked_volume;
     bunker_mass = from.bunker_mass;
     bunker_volume = from.bunker_volume;
 }

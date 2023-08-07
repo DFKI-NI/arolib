@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,24 +21,22 @@
 #include <iostream>
 #include <math.h>
 #include <string>
+#include <memory>
 
 #include "arolib/misc/loggingcomponent.h"
 #include "arolib/misc/container_helper.h"
 #include "arolib/misc/basic_responses.h"
 #include "arolib/types/machine.hpp"
 #include "arolib/types/machinedynamicinfo.hpp"
-#include "arolib/types/headlandpoint.hpp"
 #include "arolib/geometry/field_geometry_processing.hpp"
 
 #include "arolib/planning/generalplanningparameters.hpp"
 #include "arolib/planning/planinfo.h"
-#include "arolib/planning/overloadPlannerHelper.hpp"
 #include "arolib/planning/multiolvplanner.h"
-#include "arolib/planning/multiharvplanner.h"
-#include "arolib/planning/planningworkspace.h"
-#include "arolib/planning/graph_builder_tracks_based.hpp"
-#include "arolib/planning/graph_builder_routes_based.hpp"
-#include "arolib/planning/infieldtracksconnector.hpp"
+#include "arolib/planning/route_planner_standalone_machines.hpp"
+#include "arolib/planning/path_search/graphhelper.hpp"
+#include "arolib/planning/track_connectors/infieldtracksconnectordef.hpp"
+#include "arolib/planning/path_search/astar_successor_checkers.hpp"
 
 namespace arolib {
 
@@ -54,15 +52,15 @@ public:
      *
      * Inherits from MultiOLVPlanner::PlannerSettings
      * @sa MultiOLVPlanner::PlannerSettings
-     * @warning For MultiOLVPlanner::PlannerSettings::harvestedMassLimit if < 0, an optimal value will be calculated
+     * @warning For MultiOLVPlanner::PlannerSettings: if harvestedMassLimit if < 0 and numOverloadActivities <= 0, an optimal value will be calculated
      * @sa MultiOLVPlanner::PlannerSettings
      */
     struct PlannerParameters
             : public virtual FieldGeneralParameters,
               public virtual GridComputationSettings,
-              public virtual MultiOLVPlanner::PlannerSettings,
-              public virtual MultiHarvPlanner::PlannerSettings{
-        double unloading_offset = 300; /**< Default time a machine needs for unloading the crop in the silo */
+              public virtual RoutePlannerStandaloneMachines::PlannerSettings,
+              public virtual MultiOLVPlanner::PlannerSettings{
+        double unloading_offset = 300; /**< Default time a machine spends at the resource point (e.g., unloading crop in the silo) */
         double workingWidth = 0; /**< Working width */
         /**
          * @brief Parse the parameters from a string map, starting from a default PlannerParameters
@@ -89,58 +87,10 @@ public:
 
     /**
      * @brief Generate the machine routes (complete plan) based on initial base routes for infield and headland.
-     * @param subfield Processed subfield
-     * @param baseRoutes_infield Inner-field base routes (initial ones)
-     * @param baseRoutes_headland Headland base routes (initial ones)
-     * @param [out] plannedRoutes Generated routes for all machines
-     * @param machines Machines used for planning
-     * @param outFieldInfo Out-of-field information (inc. arrival times, transport times, etc.)
-     * @param machineCurrentStates Map containing the current states of the machines
-     * @param plannerParameters Planner parameters
-     * @param yieldmap Yield-proportion map/grid (values in t/ha)
-     * @param remainingAreaMap Remaining (unharvested) -area map/grid
-     * @param edgeCostCalculator Edge Cost Calculator. Temporary: if = nullptr, uses internal astar functions
-     * @param [out] pPlanInfo Pointer to where the information of the final plan will be saved (if = nullptr, it is not saved)
-     * @param [out] pGraph Pointer to where the final graph will be saved (if = nullptr, it is not saved)
-     * @return AroResp with error id (0:=OK) and message
-     */
-    AroResp planSubfield(const Subfield& subfield,
-                               const std::vector<arolib::Route> &baseRoutes_infield,
-                               const std::vector<arolib::HeadlandRoute> &baseRoutes_headland,
-                               std::vector<arolib::Route> &plannedRoutes,
-                               const std::vector<arolib::Machine>& machines,
-                               OutFieldInfo &outFieldInfo,
-                               const std::map<MachineId_t, arolib::MachineDynamicInfo>& machineCurrentStates,
-                               PlannerParameters plannerParameters,
-                               const ArolibGrid_t &yieldmap,
-                               const ArolibGrid_t &remainingAreaMap,
-                               std::shared_ptr<IEdgeCostCalculator> edgeCostCalculator,
-                               PlanGeneralInfo *pPlanInfo = nullptr,
-                               DirectedGraph::Graph* pGraph = nullptr);
-
-    /**
-     * @brief Generate the machine routes (complete plan) based on initial base routes for infield and headland.
-     * @param [in/out] pw Planning workspace containing the necessary data (subfield, initial base routes, etc.) for planning, as well as the resulting harvester and olv planned routes.
-     * @param subfieldIdx Index of the subfield (in pw) that will be planned
-     * @param plannerParameters Planner parameters
-     * @param edgeCostCalculator Edge Cost Calculator. Temporary: if = nullptr, uses internal astar functions
-     * @param [out] pPlanInfo Pointer to where the information of the final plan will be saved (if = nullptr, it is not saved)
-     * @param [out] pGraph Pointer to where the final graph will be saved (if = nullptr, it is not saved)
-     * @return AroResp with error id (0:=OK) and message
-     */
-    AroResp planSubfield( PlanningWorkspace &pw,
-                                size_t subfieldIdx,
-                                const PlannerParameters& plannerParameters,
-                                std::shared_ptr<IEdgeCostCalculator> edgeCostCalculator,
-                                PlanGeneralInfo *pPlanInfo = nullptr,
-                                DirectedGraph::Graph* pGraph = nullptr );
-
-
-    /**
-     * @brief Generate the machine routes (complete plan) based on initial base routes for infield and headland.
+     *
      * @param [in/out] graph Graph
      * @param subfield Processed subfield
-     * @param baseRoutes Processed base routes
+     * @param baseRoutes Processed base routes (must have increasingly monotonic timestamps)
      * @param [out] plannedRoutes Generated routes for all machines
      * @param machines Machines used for planning
      * @param outFieldInfo Out-of-field information (inc. arrival times, transport times, etc.)
@@ -153,43 +103,24 @@ public:
      * @return AroResp with error id (0:=OK) and message
      */
     AroResp planSubfield(DirectedGraph::Graph& graph,
-                               const Subfield& subfield,
-                               const std::vector<arolib::Route> &baseRoutes_,
-                               std::vector<arolib::Route> &plannedRoutes,
-                               const std::vector<arolib::Machine>& machines,
-                               const OutFieldInfo &outFieldInfo,
-                               const std::map<MachineId_t, arolib::MachineDynamicInfo>& machineCurrentStates,
-                               PlannerParameters plannerParameters,
-                               const ArolibGrid_t &yieldmap,
-                               const ArolibGrid_t &remainingAreaMap,
-                               std::shared_ptr<IEdgeCostCalculator> edgeCostCalculator,
-                               PlanGeneralInfo *pPlanInfo = nullptr);
-
-    /**
-     * @brief Generate the machine routes (complete plan) based on initial base routes for infield and headland.
-     * @param [in/out] graph Graph
-     * @param [in/out] pw Planning workspace containing the necessary data (subfield, initial base routes, etc.) for planning, as well as the resulting harvester and olv planned routes.
-     * @param subfieldIdx Index of the subfield (in pw) that will be planned
-     * @param plannerParameters Planner parameters
-     * @param edgeCostCalculator Edge Cost Calculator. Temporary: if = nullptr, uses internal astar functions
-     * @param [out] pPlanInfo Pointer to where the information of the final plan will be saved (if = nullptr, it is not saved)
-     * @return AroResp with error id (0:=OK) and message
-     */
-    AroResp planSubfield( DirectedGraph::Graph& graph,
-                                PlanningWorkspace &pw,
-                                size_t subfieldIdx,
-                                const PlannerParameters& plannerParameters,
-                                std::shared_ptr<IEdgeCostCalculator> edgeCostCalculator,
-                                PlanGeneralInfo *pPlanInfo = nullptr );
+                         const Subfield& subfield,
+                         const std::vector<arolib::Route> &baseRoutes_,
+                         std::vector<arolib::Route> &plannedRoutes,
+                         const std::vector<arolib::Machine>& machines,
+                         const OutFieldInfo &outFieldInfo,
+                         const std::map<MachineId_t, arolib::MachineDynamicInfo>& machineCurrentStates,
+                         const PlannerParameters &_plannerParameters,
+                         const ArolibGrid_t &yieldmap,
+                         const ArolibGrid_t &remainingAreaMap,
+                         std::shared_ptr<IEdgeCostCalculator> edgeCostCalculator,
+                         PlanGeneralInfo *pPlanInfo = nullptr);
 
     /**
      * @brief Set the output files for debug and analysis
-     * @param filename_graphBuilding File name/path where the gragh-building information will be stored (if empty-string, no data will be saved)
      * @param foldername_planData Folder where the planning (search) information will be stored (if empty-string, no data will be saved)
      * @param foldername_visitSchedule Folder where the initial and final visit schedules will be stored (if empty-string, no data will be saved)
      */
-    void setOutputFiles(const std::string& filename_graphBuilding,
-                        const std::string& foldername_planData,
+    void setOutputFiles(const std::string& foldername_planData,
                         const std::string& foldername_visitSchedule);
 
 protected:
@@ -199,23 +130,28 @@ protected:
      * @param machines Machines
      * @param machineCurrentStates Current states of the machines
      * @param plannerParameters Planner parameters
-     * @param edgeCostCalculator Edge Cost Calculator. Temporary: if = nullptr, uses internal astar functions
+     * @param edgeCostCalculator Edge Cost Calculator.
+     * @param materialFlowType Material flow type
+     * @param transitRestriction Transit restriction inside field
      * @param logger Logger
      * @param [out] out_mainRoutes Planned routes
      * @param [out] out_updatedGraph Updated graph
      * @param [out] out_pPlanInfo Pointer to where the information of the final plan will be saved (if = nullptr, it is not saved)
      * @return AroResp with error id (0:=OK) and message
      */
-    AroResp do_multiHarvPlanning(const DirectedGraph::Graph originalGraph,
-                                const std::vector<Route> &baseRoutes, 
-                                const std::vector<Machine> &machines, 
-                                const std::map<MachineId_t, MachineDynamicInfo> &machineCurrentStates, 
-                                const MultiHarvPlanner::PlannerSettings& plannerParameters, 
-                                const std::shared_ptr<IEdgeCostCalculator> edgeCostCalculator, 
-                                Logger& logger,
-                                std::vector<Route>& out_mainRoutes, 
-                                DirectedGraph::Graph &out_updatedGraph, 
-                                PlanGeneralInfo *out_pPlanInfo = nullptr);
+    AroResp do_planningForStandaloneMachines(const DirectedGraph::Graph originalGraph,
+                                             const Polygon& boundary,
+                                             const std::vector<Route> &baseRoutes,
+                                             const std::vector<Machine> &machines,
+                                             const std::map<MachineId_t, MachineDynamicInfo> &machineCurrentStates,
+                                             const RoutePlannerStandaloneMachines::PlannerSettings& plannerParameters,
+                                             const std::shared_ptr<IEdgeCostCalculator> edgeCostCalculator,
+                                             MaterialFlowType materialFlowType,
+                                             TransitRestriction transitRestriction,
+                                             Logger& logger,
+                                             std::vector<Route>& out_mainRoutes,
+                                             DirectedGraph::Graph &out_updatedGraph,
+                                             PlanGeneralInfo *out_pPlanInfo = nullptr);
 
     /**
      * @brief Do route planning for the scenario where (non-capacitated) primary machines and overload vehicles are participating
@@ -236,12 +172,23 @@ protected:
                                 const std::vector<Machine> &machines, 
                                 const std::map<MachineId_t, MachineDynamicInfo> &machineCurrentStates, 
                                 const MultiOLVPlanner::PlannerSettings& plannerParameters, 
-                                const std::shared_ptr<IEdgeCostCalculator> edgeCostCalculator, 
+                                const std::shared_ptr<IEdgeCostCalculator> edgeCostCalculator,
                                 Logger& logger, 
                                 std::vector<Route>& out_harvRoutes, 
                                 std::vector<Route>& out_olvRoutes, 
                                 DirectedGraph::Graph &out_updatedGraph, 
                                 PlanGeneralInfo *out_pPlanInfo = nullptr);
+
+    /**
+     * @brief Check if the given machines are valid based on their type
+     * @param machines Machines
+     * @param [out] workingMachines Working machines
+     * @param [out] numOLVs Number of OLVs
+     * @param [out] materialFlowType Based on the working machines' types
+     * @return AroResp with error id (0:=OK) and message
+     */
+    AroResp checkMachineTypes(const std::vector<Machine> &machines, std::vector<Machine> &workingMachines, size_t &numOlvs,
+                              MaterialFlowType& materialFlowType, TransitRestriction& transitRestriction);
 
     /**
      * @brief Adjust the arrival times of the out-of-field information
@@ -262,7 +209,7 @@ protected:
                                                 const std::vector<FieldAccessPoint> &fieldAccessPoints,
                                                 const std::vector<Machine> &machines,
                                                 const std::vector<arolib::Route> &baseRoutes_infield,
-                                                const std::vector<arolib::HeadlandRoute> &baseRoutes_headland,
+                                                const std::vector<arolib::Route> &baseRoutes_headland,
                                                 const std::map<MachineId_t, arolib::MachineDynamicInfo>& machineCurrentStates,
                                                 const Subfield &subfield,
                                                 double &deltaTime);
@@ -282,7 +229,7 @@ protected:
      * @param calcRemainingAreaPrecisely Perform map/grid operations precisely (ONLY for remaining-area map)
      */
     void preProcessBaseRoutes(std::vector<arolib::Route> &baseRoutes_infield,
-                                   std::vector<arolib::HeadlandRoute> &baseRoutes_headland,
+                                   std::vector<arolib::Route> &baseRoutes_headland,
                                    const Subfield& subfield,
                                    const std::vector<Machine> &machines,
                                    const OutFieldInfo& outFieldInfo,
@@ -301,7 +248,7 @@ protected:
      * @return Connected and adjusted base routes
      */
     std::vector<Route> connectBaseRoutes(std::vector<Route> &baseRoutes_infield,
-                                              std::vector<HeadlandRoute> &baseRoutes_headland,
+                                              std::vector<Route> &baseRoutes_headland,
                                               const Subfield& subfield,
                                               const std::vector<Machine> &machines);
 
@@ -334,7 +281,7 @@ protected:
                               const std::vector<FieldAccessPoint> &fieldAccessPoints,
                               const std::vector<Machine> &workingGroup,
                               const std::vector<Route> &baseRoutes_infield,
-                              const std::vector<HeadlandRoute> &baseRoutes_headland,
+                              const std::vector<Route> &baseRoutes_headland,
                               FieldAccessPoint & initialFAP,
                               double &maxArrivalTime);
 
@@ -375,7 +322,7 @@ protected:
      * @param machine Machine for the given route
      * @return Resulting path points
      */
-    std::vector<Point> getBestPathToFirstWorkingPoint(const HeadlandRoute& route,
+    std::vector<Point> getBestPathToFirstWorkingPoint_hl(const Route& route,
                                                       const Subfield& subfield,
                                                       const Point &initialPoint,
                                                       const Machine &machine);
@@ -388,15 +335,28 @@ protected:
      * @param machine Machine for the given route
      * @return Resulting path points
      */
-    std::vector<Point> getBestPathToFirstWorkingPoint(const Route& route,
+    std::vector<Point> getBestPathToFirstWorkingPoint_if(const Route& route,
                                                          const Subfield& subfield,
                                                          const Point &initialPoint,
                                                          const Machine &machine);
 
     /**
+     * @brief Make initial adjustments to base routes and graph based on the machineCurrentStates
+     *
+     * Removes initial segments
+     * Adjust timestamps of the base route points and corresponding vertices
+     * @param [in/out] graph Updated graph (to be updated)
+     * @param [in/out] baseRoutes Base/main (working-machine) routes. Their parameters (timestamps, etc.) are updated on success
+     * @param machineCurrentStates Map containing the current states of the machines
+     */
+    void adjustBaseRoutes(DirectedGraph::Graph &graph,
+                          std::vector<Route> &baseRoutes,
+                          const std::map<MachineId_t, MachineDynamicInfo> &machineCurrentStates);
+
+    /**
      * @brief Obtain (using a-star search) the best route-segments connecting the (working) machines' initial points/locations with the first (valid) working point of their routes
      * @param [in/out] graph Updated graph (to be updated with final initial route-segments)
-     * @param [in/out] mainRoutes Main (working-machine) routes. Their parameters (timestamps, etc.) are updated on success
+     * @param [in/out] baseRoutes Base/main (working-machine) routes. Their parameters (timestamps, etc.) are updated on success
      * @param subfield Processed subfield
      * @param machines Machines used for planning
      * @param machineCurrentStates Map containing the current states of the machines
@@ -404,7 +364,7 @@ protected:
      * @return Map with the resulting initial route-segments (one per machine)
      */
     std::map<MachineId_t, Route> getInitialPathToWorkingRoutes(DirectedGraph::Graph & graph,
-                                                               std::vector<arolib::Route> &mainRoutes,
+                                                               std::vector<arolib::Route> &baseRoutes,
                                                                const Subfield& subfield,
                                                                const std::vector<Machine> &machines,
                                                                const std::map<MachineId_t, arolib::MachineDynamicInfo>& machineCurrentStates,
@@ -466,7 +426,7 @@ protected:
                                       const Polygon &field_Boundary);
 
     /**
-     * @brief Remove the initial points of the main routes where there is nothing no work to be done (e.g. is harvested)
+     * @brief Remove the initial points of the main routes where there is no work to be done (e.g. is harvested)
      * @param [in/out] mainRoutes Main (base) routes from working machines to be updated
      * @return Amount of poits removed from all routes
      */
@@ -526,10 +486,6 @@ protected:
 
 protected:
 
-    PlanningWorkspace* m_planningWorkspace = nullptr;/**< Pointer to the planning workspace (if NULL, no methods with a planning workspace as parameter were called) */
-    size_t m_pw_subfieldIdx; /**< Index of the subfield to be planned (in case the planning workspace is being used (CALC_PW)) */
-
-    std::string m_filename_graphBuilding = "";/**< File name/path where the gragh-building information will be stored (if empty-string, no data will be saved) */
     std::string m_foldername_planData = "";/**< Folder where the planning (search) information will be stored (if empty-string, no data will be saved) */
     std::string m_foldername_visitSchedule = "";/**< Folder where the initial and final visit schedules will be stored (if empty-string, no data will be saved) */
 

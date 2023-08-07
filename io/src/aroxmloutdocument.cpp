@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,42 @@
 namespace arolib {
 namespace io {
 
+namespace {
+
+template< typename T,
+          typename = typename std::enable_if<std::is_arithmetic<T>::value, T>::type >
+std::string to_single_string( const std::vector<T> & values, char sep = ';' ){
+    std::string str_data;
+    if(values.empty())
+        return str_data;
+    for(auto val : values){
+        if(std::is_floating_point<T>::value)
+            str_data += double2string(val) + sep;
+        else
+            str_data += std::to_string(val) + sep;
+    }
+    str_data.pop_back();
+    return str_data;
+}
+
+template< typename T,
+          typename = typename std::enable_if<std::is_arithmetic<T>::value, T>::type >
+std::string to_single_string( const std::set<T> & values, char sep = ';' ){
+    std::string str_data;
+    if(values.empty())
+        return str_data;
+    for(auto val : values)
+        if(std::is_floating_point<T>::value)
+            str_data += double2string(val) + sep;
+        else
+            str_data += std::to_string(val) + sep;
+    str_data.pop_back();
+    return str_data;
+}
+
+}
+
+
 AroXMLOutDocument::AroXMLOutDocument(LogLevel logLevel):
     XMLOutDocument(logLevel)
 {
@@ -31,7 +67,7 @@ AroXMLOutDocument::~AroXMLOutDocument()
 bool AroXMLOutDocument::setCoordinatesTypes(Point::ProjectionType in, Point::ProjectionType out)
 {
     if(m_isDocOpen){
-        m_logger.printError(__FUNCTION__, "Cannot set the coordinates' types when the document is already open");
+        logger().printError(__FUNCTION__, "Cannot set the coordinates' types when the document is already open");
         return false;
     }
     m_coordinatesType_in = in;
@@ -64,7 +100,7 @@ bool AroXMLOutDocument::add(const Point &pt, std::string tag) {
         }
     }
     catch(...){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Exception cought. point = " + pt.toString(10));
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Exception cought. point = " + pt.toString(10));
         ok = false;
     }
 
@@ -230,11 +266,10 @@ bool AroXMLOutDocument::add(const RoutePoint &pt, std::string tag) {
     ok &= add(pt.point(), UseDefaultTag);
     ok &= add(pt.bunker_mass, "bunker_mass");
     ok &= add(pt.bunker_volume, "bunker_volume");
-    ok &= add(pt.harvested_mass, "harvested_mass");
-    ok &= add(pt.harvested_volume, "harvested_volume");
+    ok &= add(pt.worked_mass, "worked_mass");
+    ok &= add(pt.worked_volume, "worked_volume");
     ok &= add(pt.time_stamp, "time_stamp");
     ok &= add(pt.track_id, "track_id");
-    ok &= add(pt.track_idx, "track_idx");
     ok &= add(pt.type, UseDefaultTag);
     //@todo add machineRelations
     if(!tag.empty())
@@ -249,39 +284,6 @@ bool AroXMLOutDocument::add(const std::vector<RoutePoint> &pts, std::string tag)
     if(pts.empty())
         return true;
     tag = getTag<std::vector<RoutePoint>>(tag);
-    if(!tag.empty())
-        openTag(tag);
-    for(auto &p : pts){
-        ok &= add(p, UseDefaultTag);
-        if(!ok)
-            break;
-    }
-    if(!tag.empty())
-        closeTag();
-    return ok;
-}
-
-bool AroXMLOutDocument::add(const HeadlandPoint &pt, std::string tag) {
-    bool ok = true;
-    if(!isReadyToWrite())
-        return false;
-    tag = getTag<HeadlandPoint>(tag);
-    if(!tag.empty())
-        openTag(tag);
-    ok &= add(pt.point(), UseDefaultTag);
-    ok &= add(pt.track_id, "track_id");
-    if(!tag.empty())
-        closeTag();
-    return ok;
-}
-
-bool AroXMLOutDocument::add(const std::vector<HeadlandPoint> &pts, std::string tag) {
-    bool ok = true;
-    if(!isReadyToWrite())
-        return false;
-    if(pts.empty())
-        return true;
-    tag = getTag<std::vector<HeadlandPoint>>(tag);
     if(!tag.empty())
         openTag(tag);
     for(auto &p : pts){
@@ -349,6 +351,7 @@ bool AroXMLOutDocument::add(const Headlands &headlands, std::string tag)
         openTag(tag);
 
     ok &= add(headlands.complete, UseDefaultTag);
+    ok &= add(headlands.partial, UseDefaultTag);
 
     if(!tag.empty())
         closeTag();
@@ -377,6 +380,51 @@ bool AroXMLOutDocument::add(const CompleteHeadland &hl, std::string tag)
         closeTag();
 
     return ok;
+}
+
+bool AroXMLOutDocument::add(const PartialHeadland &hl, std::string tag)
+{
+    bool ok = true;
+    if(!isReadyToWrite())
+        return false;
+
+    tag = getTag<PartialHeadland>(tag);
+    if(!tag.empty())
+        openTag(tag);
+
+    ok &= add(hl.id, "id");
+    ok &= add(hl.boundary, "boundary");
+    ok &= add(hl.connectingHeadlandIds.first, "connectingHeadlandId1");
+    ok &= add(hl.connectingHeadlandIds.second, "connectingHeadlandId2");
+    ok &= add(hl.tracks, UseDefaultTag);
+
+    if(!tag.empty())
+        closeTag();
+
+    return ok;
+
+}
+
+bool AroXMLOutDocument::add(const std::vector<PartialHeadland> &headlands, std::string tag)
+{
+    bool ok = true;
+    if(!isReadyToWrite())
+        return false;
+
+    tag = getTag<std::vector<PartialHeadland>>(tag);
+    if(!tag.empty())
+        openTag(tag);
+
+    for(auto &hl : headlands){
+        ok &= add(hl, UseDefaultTag);
+        if(!ok)
+            break;
+    }
+    if(!tag.empty())
+        closeTag();
+
+    return ok;
+
 }
 
 bool AroXMLOutDocument::add(const Obstacle &obs, std::string tag){
@@ -531,7 +579,10 @@ bool AroXMLOutDocument::add(const Machine &machine, std::string tag){
     ok &= add(machine.max_speed_empty, "max_speed_empty");
     ok &= add(machine.max_speed_full, "max_speed_full");
     ok &= add(machine.def_working_speed, "def_working_speed");
+    ok &= add(machine.unloading_speed_mass, "unloading_speed_mass");
+    ok &= add(machine.unloading_speed_volume, "unloading_speed_volume");
     ok &= add(machine.turning_radius, "turning_radius");
+    ok &= add(machine.num_axis, "num_axis");
     ok &= add(machine.axis_distance, "axis_distance");
     ok &= add(machine.gauge, "gauge");
     ok &= add(machine.engine_power, "engine_power");
@@ -599,44 +650,6 @@ bool AroXMLOutDocument::add(const std::vector<Route> &routes, std::string tag){
     return ok;
 }
 
-
-bool AroXMLOutDocument::add(const HeadlandRoute &route, std::string tag){
-    bool ok = true;
-    if(!isReadyToWrite())
-        return false;
-    tag = getTag<HeadlandRoute>(tag);
-    if(!tag.empty())
-        openTag(tag);
-
-    ok &= add(route.machine_id, "machine_id");
-    ok &= add(route.route_id, "route_id");
-    ok &= add(route.subfield_id, "subfield_id");
-    ok &= add(route.route_points, UseDefaultTag);
-
-    if(!tag.empty())
-        closeTag();
-    return ok;
-}
-
-bool AroXMLOutDocument::add(const std::vector<HeadlandRoute> &routes, std::string tag){
-    bool ok = true;
-    if(!isReadyToWrite())
-        return false;
-    tag = getTag<std::vector<HeadlandRoute>>(tag);
-    if(!tag.empty())
-        openTag(tag);
-
-    for(const auto &route : routes){
-        if(!ok)
-            break;
-        ok &= add(route, UseDefaultTag);
-    }
-
-    if(!tag.empty())
-        closeTag();
-    return ok;
-}
-
 bool AroXMLOutDocument::add(const std::pair< MachineId_t, MachineDynamicInfo >& dynamicInfo, std::string tag){
     bool ok = true;
     if(!isReadyToWrite())
@@ -649,6 +662,7 @@ bool AroXMLOutDocument::add(const std::pair< MachineId_t, MachineDynamicInfo >& 
     ok &= add(dynamicInfo.second.position, UseDefaultTag);
     ok &= add(dynamicInfo.second.bunkerMass, "bunkerMass");
     ok &= add(dynamicInfo.second.bunkerVolume, "bunkerVolume");
+    ok &= add(dynamicInfo.second.timestamp, "timestamp");
 
     if(!tag.empty())
         closeTag();
@@ -854,7 +868,7 @@ bool AroXMLOutDocument::add(const ArolibGrid_t &grid, std::string tag)
     if(!isReadyToWrite())
         return false;
     if(!grid.isAllocated()){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "The grid is not allocated");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "The grid is not allocated");
         return false;
     }
     tag = getTag<ArolibGrid_t>(tag);
@@ -865,7 +879,30 @@ bool AroXMLOutDocument::add(const ArolibGrid_t &grid, std::string tag)
     return add( base64_encode(sTiff), tag );
 }
 
-bool AroXMLOutDocument::add(const DirectedGraph::Graph &graph, std::string tag)
+bool AroXMLOutDocument::add(const std::map<std::string, const ArolibGrid_t*>& gridmaps, std::string tag)
+{
+    if(gridmaps.empty())
+        return true;
+
+    bool ok = true;
+    if(!isReadyToWrite())
+        return false;
+    tag = getTag<std::map<std::string, const ArolibGrid_t*>>(tag);
+    if(!tag.empty())
+        openTag(tag);
+
+    for(auto& it : gridmaps){
+        if(!it.second)
+            continue;
+        ok &= add( *it.second, it.first );
+    }
+
+    if(!tag.empty())
+        closeTag();
+    return ok;
+}
+
+bool AroXMLOutDocument::add(const DirectedGraph::Graph &graph, std::string tag, bool with_meta)
 {
     bool ok = true;
     if(!isReadyToWrite())
@@ -888,6 +925,9 @@ bool AroXMLOutDocument::add(const DirectedGraph::Graph &graph, std::string tag)
         ok &= add( std::make_pair( *it.first, graph[*it.first] ), graph, UseDefaultTag);
     }
     closeTag();
+
+    if(with_meta)
+        ok &= add( graph.get_meta(), UseDefaultTag);
 
     if(!tag.empty())
         closeTag();
@@ -1066,6 +1106,109 @@ bool AroXMLOutDocument::add(const DirectedGraph::overroll_property &o, std::stri
     return ok;
 }
 
+bool AroXMLOutDocument::add(const DirectedGraph::Graph::GraphMetaData &meta, std::string tag)
+{
+
+    bool ok = true;
+    if(!isReadyToWrite())
+        return false;
+
+    tag = getTag<DirectedGraph::Graph::GraphMetaData>(tag);
+    if(!tag.empty())
+        openTag(tag);
+
+    ok &= add(meta.hasPartialHeadlands, "hasPartialHeadlands");
+    ok &= add(meta.workingWidth_IF, "workingWidth_IF");
+    ok &= add(meta.workingWidth_HL, "workingWidth_HL");
+
+    openTag("tracks_vertices_map");
+    for(auto& it : meta.tracks_vertices_map){
+        openTag("item");
+        ok &= add(it.first, "id");
+        ok &= add( to_single_string(it.second) , "vts");
+        closeTag();
+    }
+    closeTag();
+
+    if(!meta.extremaTrackIds_IF.empty())
+        ok &= add( to_single_string(meta.extremaTrackIds_IF) , "extremaTrackIds_IF");
+
+    openTag("adjacentTrackIds_IF");
+    for(auto& it : meta.adjacentTrackIds_IF){
+        openTag("item");
+        ok &= add(it.first, "id");
+        ok &= add( to_single_string(it.second) , "adj");
+        closeTag();
+    }
+    closeTag();
+
+    openTag("adjacentTrackIds_HL");
+    for(auto& it : meta.adjacentTrackIds_HL){
+        openTag("item");
+        ok &= add(it.first, "id");
+        ok &= add( to_single_string(it.second) , "adj");
+        closeTag();
+    }
+    closeTag();
+
+    if(!meta.outermostTrackIds_HL.empty())
+        ok &= add( to_single_string(meta.outermostTrackIds_HL) , "outermostTrackIds_HL");
+
+
+    ok &= add(meta.outFieldInfo, UseDefaultTag);
+
+
+    openTag("routepoint_vertex_map");
+    for(auto& it : meta.routepoint_vertex_map){
+        openTag("item");
+        ok &= add(it.first, UseDefaultTag);
+        ok &= add( std::to_string(it.second) , "vt");
+        closeTag();
+    }
+    closeTag();
+
+
+    openTag("accesspoint_vertex_map");
+    for(auto& it : meta.accesspoint_vertex_map){
+        openTag("item");
+        ok &= add(it.first, UseDefaultTag);
+        ok &= add( std::to_string(it.second) , "vt");
+        closeTag();
+    }
+    closeTag();
+
+
+    openTag("resourcepoint_vertex_map");
+    for(auto& it : meta.resourcepoint_vertex_map){
+        openTag("item");
+        ok &= add(it.first, UseDefaultTag);
+        ok &= add( std::to_string(it.second) , "vt");
+        closeTag();
+    }
+    closeTag();
+
+
+    openTag("initialpoint_vertex_map");
+    for(auto& it : meta.initialpoint_vertex_map){
+        openTag("item");
+        ok &= add(it.first, "machine_id");
+        ok &= add( std::to_string(it.second) , "vt");
+        closeTag();
+    }
+    closeTag();
+
+    if(!meta.boundary_vts.empty())
+        ok &= add( to_single_string(meta.boundary_vts) , "boundary_vts");
+
+
+    //@note the verticesLocationMap will not be saved. when reading, the graph.regeneratVerticesLocationMap must be called after reading the vertices
+
+    if(!tag.empty())
+        closeTag();
+    return ok;
+}
+
+
 bool AroXMLOutDocument::saveField(const std::string &filename, const Field &field, Point::ProjectionType coordinatesType_in, Point::ProjectionType coordinatesType_out, const OutFieldInfo &outFieldInfo)
 {
     AroXMLOutDocument doc;
@@ -1121,13 +1264,14 @@ bool AroXMLOutDocument::saveOutFieldInfo(const std::string &filename, const OutF
 }
 
 bool AroXMLOutDocument::savePlanParameters(const std::string &filename,
-                                        const Field &field,
-                                        const std::vector<Machine> &workingGroup,
-                                        const std::map<std::string, std::map<std::string, std::string> > &configParameters,
-                                        const OutFieldInfo &outFieldInfo,
-                                        const std::map<MachineId_t, MachineDynamicInfo> &machinesDynamicInfo,
-                                        Point::ProjectionType coordinatesType_in,
-                                        Point::ProjectionType coordinatesType_out)
+                                           const Field &field,
+                                           const std::vector<Machine> &workingGroup,
+                                           const std::map<std::string, std::map<std::string, std::string> > &configParameters,
+                                           const OutFieldInfo &outFieldInfo,
+                                           const std::map<MachineId_t, MachineDynamicInfo> &machinesDynamicInfo,
+                                           const std::map<std::string, const ArolibGrid_t *> gridmaps,
+                                           Point::ProjectionType coordinatesType_in,
+                                           Point::ProjectionType coordinatesType_out)
 {
     AroXMLOutDocument doc;    
     doc.setCoordinatesTypes(coordinatesType_in, coordinatesType_out);
@@ -1138,6 +1282,29 @@ bool AroXMLOutDocument::savePlanParameters(const std::string &filename,
            doc.add(configParameters, "configParameters") &&
            doc.add(outFieldInfo, UseDefaultTag) &&
            doc.add(machinesDynamicInfo, UseDefaultTag) &&
+           doc.add(gridmaps, UseDefaultTag) &&
+           doc.closeDocument() &&
+           doc.closeFile();
+}
+
+bool AroXMLOutDocument::savePlanParameters(const std::string &filename,
+                                           const std::vector<Machine> &workingGroup,
+                                           const std::map<std::string, std::map<std::string, std::string> > &configParameters,
+                                           const OutFieldInfo &outFieldInfo,
+                                           const std::map<MachineId_t, MachineDynamicInfo> &machinesDynamicInfo,
+                                           const std::map<std::string, const ArolibGrid_t *> gridmaps,
+                                           Point::ProjectionType coordinatesType_in,
+                                           Point::ProjectionType coordinatesType_out)
+{
+    AroXMLOutDocument doc;
+    doc.setCoordinatesTypes(coordinatesType_in, coordinatesType_out);
+    return doc.openFile(filename) &&
+           doc.openDocument() &&
+           doc.add(workingGroup, UseDefaultTag) &&
+           doc.add(configParameters, "configParameters") &&
+           doc.add(outFieldInfo, UseDefaultTag) &&
+           doc.add(machinesDynamicInfo, UseDefaultTag) &&
+           doc.add(gridmaps, UseDefaultTag) &&
            doc.closeDocument() &&
            doc.closeFile();
 }
@@ -1196,60 +1363,6 @@ bool AroXMLOutDocument::savePlan(const std::string &filename, const std::map<int
 }
 
 bool AroXMLOutDocument::savePlan(const std::string &filename, const std::vector<std::vector<Route> > &routes, Point::ProjectionType coordinatesType_in, Point::ProjectionType coordinatesType_out)
-{
-    AroXMLOutDocument doc;
-    bool ok = true;
-
-    doc.setCoordinatesTypes(coordinatesType_in, coordinatesType_out);
-
-    if( !doc.openFile(filename) ||
-        !doc.openDocument() )
-        return false;
-
-    doc.openTag("plan");
-
-    for(size_t i = 0 ; i < routes.size() ; ++i){
-        doc.openTag(getTag<Subfield>());
-        ok &= doc.add(i, "id");
-        ok &= doc.add(routes.at(i), UseDefaultTag);
-        doc.closeTag();
-        if(!ok)
-            break;
-    }
-
-    return doc.closeDocument() &&
-           doc.closeFile() &&
-           ok;
-}
-
-bool AroXMLOutDocument::savePlan(const std::string &filename, const std::map<int, std::vector<HeadlandRoute> > &routes, Point::ProjectionType coordinatesType_in, Point::ProjectionType coordinatesType_out)
-{
-    AroXMLOutDocument doc;
-    bool ok = true;
-
-    doc.setCoordinatesTypes(coordinatesType_in, coordinatesType_out);
-
-    if( !doc.openFile(filename) ||
-        !doc.openDocument() )
-        return false;
-
-    doc.openTag("plan");
-
-    for(auto &sf_it : routes){
-        doc.openTag(getTag<Subfield>());
-        ok &= doc.add(sf_it.first, "id");
-        ok &= doc.add(sf_it.second, UseDefaultTag);
-        doc.closeTag();
-        if(!ok)
-            break;
-    }
-
-    return doc.closeDocument() &&
-           doc.closeFile() &&
-           ok;
-}
-
-bool AroXMLOutDocument::savePlan(const std::string &filename, const std::vector<std::vector<HeadlandRoute> > &routes, Point::ProjectionType coordinatesType_in, Point::ProjectionType coordinatesType_out)
 {
     AroXMLOutDocument doc;
     bool ok = true;
@@ -1465,91 +1578,7 @@ bool AroXMLOutDocument::savePlan(const std::string &filename,
 
 }
 
-bool AroXMLOutDocument::savePlan(const std::string &filename,
-                              const Field &field,
-                              const std::vector<Machine> &workingGroup,
-                              const std::map<int, std::vector<HeadlandRoute> > &routes,
-                              const std::string &yieldmap_tifBase64,
-                              const std::string &drynessmap_tifBase64,
-                              const std::string &soilmap_tifBase64,
-                              const std::string &remainingAreaMap_tifBase64, Point::ProjectionType coordinatesType_in, Point::ProjectionType coordinatesType_out)
-{
-    AroXMLOutDocument doc;
-    bool ok = true;
-
-    doc.setCoordinatesTypes(coordinatesType_in, coordinatesType_out);
-
-    if( !doc.openFile(filename) ||
-        !doc.openDocument() )
-        return false;
-
-    doc.openTag("plan");
-
-    ok &= doc.add(field, UseDefaultTag);
-    ok &= doc.add(workingGroup, UseDefaultTag);
-
-    for(size_t i = 0 ; i < routes.size() ; ++i){
-        if(!ok)
-            break;
-        doc.openTag(getTag<Subfield>());
-        ok &= doc.add(i, "id");
-        ok &= doc.add(routes.at(i), UseDefaultTag);
-        doc.closeTag();
-    }
-
-    return ( yieldmap_tifBase64.empty() ? true : doc.add(yieldmap_tifBase64, "yieldmap_tifBase64") ) &&
-           ( drynessmap_tifBase64.empty() ? true : doc.add(drynessmap_tifBase64, "drynessmap_tifBase64") ) &&
-           ( soilmap_tifBase64.empty() ? true : doc.add(soilmap_tifBase64, "soilmap_tifBase64") ) &&
-           ( remainingAreaMap_tifBase64.empty() ? true : doc.add(remainingAreaMap_tifBase64, "remainingAreaMap_tifBase64") ) &&
-           doc.closeDocument() &&
-           doc.closeFile() &&
-           ok;
-
-}
-
-bool AroXMLOutDocument::savePlan(const std::string &filename,
-                              const Field &field,
-                              const std::vector<Machine> &workingGroup,
-                              const std::vector<std::vector<HeadlandRoute> > &routes,
-                              const std::string &yieldmap_tifBase64,
-                              const std::string &drynessmap_tifBase64,
-                              const std::string &soilmap_tifBase64,
-                              const std::string &remainingAreaMap_tifBase64, Point::ProjectionType coordinatesType_in, Point::ProjectionType coordinatesType_out)
-{
-    AroXMLOutDocument doc;
-    bool ok = true;
-
-    doc.setCoordinatesTypes(coordinatesType_in, coordinatesType_out);
-
-    if( !doc.openFile(filename) ||
-        !doc.openDocument() )
-        return false;
-
-    doc.openTag("plan");
-
-    ok &= doc.add(field, UseDefaultTag);
-    ok &= doc.add(workingGroup, UseDefaultTag);
-
-    for(size_t i = 0 ; i < routes.size() ; ++i){
-        if(!ok)
-            break;
-        doc.openTag(getTag<Subfield>());
-        ok &= doc.add(i, "id");
-        ok &= doc.add(routes.at(i), UseDefaultTag);
-        doc.closeTag();
-    }
-
-    return ( yieldmap_tifBase64.empty() ? true : doc.add(yieldmap_tifBase64, "yieldmap_tifBase64") ) &&
-           ( drynessmap_tifBase64.empty() ? true : doc.add(drynessmap_tifBase64, "drynessmap_tifBase64") ) &&
-           ( soilmap_tifBase64.empty() ? true : doc.add(soilmap_tifBase64, "soilmap_tifBase64") ) &&
-           ( remainingAreaMap_tifBase64.empty() ? true : doc.add(remainingAreaMap_tifBase64, "remainingAreaMap_tifBase64") ) &&
-           doc.closeDocument() &&
-           doc.closeFile() &&
-           ok;
-
-}
-
-bool AroXMLOutDocument::saveGraph(const std::string &filename, const DirectedGraph::Graph &graph, Point::ProjectionType coordinatesType_in, Point::ProjectionType coordinatesType_out)
+bool AroXMLOutDocument::saveGraph(const std::string &filename, const DirectedGraph::Graph &graph, bool with_meta, Point::ProjectionType coordinatesType_in, Point::ProjectionType coordinatesType_out)
 {
     AroXMLOutDocument doc;
     bool ok = true;
@@ -1558,7 +1587,7 @@ bool AroXMLOutDocument::saveGraph(const std::string &filename, const DirectedGra
 
     return doc.openFile(filename) &&
            doc.openDocument() &&
-           doc.add(graph, UseDefaultTag) &&
+           doc.add(graph, UseDefaultTag, with_meta) &&
            doc.closeDocument() &&
            doc.closeFile() &&
            ok;

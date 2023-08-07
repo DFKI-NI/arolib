@@ -9,12 +9,13 @@ add_library(${AROLIB_LIB_NAME} SHARED
   src/route_point.cpp
   src/route.cpp
   src/machine.cpp
+  src/machinedynamicinfo.cpp
   src/resourcepoint.cpp
   src/fieldaccesspoint.cpp
   src/outfieldinfo.cpp
-  src/headlandroute.cpp
   src/track.cpp
   src/units.cpp
+  src/materialFlowType.cpp
   include/arolib/types/coordtransformer.hpp
   include/arolib/types/field.hpp
   include/arolib/types/linestring.hpp
@@ -27,18 +28,17 @@ add_library(${AROLIB_LIB_NAME} SHARED
   include/arolib/types/polygon.hpp
   include/arolib/types/subfield.hpp
   include/arolib/types/headland.hpp
-  include/arolib/types/headlandpoint.hpp
   include/arolib/types/route_point.hpp
   include/arolib/types/route.hpp
-  include/arolib/types/headlandroute.hpp
   include/arolib/types/obstacle.hpp
   include/arolib/types/outfieldinfo.hpp
   include/arolib/types/units.hpp
   include/arolib/types/track.hpp
+  include/arolib/types/materialFlowType.hpp
+  include/arolib/types/types.hpp
 )
 
-#set_property(TARGET AROLIB_types PROPERTY CXX_STANDARD 11)  # 98, 11 or 14
-#set_property(TARGET AROLIB_types PROPERTY CXX_STANDARD_REQUIRED ON)
+#set_target_properties(${AROLIB_LIB_NAME} PROPERTIES DEBUG_POSTFIX ${CMAKE_DEBUG_POSTFIX})
 
 target_include_directories(${AROLIB_LIB_NAME}
   PUBLIC
@@ -48,9 +48,13 @@ target_include_directories(${AROLIB_LIB_NAME}
 )
 
 target_link_libraries(${AROLIB_LIB_NAME}
-    INTERFACE gdal
+  PUBLIC
+    gdal 
+    ${Boost_LIBRARIES} 
+    ${AROLIB_LIB_PREFIX}${AROLIB_LIB_MISC}
+  # PRIVATE libAROLIB_misc.so
 )
-
+# INTERFACE 
 install(TARGETS ${AROLIB_LIB_NAME}
         EXPORT ${AROLIB_LIB_NAME}_targets
         ARCHIVE DESTINATION lib

@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,11 +31,11 @@ HarvesterPlanAnalyser::HarvesterPlanAnalyser(const LogLevel &logLevel):
 bool HarvesterPlanAnalyser::runAnalysis()
 {
     if(!m_fieldReady){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "No valid field has been set");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "No valid field has been set");
         return false;
     }
     if(m_routes.empty()){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "No routes have been set");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "No routes have been set");
         return false;
     }
 
@@ -44,22 +44,22 @@ bool HarvesterPlanAnalyser::runAnalysis()
 
     for(auto &it_sf : m_routes){
         if(it_sf.first >= m_field.subfields.size()){//for now, the key is the index in the vector
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Saved routes have an invalid subfield id/key");
+            logger().printOut(LogLevel::ERROR, __FUNCTION__, "Saved routes have an invalid subfield id/key");
             return false;
         }
         for(auto &it_m : it_sf.second){
             AnalysisResult analysisResult;
             if( !getRouteSegmentsIndexes( m_field.subfields.at(it_sf.first), it_m.second.first, analysisResult.routeSegmentation_1 ) ){
-                m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error obtaining the segments' indexes from route 1 (subfield " + std::to_string(it_sf.first) + ", machineId " + std::to_string(it_m.first) + ")");
+                logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error obtaining the segments' indexes from route 1 (subfield " + std::to_string(it_sf.first) + ", machineId " + std::to_string(it_m.first) + ")");
                 return false;
             }
             if( !getRouteSegmentsIndexes( m_field.subfields.at(it_sf.first), it_m.second.second, analysisResult.routeSegmentation_2 ) ){
-                m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error obtaining the segments' indexes from route 2 (subfield " + std::to_string(it_sf.first) + ", machineId " + std::to_string(it_m.first) + ")");
+                logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error obtaining the segments' indexes from route 2 (subfield " + std::to_string(it_sf.first) + ", machineId " + std::to_string(it_m.first) + ")");
                 return false;
             }
 
             if( !analyseSegments( it_m.second.first, it_m.second.second, analysisResult ) ){
-                m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error running analysis of segments (subfieldId " + std::to_string(it_sf.first) + ", machineId " + std::to_string(it_m.first) + ")");
+                logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error running analysis of segments (subfieldId " + std::to_string(it_sf.first) + ", machineId " + std::to_string(it_m.first) + ")");
                 return false;
             }
 
@@ -91,7 +91,7 @@ bool HarvesterPlanAnalyser::saveResults_CSV(const std::string &filename) const
 {
     std::ofstream of(filename);
     if (!of.is_open()){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error opening file " + filename);
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error opening file " + filename);
         return false;
     }
 
@@ -286,12 +286,12 @@ bool HarvesterPlanAnalyser::getResults(size_t subfieldId, std::map<MachineId_t, 
 {
     results.clear();
     if(!m_analysisReady){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Results not ready");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Results not ready");
         return false;
     }
     auto it_sf = m_analysisResult.find(subfieldId);
     if(it_sf == m_analysisResult.end()){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Invalid subfieldId");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Invalid subfieldId");
         return false;
     }
     results = it_sf->second;
@@ -301,17 +301,17 @@ bool HarvesterPlanAnalyser::getResults(size_t subfieldId, std::map<MachineId_t, 
 bool HarvesterPlanAnalyser::getResults(size_t subfieldId, const MachineId_t &machineId, HarvesterPlanAnalyser::AnalysisResult &results)
 {
     if(!m_analysisReady){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Results not ready");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Results not ready");
         return false;
     }
     auto it_sf = m_analysisResult.find(subfieldId);
     if(it_sf == m_analysisResult.end()){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Invalid subfieldId");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Invalid subfieldId");
         return false;
     }
     auto it_m = it_sf->second.find(machineId);
     if(it_m == it_sf->second.end()){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Invalid machineId for the given subfield");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Invalid machineId for the given subfield");
         return false;
     }
     results = it_m->second;
@@ -337,14 +337,14 @@ bool HarvesterPlanAnalyser::getRouteSegmentsIndexes(const Subfield& subfield, co
     segResults.indexRange_infield__infield.clear();
 
     if(route.route_points.empty()){
-        //m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Route is empty");
+        //logger().printOut(LogLevel::ERROR, __FUNCTION__, "Route is empty");
         //return false;
         return true;
     }
 
     Polygon innerBoundary_ed_in;
     if(! arolib::geometry::offsetPolygon( subfield.boundary_inner, innerBoundary_ed_in, 2, false)){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error offsetting subfield inner boundary (inwards)");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error offsetting subfield inner boundary (inwards)");
         return false;
     }
 
@@ -388,7 +388,7 @@ bool HarvesterPlanAnalyser::getRouteSegmentsIndexes(const Subfield& subfield, co
 
     if(segResults.indexRange_infield.min < 0){
         if( segResults.indexRange_end.min == 0 ){
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "No (in-) field route points were obtained from the route)");
+            logger().printOut(LogLevel::ERROR, __FUNCTION__, "No (in-) field route points were obtained from the route)");
             return false;
         }
         segResults.indexRange_headland.min = segResults.indexRange_init.max;
@@ -405,12 +405,12 @@ bool HarvesterPlanAnalyser::getRouteSegmentsIndexes(const Subfield& subfield, co
 
 
     if(! arolib::geometry::offsetPolygon( subfield.boundary_inner, innerBoundary_ed_in, 1, false)){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error offsetting subfield inner boundary (inwards-2)");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error offsetting subfield inner boundary (inwards-2)");
         return false;
     }
     Polygon innerBoundary_ed_out;
     if(! arolib::geometry::offsetPolygon( subfield.boundary_inner, innerBoundary_ed_out, 1, true)){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error offsetting subfield inner boundary (outwards)");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error offsetting subfield inner boundary (outwards)");
         return false;
     }
 
@@ -466,7 +466,7 @@ bool HarvesterPlanAnalyser::getRouteSegmentsIndexes_informed(const Subfield &sub
     Polygon innerBoundary_ed_out;
     if(useInnerBoundary){
         if(! arolib::geometry::offsetPolygon( subfield.boundary_inner, innerBoundary_ed_out, 1, true)){
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error offsetting subfield inner boundary (outwards)");
+            logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error offsetting subfield inner boundary (outwards)");
             return false;
         }
     }
@@ -518,7 +518,7 @@ bool HarvesterPlanAnalyser::getRouteSegmentsIndexes_informed(const Subfield &sub
 
     if(segResults.indexRange_infield.max < 0){//plan has only headland harvesting
         if(segResults.indexRange_headland.min < 0){
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing headland/infield segmentation using TRACK_START (no headland and no infield harvesting?)");
+            logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing headland/infield segmentation using TRACK_START (no headland and no infield harvesting?)");
             return false;
         }
         return true;
@@ -586,73 +586,73 @@ bool HarvesterPlanAnalyser::analyseSegments(const Route &route1, const Route &ro
 {
     std::string routeNr = "1";
     if(!analyseSegment(route1, analysisResult.routeSegmentation_1.indexRange_field, analysisResult.fieldAnalysis_1)){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing the (complete) field segment from route " + routeNr);
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing the (complete) field segment from route " + routeNr);
         return false;
     }
     if(!analyseSegment(route1, analysisResult.routeSegmentation_1.indexRange_init, analysisResult.initAnalysis_1)){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing the init segment from route " + routeNr);
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing the init segment from route " + routeNr);
         return false;
     }
     if(!analyseSegment(route1, analysisResult.routeSegmentation_1.indexRange_end, analysisResult.endAnalysis_1)){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing the end segment from route " + routeNr);
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing the end segment from route " + routeNr);
         return false;
     }
     if(!analyseSegment(route1, analysisResult.routeSegmentation_1.indexRange_headland, analysisResult.headlandAnalysis_1)){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing the headland segment from route " + routeNr);
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing the headland segment from route " + routeNr);
         return false;
     }
     if(!analyseSegment(route1, analysisResult.routeSegmentation_1.indexRange_infield, analysisResult.infieldAnalysis_1)){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing the infield segment from route " + routeNr);
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing the infield segment from route " + routeNr);
         return false;
     }
     if(!analyseSubSegments(route1,
                            analysisResult.routeSegmentation_1.indexRange_infield__headland,
                            analysisResult.infieldAnalysis_1.headlandSegments,
                            analysisResult.infieldAnalysis_1.headlandSubSegments)){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing the infield-headland subsegments from route " + routeNr);
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing the infield-headland subsegments from route " + routeNr);
         return false;
     }
     if(!analyseSubSegments(route1,
                            analysisResult.routeSegmentation_1.indexRange_infield__infield,
                            analysisResult.infieldAnalysis_1.infieldSegments,
                            analysisResult.infieldAnalysis_1.infieldSubSegments)){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing the infield-infield subsegments from route " + routeNr);
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing the infield-infield subsegments from route " + routeNr);
         return false;
     }
 
     routeNr = "2";
     if(!analyseSegment(route2, analysisResult.routeSegmentation_2.indexRange_field, analysisResult.fieldAnalysis_2)){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing the (complete) field segment from route " + routeNr);
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing the (complete) field segment from route " + routeNr);
         return false;
     }
     if(!analyseSegment(route2, analysisResult.routeSegmentation_2.indexRange_init, analysisResult.initAnalysis_2)){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing the init segment from route " + routeNr);
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing the init segment from route " + routeNr);
         return false;
     }
     if(!analyseSegment(route2, analysisResult.routeSegmentation_2.indexRange_end, analysisResult.endAnalysis_2)){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing the end segment from route " + routeNr);
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing the end segment from route " + routeNr);
         return false;
     }
     if(!analyseSegment(route2, analysisResult.routeSegmentation_2.indexRange_headland, analysisResult.headlandAnalysis_2)){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing the headland segment from route " + routeNr);
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing the headland segment from route " + routeNr);
         return false;
     }
     if(!analyseSegment(route2, analysisResult.routeSegmentation_2.indexRange_infield, analysisResult.infieldAnalysis_2)){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing the infield segment from route " + routeNr);
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing the infield segment from route " + routeNr);
         return false;
     }
     if(!analyseSubSegments(route2,
                            analysisResult.routeSegmentation_2.indexRange_infield__headland,
                            analysisResult.infieldAnalysis_2.headlandSegments,
                            analysisResult.infieldAnalysis_2.headlandSubSegments)){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing the infield-headland subsegments from route " + routeNr);
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing the infield-headland subsegments from route " + routeNr);
         return false;
     }
     if(!analyseSubSegments(route2,
                            analysisResult.routeSegmentation_2.indexRange_infield__infield,
                            analysisResult.infieldAnalysis_2.infieldSegments,
                            analysisResult.infieldAnalysis_2.infieldSubSegments)){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing the infield-infield subsegments from route " + routeNr);
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing the infield-infield subsegments from route " + routeNr);
         return false;
     }
 
@@ -680,7 +680,7 @@ bool HarvesterPlanAnalyser::analyseSegment(const Route &route, const HarvesterPl
     if(indexRange.max < indexRange.min
             || indexRange.min < 0
             || indexRange.max >= route.route_points.size()){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Invalid index-range");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Invalid index-range");
         return false;
     }
 
@@ -702,7 +702,7 @@ bool HarvesterPlanAnalyser::analyseSegment(const Route &route, const HarvesterPl
                 analysisResult.speed_min = std::min(analysisResult.speed_min, speed);
 
                 if(dist > 0.05){
-                    double harvYield = std::fabs(rp2.harvested_mass - rp1.harvested_mass);
+                    double harvYield = std::fabs(rp2.worked_mass - rp1.worked_mass);
                     double harvYieldRate = harvYield / dist;
 
                     if(harvYieldRate > m_harvestYieldRateThreshold){
@@ -723,7 +723,7 @@ bool HarvesterPlanAnalyser::analyseSegment(const Route &route, const HarvesterPl
     if(analysisResult.speed_harv_min > analysisResult.speed_harv_max)
         analysisResult.speed_harv_min = analysisResult.speed_harv_max = 0;
 
-    analysisResult.yieldMass_total = route.route_points.at(indexRange.max).harvested_mass - route.route_points.at(indexRange.min).harvested_mass;
+    analysisResult.yieldMass_total = route.route_points.at(indexRange.max).worked_mass - route.route_points.at(indexRange.min).worked_mass;
     if(analysisResult.duration != 0)
         analysisResult.yieldMassPerTime_avg = analysisResult.yieldMass_total /(analysisResult.duration);
     if(analysisResult.distance != 0)
@@ -746,7 +746,7 @@ bool HarvesterPlanAnalyser::analyseSubSegments(const Route &route,
 
     for(size_t i = 0 ; i < indexRanges.size() ; ++i){
         if(!analyseSegment(route, indexRanges.at(i), analysisSubSegments.at(i))){
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing subsegment " + std::to_string(i) );
+            logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing subsegment " + std::to_string(i) );
             analysisSubSegments.clear();
             return false;
         }

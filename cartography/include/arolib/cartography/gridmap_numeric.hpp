@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@
 #define _AROLIB_GRIDMAP_NUMERIC_H_
 
 #include <type_traits>
+#include <memory>
 #include <string>
 #include <sys/stat.h>
 #include <math.h>
@@ -63,7 +64,6 @@ class NumericGridmap : public Gridmap<T>{
     static_assert(std::is_arithmetic<T>::value, "The cell value type of an AroGrid must be numeric (template argument)");
 
 public:
-
     /**
      * @brief Types of values that can be computed
      */
@@ -135,7 +135,6 @@ public:
     //------------------------------------
     //--------------SET-VALUE-------------
     //------------------------------------
-
 
     /**
      * Adds the given the data(value) to the current value of all the cells within the grid.
@@ -239,7 +238,7 @@ public:
     /**
      * Set the data(value) of the cells corresponding to a polygon within the grid, given in *real world coordinates*.
      * If the polygon does not completely include a cell, the value of the cell will be updated proportionally to the overlaying area taking into account the cell's previous value
-     * (e.g. if half of a cell (with initial value 0) must be updated with a value 9, the new value of the cell will be 0.5)
+     * (e.g. if half of a cell (with initial value 0) must be updated with a value 1, the new value of the cell will be 0.5)
      * @param _poly polygone (in *real world coordinates*)
      * @param value New value
      * @return True if successful
@@ -268,8 +267,8 @@ public:
      */
     template<typename K = GridmapLayout::GridCell, typename = typename std::enable_if< std::is_base_of<GridmapLayout::GridCell, K>::value, void >::type>
     bool addCellsValue(const T& _value,
-                               const std::vector<K>& cells,
-                               bool onlyCellsWithValue = false );
+                       const std::vector<K>& cells,
+                       bool onlyCellsWithValue = false );
     /**
      * Adds the corresponding value to the cells in the list
      * the cells.overlap will be used as multiplier of the given value
@@ -308,7 +307,7 @@ public:
      */
     template<typename K = typename Gridmap<T>::GridCellInfo, typename = typename std::enable_if< std::is_base_of<typename Gridmap<T>::GridCellInfo, K>::value, void >::type>
     bool addCellsValue(const std::vector<K>& cells,
-                               bool onlyCellsWithValue = false);
+                       bool onlyCellsWithValue = false);
 
 
 
@@ -581,23 +580,29 @@ public:
     /**
      * Saves the grid as a PNG file (plus meta-file).
      * @param filename Name of the output file.
+     * @param colorType Color-map type.
+     * @param valuesRange min/max values range used for the colormap. if null, the min/max values in the gridmap are used.
      * @return True on success
      */
-    virtual bool saveGridAsPNG(const std::string& _filename, Range2RGBColorType colorType = Range2RGBColorType::COLOR_HEAT) const;
+    virtual bool saveGridAsPNG(const std::string& _filename, Range2RGBColorType colorType = Range2RGBColorType::COLOR_HEAT, std::pair<T,T>* valuesRange = nullptr) const;
 
     /**
     * Gets the grid as a PNG ostringstream.
     * @param image_out output stringstream containing the png data.
+    * @param colorType Color-map type.
+    * @param valuesRange min/max values range used for the colormap. if null, the min/max values in the gridmap are used.
     * @return True on success
     */
-    virtual bool saveGridAsPNG(std::ostringstream &image_out, Range2RGBColorType colorType = Range2RGBColorType::COLOR_HEAT) const;
+    virtual bool saveGridAsPNG(std::ostringstream &image_out, Range2RGBColorType colorType = Range2RGBColorType::COLOR_HEAT, std::pair<T,T>* valuesRange = nullptr) const;
 
     /**
     * Gets the grid as a PNG ostream.
     * @param image_out output stream containing the png data.
+    * @param colorType Color-map type.
+    * @param valuesRange min/max values range used for the colormap. if null, the min/max values in the gridmap are used.
     * @return True on success
     */
-    virtual bool saveGridAsPNG(std::ostream &image_out, Range2RGBColorType colorType = Range2RGBColorType::COLOR_HEAT) const;
+    virtual bool saveGridAsPNG(std::ostream &image_out, Range2RGBColorType colorType = Range2RGBColorType::COLOR_HEAT, std::pair<T,T>* valuesRange = nullptr) const;
 
     /**
     * Loads the grid from a RGBA PNG file.

@@ -1,7 +1,5 @@
 # arolib
 
-
-
 [[_TOC_]]
 
 `arolib` is a c++ library for field geometry processing and (global) route planning of primary machines (e.g. harvesters) and service units (e.g. overload/transport vehicles) participating in arable farming operations such as harvesting.
@@ -9,8 +7,6 @@
 
 
 <img src="documentation/images/test_field_1.jpg" alt="Processed test field" width="850" />
-
-
 
 <img src="documentation/images/test_field_1__routes_TO.jpg" alt="Planned routes" width="850" />
 
@@ -21,7 +17,9 @@
 ## Overview
 
 
+
 ### Modules
+
 `arolib` currently consists of the following modules:
 
 - `types`: defines the basic types
@@ -33,57 +31,36 @@
 - `misc`: common classes and functions
 - `processing`: post-planning processing functions like route smoothing
 
-Dependencies between the modules:
-
-![Current dependencies between the modules](documentation/diagrams/module_dependencies.svg)
 
 
 ### Main types
+
 - `Point`: Point/coordinates
-
 - `Polygon`: Simple polygon 
-
 - `Linestring`: Line-string of points
-
 - `Pose2D`: A 2D Cartesian pose containing a position and an angle (with respect to the positive x axis)
-
 - `Machine`: Models a machine; contains properties of the machine such as model, type, dimensions, etc.
-
-- `MachineDynamicInfo`: Dynamic properties of a single machine instance, including location and bunker mass
-
+- `MachineDynamicInfo`: Dynamic properties (state) of a single machine instance, including location and bunker mass
 - `Field`: Represents a field consisting of one or more subfields. A valid field will have a boundary and at least one valid subfield (currently, only one subfield is supported for planning)
-
 - `Subfield`: Represents a part of a `Field`; contains properties such as boundaries, track reference lines, access points, resource points, tracks, etc. A valid subfield has a outer boundary and at least one reference line for (inner field) tracks.
-
 - `Headlands`: The headland(s) of one subfield; each subfield has either a `CompleteHeadland` which surrounds the whole subfield or a number of `PartialHeadland` located at some sides.
-
 - `Track`: defines a track (lane)
-
 - `FieldAccessPoint`: Field entry/exit point
-
 - `ResourcePoint`: Models a process resource point. Currently, only unloading facilities are supported (e.g. silos, clamps). 
-
 - `OutFieldInfo`: Contains information of activities/transit done outside of the field (e.g. transit between field access points and resource points located outside of the field)
-
 - `RoutePoint`: A point in a route containing spatio-temporal and operation-specific information.
-
 - `Route`: Route for a specific machine.
-
-- `HeadlandRoute`: Route within the headland.
-
-- `GridMap<T>`: models a gridmap with cell values of type T. 
-
+- `DirectedGraph::Graph`: Directed graph used for path planning.
+- `GridMap<T>`: models a gridmap with cell values of type T. Currently, the planners normally use `ArolibGrid_t := GridMap<float>` 
 - `IEdgeCostCalculator`: Interface (abstract class) used by the planners to obtain edge costs. 
-
-- `IEdgeSpeedCalculator`: Interface (abstract class) used by the planners to compute the speed of a machine droving between two points. 
-
+- `IEdgeSpeedCalculator`: Interface (abstract class) used by the planners to compute the speed of a machine driving between two points. 
 - `IEdgeMassCalculator`: Interface (abstract class) used by the planners to obtain the amount of mass under a rectangle. 
-
+- `IInfieldTracksConnector`: Interface (abstract class) used by the planners to obtain the path to connect a given pose  with an inner-field track taking into account the inner-field boundaries. 
+- `ITrackSequencer`: Interface (abstract class) used to select the sequence in which the inner-field tracks will be visited by the primary machines for field coverage.
 - `Logger`: Logging class. 
-
 - `Unit`: Represents a unit (e.g  m^2, m/s, etc) supported in the library.
 
-  
+
 
 ### Main terms
 
@@ -93,19 +70,23 @@ Dependencies between the modules:
 
 - Working group: set of machines participating in the operation
 
+- Primary machine: types of machines who perform the main work on the field (e.g., harvesters, sprayers, etc.)
+
+- Service unit: types of machines that assist the primary machines (e.g., overload/transport vehicles)
+
+- Capacitated machine: machine that contains a bunker to store material.
+
   
+
 
 
 ### Documentation
 
 To generate the documentation for the C++ code, run `doxygen` in the base directory:
-
 ```
 doxygen Doxyfile
 ```
-
 The documentation will be generated in the `/docs` subdirectory. You can start browsing from `/docs/html/index.html`.
-
 
 
 
@@ -119,88 +100,102 @@ The documentation will be generated in the `/docs` subdirectory. You can start b
 
    * On **Linux** the dependencies can simply be installed by running the script '`scripts/install_deps.sh`'. 
 
-     
+
 
 ### Variables
 
 The following variables are used by the package scripts:
 
-* `AROLIB_AROLIB_ROOT`: directory where the source code is located. If not set, many scripts will set the default relative to the script's directory (hence the location of the scripts is important)
+- `AROLIB_AROLIB_ROOT`: directory where the source code is located. If not set, many scripts will set the default relative to the script's directory (hence the location of the scripts is important)
+- `AROLIB_AROLIB_BUILD_PATH` : directory where the built files will be located. Default: `$AROLIB_AROLIB_ROOT/build`
+- `AROLIB_AROLIB_INSTALL_PATH`: directory where the installation files will be located. 
 
-* `AROLIB_AROLIB_BUILD_PATH` : directory where the built files will be located. Default: `$HOME/AROLIB_AROLIB_ROOT/build`
 
-* `AROLIB_AROLIB_INSTALL_PATH`: directory where the installation files will be located. Default: `$HOME/arolib/install/arolib`
-
-  
 
 ### Building & Installation
-Open a new terminal. Before building,  set the aforementioned variables if/as desired (`AROLIB_AROLIB_ROOT`, `AROLIB_AROLIB_BUILD_PATH` , `AROLIB_AROLIB_INSTALL_PATH`) : 
+
+Open a new terminal. Before building,  set the aforementioned variables if/as desired (`AROLIB_AROLIB_ROOT`, `AROLIB_AROLIB_BUILD_PATH` , `AROLIB_AROLIB_INSTALL_PATH`) :
 
 Currently there are 3 different ways to build/install arolib:
 
 1. Using the available script `scripts/arolib_make`
 
-        cd $AROLIB_AROLIB_ROOT
-        ./scripts/arolib_make
+   ```plaintext
+    cd $AROLIB_AROLIB_ROOT
+    ./scripts/arolib_make
+   ```
 
-    Notes:
+   
 
-    * If `AROLIB_AROLIB_ROOT` is not set, it will be set relatively based on the absolute path of the script (hence the location of the script is important)
-    * If `AROLIB_AROLIB_INSTALL_PATH` is not set, it will be set to the default path `$AROLIB_AROLIB_ROOT/build`
-    * If `AROLIB_AROLIB_INSTALL_PATH` is not set, it will be set to the default path `$HOME/arolib/install`
-    * Run the script `./scripts/arolib_make_debug` to build/install the debug version.
+   Notes:
 
-2. Using `make`
+   - If `AROLIB_AROLIB_ROOT` is not set, it will be set relatively based on the absolute path of the script (hence the location of the script is important)
 
-        cd $AROLIB_AROLIB_ROOT
-        make build
+   - If `AROLIB_AROLIB_BUILD_PATH` is not set, it will be set to the default path `$AROLIB_AROLIB_ROOT/build`
 
-3. Docker alternative (should also work on windows with some adjustments)
+   - If `AROLIB_AROLIB_INSTALL_PATH` is not set, it will be set to the default path `$HOME/arolib/install/arolib`
 
-        cd $AROLIB_AROLIB_ROOT
-        sudo make docker/build_image
-        sudo -E make docker/build_arolib
+   - Run the script `./scripts/arolib_make_debug` to build/install the debug version.
 
-    The option `-E` for `sudo` passes on the session's environment variables
+     
 
-The installed libraries and headers will be located in `AROLIB_AROLIB_INSTALL_PATH`.
+2. Using `make` (`Makefile`)
 
+   * Run `make build` to build arolib. The headers will be copied to `AROLIB_AROLIB_INSTALL_PATH` and the shared libraries will be copied to `AROLIB_AROLIB_BUILD_PATH`.
 
+   * Run `make install` to install the arolib library to the system default locations (on Linux): The headers will be copied to `/usr/local/include/arolib` and the libs will be copied to `/usr/local/lib`.
 
+   ```plaintext
+    cd $AROLIB_AROLIB_ROOT
+    make build
+    make install
+   ```
+
+   
+
+   Notes:
+
+   - If `AROLIB_AROLIB_ROOT` is not set, it will be set relatively based on the absolute path of the `Makefile` (hence the location of the `Makefile` is important)
+
+   - If `AROLIB_AROLIB_BUILD_PATH` is not set, it will be set to the default path `$AROLIB_AROLIB_ROOT/build`
+
+   - If `AROLIB_AROLIB_INSTALL_PATH` is not set, it will be set to the default path `$AROLIB_AROLIB_ROOT/install`
+
+     
+
+3. Docker alternative using `make` (`Makefile`)
+
+   Alternatively, arolib can be built inside a Docker container.
+
+   ```plaintext
+    cd $AROLIB_AROLIB_ROOT
+    sudo make docker/build_image/focal
+    sudo -E make docker/build_arolib/focal
+   ```
+
+   
+
+   Notes:
+
+   * The option `-E` for `sudo` passes on the session's environment variables
+
+     
 
 ### Testing
 
-Before running the tests, make sure that the environmental variable `AROLIB_AROLIB_ROOT` is set to the directory where the arolib source files are located. Running the script `scripts/env.sh` will set it.
-
-Running the unit tests:
-
-```
-    cd $AROLIB_AROLIB_ROOT
-    make test/units
-```
-
-Running the integration test:
-
-```
-    cd $AROLIB_AROLIB_ROOT
-    make test/integration
-```
-
-Running both tests together:
-
-```
-    cd $AROLIB_AROLIB_ROOT
-    make test
-```
+There are currently 3 `make` targets to run tests:
+- `make test/units` will run the unit tests
+- `make test/integration` will run the integration tests
+- `make test` will run all tests
 
 
 
 ### Using the library
 
-To use the library, the installation sub paths must be added to the system environmental variables. For this, the script `scripts/env_install_dir.sh` is available. This script receives one argument: the path where arolib was installed (without the final '/'). For example:
+If the installation was not done in on of the system's default locations, the installation sub paths must be added to the system environmental variables. For this, the script `scripts/env_install_dir.sh` is available. This script receives one argument: the path where arolib was installed (without the final '/'). For example:
 
 ```
-export AROLIB_AROLIB_INSTALL_PATH=$HOME/arolib/install
+export AROLIB_AROLIB_INSTALL_PATH=$HOME/arolib/install/arolib
 source scripts/env_install_dir.sh $AROLIB_AROLIB_INSTALL_PATH
 ```
 
@@ -210,7 +205,7 @@ The script `scripts/env.h` can also be used for this purpose. This script will s
 
 ```
 # export AROLIB_AROLIB_INSTALL_PATH=<arolib_install_path> ##optional
-source scripts/env.sh
+source $AROLIB_AROLIB_ROOT/scripts/env.sh
 ```
 
 *  Add '`source <arolib_arolib_src_directory>/scripts/env.sh `'' to your '`~/.bashrc`' if desired (`AROLIB_AROLIB_INSTALL_PATH` must be set before)
@@ -228,7 +223,7 @@ source scripts/env.sh
 
 #### General input parameters
 
-In order to plan with the `arolib` components, some parameters must be set by the user. This parameters are used by one or more of the planning components. All geometries must be given in the Cartesian coordinate system (geodetic coordinates must be transformed/projected accordingly, e.g. by using the available `CoordTransformer` type)
+In order to plan with the `arolib` components, some parameters must be set by the user. This parameters are used by one or more of the planning components. All geometries must be given in the Cartesian coordinate system (geodetic coordinates must be transformed/projected accordingly, e.g. by using the available `CoordTransformer`)
 
 * **Field**: 
 
@@ -236,7 +231,10 @@ In order to plan with the `arolib` components, some parameters must be set by th
 
 * **Working group**: 
 
-  The group of machines that will participate in the operation must be given. This group must contain one harvester and, if the harvester has no capacity, one or more overload (transport) vehicles.
+  The group of machines that will participate in the operation must be given. At the moment, two types of output-material-flow operations are suported:
+
+  * One capacitated primary machine which works the field and transports the material to the unloading points.
+  * One non-capacitated primary machine that works the field assited by one or more transport vehicles (OLVs)
 
 * **Out-of-field information**: 
 
@@ -246,66 +244,75 @@ In order to plan with the `arolib` components, some parameters must be set by th
   * Travel distance and durations between (external) resource points and access points (general or specific for a machine)
   * Travel distance and durations between access points (general or specific for a machine)
   * Travel distance and durations between the current location of each machine and each access point (if the machine is outside the field)
-  * Unloading durations for the resource points  (general or specific for a machine)
+  * Default unloading durations for the resource points  (general or specific for a machine)
 
 * **Machine's current states**: 
   * The currents state (location, bunker mass) of the participating machines
 
 * **Edge calculators**:  
 
-  Several planning components use edge calculators to compute some values related to a segment driven by a machine. Default calculators are available in `arolib`, however, the user can define specific calculators following the respective interfaces.
+  Several planning components use edge calculators to compute some values related to a segment driven by a machine. Some calculators are available in `arolib`, however, the user can define specific calculators following the respective interfaces.
 
-  * **Harvesting-speed calculator:** This calculator must inherit from `IEdgeSpeedCalculator`. It is used by some planners to compute the speed of the harvesters while harvesting based on the machine and the (2-point) segment to be driven.
+  * **Working-speed calculator:** This calculator must inherit from `IEdgeSpeedCalculator`. It is used by some planners to compute the speed of the primary machines while working the field based on the machine and the (2-point) segment to be driven.
+  * **Transit-speed calculator:** This calculator must inherit from `IEdgeSpeedCalculator`. It is used by some planners to compute the transit speed of machines inside the field.
   * **Mass calculator:** This calculator must inherit from `IEdgeMassCalculator`. It is used by some planners to compute the amount of mass under a rectangle given by a (2-point) segment and a width.
   * **Cost calculator:** This calculator must inherit from `IEdgeCostCalculator`. It is used by the A* path planners to compute the edge cost and heuristics. It can be defined based on the desired optimization criterion for the operation.
 
 * **Grid-maps**:  
 
-  Some planners or edge calculators might need some gridmaps to operate. For Instance, a mass calculator might need a field biomass gridmap to obtain the amount of mass in a certain region. 
+  Some planners or edge calculators might need some gridmaps to operate. For Instance, a mass calculator might need a field biomass gridmap to obtain the amount of mass in a certain region; or a cost-calculator might need a cost-map.
+
+* **Inner-field track connectors** [optional]:
+
+  Used by some planning components to compute the path to connect a given pose with an inner-field track taking into account the inner-field boundaries (e.g., to connect the track-ends of two different tracks). Some connectors are available in `arolib`, however, the user can define specific connectors following the `IInfieldTracksConnector` interface.
+
+* **Inner-field track sequencer** [optional]:
+
+  Used to select the sequence in which the inner-field tracks will be visited by the primary machines for field coverage. Some sequencers are available in `arolib`, however, the user can define specific sequencers following the `ITrackSequencer` interface. 
 
   
 
 #### Planning steps
 
-The following steps must be followed to plan the process in a virgin field based on the given input parameters.
+The following steps must be followed to plan the process in a virgin field based on the given input parameters. The main components used in the process are located in [components/](components/).
 
-1. **Plan the headland:** 
+1. **Generate the field geometric representation:** 
 
-   The first step is to generate the geometries of the subfield corresponding to the headland. For this, the component `HeadlandPlanner` is used. The planner will generate the headland boundary, the subfield inner-boundary, and headland tracks based on the given `HeadlandPlanner::PlannerParameters`. If a set of machines containing a primary machine (harvester) is given, the planner will also generate the  base-route for the headland based on the edge mass calculator and edge speed calculator.
+   The first step is to generate the geometries of the subfield, namely the boundaries and tracks of the headland- and inner-field- regions. For this, the `FieldGeometryProcessor` component ([here](components/include/arolib/components/fieldgeometryprocessor.h)) is used. The component will generate the geometries based on the given `FieldGeometryProcessor::HeadlandParameters` and `FieldGeometryProcessor::InfieldParameters`, and the selected inner-field tracks' reference line. The component offers the option to generate the field geometries with a complete/surrounding headland (`processSubfieldWithSurroundingHeadland`) or with side/partial headlands (`processSubfieldWithSideHeadlands`).
 
-2. **Generate the inner-field tracks:**
+2. **Build the initial field graph:**
 
-   The component `TracksGenerator` is used to generate the inner-field tracks based on the given `TracksGeneratorParameters` and a reference linestring. 
+   Based on the field geometries (boundaries, tracks, access points, resource points), out-of-field information and current states of the machines, the `GraphProcessor` component ([here](components/include/arolib/components/graphprocessor.h)) is used to build the graph that will be used by the path planners.
 
-3. **Generate the base-route for the inner-field**
+3. **Generate the base-route**
 
-   Based on the generated geometries, the base-route for the harvester is computed using the component `BaseRoutesInfieldPlanner`. The base-route is the route that the harvester would follow to cover the field without taking into account capacity constraints and overloading windows. This route is generated based on the given  `BaseRoutesInfieldPlanner::PlannerParameters` , edge mass calculator, and edge speed calculator.
+   Based on the generated geometries, the base-route for the primary machine is computed using the `BaseRoutesPlanner` component ([here](components/include/arolib/components/baseroutesplanner.h)). The base-route is the route that the primary machine would follow to cover the field without taking into account capacity constraints and overloading/unloading activities. This route is generated based on the given `PlannerParameters::PlannerParameters` , edge mass calculator, and edge speed calculators,  among other parameters. If not set, the planner will use the default inner-field track sequencer and inner-field tracks' connector to generate the routes.
 
-4. **Connect the base-routes**
+4. **Update the graph with the base-route information**
 
-   The base-routes of the headland and the inner-field are connected using the component `BaseRoutesProcessor`to obtain the overall base-route for the harvester. 
+   The `GraphProcessor` component ([here](components/include/arolib/components/graphprocessor.h)) is used to update vertex properties based on the computed base-routes, including the (initial) working timestamps.
 
-5. **Build the graph**
+5. **Plan the routes for the process**
 
-   Based on the field geometries (boundaries, tracks, access points, resource points), out-of-field information, current state of the machines, and the computed base-route, the component `GraphProcessor` is used to build the graph that will be used by the path planners.
+   Finally, the routes for all machines are generated using the `FieldProcessPlanner` component ([here](components/include/arolib/components/fieldprocessplanner.h)), based on the given `FieldProcessPlanner::PlannerParameters`, the generated graph, the base-route, the given edge-cost calculator, the machine current states, and the types of the machines participating in the operation (i.e., the operation type).
 
-6. **Plan the routes for the process**
+6. **[Optional] Smoothen the routes**
 
-   Finally, the routes for all machines are generated using the component `FieldProcessPlanner`, based on the given `FieldProcessPlanner::PlannerParameters`. 
+   The routes can be smoothen based on the machines' turning radius using the `RouteSmoother` ([here](processing/include/arolib/processing/route_smoother.hpp)) provided in [processing/](processing/).
 
-7. **(Optional) Smoothen the routes**
+7. **[Optional]  Save data**
 
-   The routes can be smoothen based on the machines' turning radius using the `RouteSmoother` (in  `processing`)
+   The processed field, generated routes, planning parameters, grid-maps, and other objects/parameters can be saved using the methods provided in [io/](io/): [io_xml](io/include/arolib/io/io_xml.hpp), [io_kml](io/include/arolib/io/io_kml.hpp) (fields only), and [io_hdf5](io/include/arolib/io/io_hdf5.hpp) (fields only).
 
-8. **(Optional) Simulation**
+8. **[Optional]  Simulation**
 
-   The component `GPSSimulator` can be used to simulate the computed routes.
+   The `GPSSimulator` component ([here](components/include/arolib/components/gpssimulator.h)) can be used to simulate the computed routes.
 
 
 
 ### Examples
 
-In `examples/example_harvesting` you can find a simple example demonstrating the usage of `AroLib`.
+In [`examples/example_harvesting`](examples/example_harvesting) you can find a simple example demonstrating the usage of `AroLib` for the supported operations and headland types.
 
 
 
@@ -330,10 +337,10 @@ In `examples/example_harvesting` you can find a simple example demonstrating the
 
 `arolib` was developed in part within the following funded projects:
 
-| Project                                                      | Sponsor                                                      | Funding code(s)      |
-| ------------------------------------------------------------ | ------------------------------------------------------------ | -------------------- |
-| [prospective.HARVEST](https://www.prospectiveharvest.de/de/startseite.html) | German Federal Ministry of Food and Agriculture ([BMEL](https://www.bmel.de/EN/Home/home_node.html)) | 2815700915           |
-| [SOILAssist](https://www.soilassist.de/en/)                  | German Federal Ministry of Education and Research ([BMBF](https://www.bmbf.de/bmbf/en/home/home_node.html)) | 031A563B / 031B0684B |
+| Project                                                      | Sponsor                                                      | Funding code(s)                  |
+| ------------------------------------------------------------ | ------------------------------------------------------------ | -------------------------------- |
+| [prospective.HARVEST](https://www.prospectiveharvest.de/de/startseite.html) | German Federal Ministry of Food and Agriculture ([BMEL](https://www.bmel.de/EN/Home/home_node.html)) | 2815700915                       |
+| [SOILAssist](https://www.soilassist.de/en/)                  | German Federal Ministry of Education and Research ([BMBF](https://www.bmbf.de/bmbf/en/home/home_node.html)) | 031A563B / 031B0684B / 031B1065B |
 
-
+2023: The DFKI Niedersachsen (DFKI NI) is sponsored by the Ministry of Science and Culture of Lower Saxony and the VolkswagenStiftung.
 

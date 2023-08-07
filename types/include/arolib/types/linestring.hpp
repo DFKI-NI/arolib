@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,6 +30,10 @@ public:
   int id; /**< Linestring id */
   std::vector<Point> points; /**< Linestring points */
 };
+
+inline bool operator==(const Linestring& lhs, const Linestring& rhs) {
+  return (lhs.points == rhs.points);
+}
 
 }
 

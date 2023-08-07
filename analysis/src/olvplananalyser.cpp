@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,11 +28,11 @@ OlvPlanAnalyser::OlvPlanAnalyser(const LogLevel &logLevel):
 bool OlvPlanAnalyser::runAnalysis()
 {
     if(!m_fieldReady){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "No valid field has been set");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "No valid field has been set");
         return false;
     }
     if(m_routes.empty()){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "No routes have been set");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "No routes have been set");
         return false;
     }
 
@@ -41,22 +41,22 @@ bool OlvPlanAnalyser::runAnalysis()
 
     for(auto &it_sf : m_routes){
         if(it_sf.first >= m_field.subfields.size()){//for now, the key is the index in the vector
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Saved routes have an invalid subfield id/key");
+            logger().printOut(LogLevel::ERROR, __FUNCTION__, "Saved routes have an invalid subfield id/key");
             return false;
         }
         for(auto &it_m : it_sf.second){
             AnalysisResult analysisResult;
             if( !getRouteSegmentsIndexes( m_field.subfields.at(it_sf.first), it_m.second.first, analysisResult.routeSegmentation_1 ) ){
-                m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error obtaining the segments' indexes from route 1 (subfield " + std::to_string(it_sf.first) + ", machineId " + std::to_string(it_m.first) + ")");
+                logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error obtaining the segments' indexes from route 1 (subfield " + std::to_string(it_sf.first) + ", machineId " + std::to_string(it_m.first) + ")");
                 return false;
             }
             if( !getRouteSegmentsIndexes( m_field.subfields.at(it_sf.first), it_m.second.second, analysisResult.routeSegmentation_2 ) ){
-                m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error obtaining the segments' indexes from route 2 (subfield " + std::to_string(it_sf.first) + ", machineId " + std::to_string(it_m.first) + ")");
+                logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error obtaining the segments' indexes from route 2 (subfield " + std::to_string(it_sf.first) + ", machineId " + std::to_string(it_m.first) + ")");
                 return false;
             }
 
             if( !analyseSegments( it_m.second.first, it_m.second.second, analysisResult ) ){
-                m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error running analysis of segments (subfieldId " + std::to_string(it_sf.first) + ", machineId " + std::to_string(it_m.first) + ")");
+                logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error running analysis of segments (subfieldId " + std::to_string(it_sf.first) + ", machineId " + std::to_string(it_m.first) + ")");
                 return false;
             }
 
@@ -88,7 +88,7 @@ bool OlvPlanAnalyser::saveResults_CSV(const std::string &filename) const
 {
     std::ofstream of(filename);
     if (!of.is_open()){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error opening file " + filename);
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error opening file " + filename);
         return false;
     }
 
@@ -265,12 +265,12 @@ bool OlvPlanAnalyser::getResults(size_t subfieldId, std::map<MachineId_t, OlvPla
 {
     results.clear();
     if(!m_analysisReady){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Results not ready");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Results not ready");
         return false;
     }
     auto it_sf = m_analysisResult.find(subfieldId);
     if(it_sf == m_analysisResult.end()){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Invalid subfieldId");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Invalid subfieldId");
         return false;
     }
     results = it_sf->second;
@@ -280,17 +280,17 @@ bool OlvPlanAnalyser::getResults(size_t subfieldId, std::map<MachineId_t, OlvPla
 bool OlvPlanAnalyser::getResults(size_t subfieldId, const MachineId_t &machineId, OlvPlanAnalyser::AnalysisResult &results)
 {
     if(!m_analysisReady){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Results not ready");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Results not ready");
         return false;
     }
     auto it_sf = m_analysisResult.find(subfieldId);
     if(it_sf == m_analysisResult.end()){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Invalid subfieldId");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Invalid subfieldId");
         return false;
     }
     auto it_m = it_sf->second.find(machineId);
     if(it_m == it_sf->second.end()){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Invalid machineId for the given subfield");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Invalid machineId for the given subfield");
         return false;
     }
     results = it_m->second;
@@ -313,7 +313,7 @@ bool OlvPlanAnalyser::getRouteSegmentsIndexes(const Subfield& subfield, const Ro
     segResults.indexRanges_outfield.clear();
 
     if(route.route_points.empty()){
-        //m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Route is empty");
+        //logger().printOut(LogLevel::ERROR, __FUNCTION__, "Route is empty");
         //return false;
         return true;
     }
@@ -550,37 +550,37 @@ bool OlvPlanAnalyser::analyseSegments(const Route &route1, const Route &route2, 
 {
     std::string routeNr = "1";
     if(!analyseSegment(route1, analysisResult.routeSegmentation_1.indexRange_init, analysisResult.initAnalysis_1)){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing the init segment from route " + routeNr);
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing the init segment from route " + routeNr);
         return false;
     }
     if(!analyseSegment(route1, analysisResult.routeSegmentation_1.indexRange_end, analysisResult.endAnalysis_1)){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing the end segment from route " + routeNr);
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing the end segment from route " + routeNr);
         return false;
     }
     if(!analyseFieldSegments(route1, analysisResult.routeSegmentation_1.indexRanges_field, analysisResult.fieldAnalysis_1)){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing 'in-the-field driving' segments from route " + routeNr);
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing 'in-the-field driving' segments from route " + routeNr);
         return false;
     }
     if(!analyseOutFieldSegments(route1, analysisResult.routeSegmentation_1.indexRanges_outfield, analysisResult.outFieldAnalysis_1)){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing 'out-of-field driving' segments from route " + routeNr);
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing 'out-of-field driving' segments from route " + routeNr);
         return false;
     }
 
     routeNr = "2";
     if(!analyseSegment(route2, analysisResult.routeSegmentation_2.indexRange_init, analysisResult.initAnalysis_2)){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing the init segment from route " + routeNr);
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing the init segment from route " + routeNr);
         return false;
     }
     if(!analyseSegment(route2, analysisResult.routeSegmentation_2.indexRange_end, analysisResult.endAnalysis_2)){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing the end segment from route " + routeNr);
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing the end segment from route " + routeNr);
         return false;
     }
     if(!analyseFieldSegments(route2, analysisResult.routeSegmentation_2.indexRanges_field, analysisResult.fieldAnalysis_2)){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing 'in-the-field driving' segments from route " + routeNr);
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing 'in-the-field driving' segments from route " + routeNr);
         return false;
     }
     if(!analyseOutFieldSegments(route2, analysisResult.routeSegmentation_2.indexRanges_outfield, analysisResult.outFieldAnalysis_2)){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing 'out-of-field driving' segments from route " + routeNr);
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing 'out-of-field driving' segments from route " + routeNr);
         return false;
     }
 
@@ -604,7 +604,7 @@ bool OlvPlanAnalyser::analyseSegment(const Route &route, const OlvPlanAnalyser::
     if(indexRange.max < indexRange.min
             || indexRange.min < 0
             || indexRange.max >= route.route_points.size()){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Invalid index-range");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Invalid index-range");
         return false;
     }
 
@@ -653,7 +653,7 @@ bool OlvPlanAnalyser::analyseFieldSegments(const Route &route,
     for(size_t i = 0 ; i < indexRanges.size() ; ++i){
         const auto & ir = indexRanges.at(i);
         if(!analyseFieldSegment(route, ir, segments.at(i))){
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, 10, "Error analysing segment ", i );
+            logger().printOut(LogLevel::ERROR, __FUNCTION__, 10, "Error analysing segment ", i );
             analysisSegments.segments.clear();
             return false;
         }
@@ -693,19 +693,19 @@ bool OlvPlanAnalyser::analyseFieldSegment(const Route &route,
                                           OlvPlanAnalyser::FieldAnalysisResult::FieldSegmentAnalysisResult &analysisSegment) const
 {
     if(!analyseSegment(route, indexRanges.first, analysisSegment)){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing segment." );
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing segment." );
         return false;
     }
     if(!analyseSegment(route, indexRanges.second.at(0), analysisSegment.toOverload)){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing 'to overload' sub-segment." );
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing 'to overload' sub-segment." );
         return false;
     }
     if(!analyseSegment(route, indexRanges.second.at(1), analysisSegment.overload)){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing 'overload' sub-segment." );
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing 'overload' sub-segment." );
         return false;
     }
     if(!analyseSegment(route, indexRanges.second.at(2), analysisSegment.fromOverload)){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing 'from overload' sub-segment." );
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing 'from overload' sub-segment." );
         return false;
     }
 
@@ -728,7 +728,7 @@ bool OlvPlanAnalyser::analyseOutFieldSegments(const Route &route,
     for(size_t i = 0 ; i < indexRanges.size() ; ++i){
         const auto & ir = indexRanges.at(i);
         if(!analyseOutFieldSegment(route, ir, segments.at(i))){
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, 10, "Error analysing segment ", i );
+            logger().printOut(LogLevel::ERROR, __FUNCTION__, 10, "Error analysing segment ", i );
             analysisSegments.segments.clear();
             return false;
         }
@@ -769,19 +769,19 @@ bool OlvPlanAnalyser::analyseOutFieldSegment(const Route &route,
                                              OlvPlanAnalyser::OutFieldAnalysisResult::OutFieldSegmentAnalysisResult &analysisSegment) const
 {
     if(!analyseSegment(route, indexRanges.first, analysisSegment)){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing segment." );
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing segment." );
         return false;
     }
     if(!analyseSegment(route, indexRanges.second.at(0), analysisSegment.toOverload)){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing 'to overload' sub-segment." );
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing 'to overload' sub-segment." );
         return false;
     }
     if(!analyseSegment(route, indexRanges.second.at(1), analysisSegment.overload)){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing 'overload' sub-segment." );
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing 'overload' sub-segment." );
         return false;
     }
     if(!analyseSegment(route, indexRanges.second.at(2), analysisSegment.fromOverload)){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing 'from overload' sub-segment." );
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error analysing 'from overload' sub-segment." );
         return false;
     }
 

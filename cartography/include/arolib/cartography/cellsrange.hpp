@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,7 +33,7 @@ class CellsRangeList
      * @brief Struct to sort columns based on their ranges
      */
     struct ColumnInfoCmpr{
-        bool operator()(const std::pair<int,int>& a, const std::pair<int,int>& b){ return a.first <= b.first; }
+        bool operator()(const std::pair<int,int>& a, const std::pair<int,int>& b) const { return a.first <= b.first; }
     };
 
 public:

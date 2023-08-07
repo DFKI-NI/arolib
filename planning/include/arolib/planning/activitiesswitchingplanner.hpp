@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,7 +31,8 @@ namespace arolib{
  * @brief Planner parameters/settings
  */
 struct ASP_GeneralSettings{
-    bool switchOnlyAtTrackEnd = false; /**< If true, switching between working activities is done only at the end of the tracks */
+    bool switchOnlyAtTrackEnd = false; /**< If true, switching between working activities is done only at the end of the tracks (infield) */
+    bool switchOnlyAtTrackEndHL = false; /**< If true, switching between working activities is done only at the end of the tracks (headland) */
 
     /**
      * @brief Parse the parameters from a string map, starting from a default ASP_GeneralSettings

@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -69,7 +69,8 @@ public:
      * @param harvester_route Harvester route
      * @param overloadMachines OLVs assigned to the harvester route
      * @param machineCurrentStates Map containing the current states of the machines (inc. current location, bunker mass, etc.)
-     * @param harvestedMassLimit If an overload activity surpaces this value, no more overload activities will be processed (i.e. overload activities will be computed for only a part of the harvester route). Disregarded if <= 0.
+     * @param numOverloadActivities If > 0, only this amout of activities will be planned.
+     * @param workedMassLimit If an overload activity surpaces this value, no more overload activities will be processed (i.e. overload activities will be computed for only a part of the harvester route). Disregarded if <= 0.
      * @param _logger (optional) Pointer to the parent logger (to use the parent's logLevel). If NULL, it creates a default logger.
      * @return The computed overload activities (ordered by time)
      */
@@ -77,8 +78,10 @@ public:
                                                                         const Route &harvester_route,
                                                                         const std::vector<Machine> &overloadMachines,
                                                                         const std::map<MachineId_t, MachineDynamicInfo> &machineCurrentStates,
-                                                                        double harvestedMassLimit = -1,
-                                                                        Logger *_logger = nullptr);
+                                                                        int numOverloadActivities = -1,
+                                                                        double workedMassLimit = -1,
+                                                                        bool leaveRoutePointBetweenOLActivities = true,
+                                                                        std::shared_ptr<Logger> _logger = nullptr);
 
     /**
      * @brief Compute the overloading activities/windows following a INFIELD switchingStrategy based on the given harvester route, assigned OLVs, etc.
@@ -86,15 +89,18 @@ public:
      * @param harvester_route Harvester route
      * @param _overloadMachines OLVs assigned to the harvester route
      * @param machineCurrentStates Map containing the current states of the machines (inc. current location, bunker mass, etc.)
-     * @param harvestedMassLimit If an overload activity surpaces this value, no more overload activities will be processed (i.e. overload activities will be computed for only a part of the harvester route). Disregarded if <= 0.
+     * @param numOverloadActivities If > 0, only this amout of activities will be planned.
+     * @param workedMassLimit If an overload activity surpaces this value, no more overload activities will be processed (i.e. overload activities will be computed for only a part of the harvester route). Disregarded if <= 0.
      * @param _logger (optional) Pointer to the parent logger (to use the parent's logLevel). If NULL, it creates a default logger.
      * @return The computed overload activities (ordered by time)
      */
     static std::vector<OLVPlan::OverloadInfo> computeFieldOverloadPoints(const Route &harvester_route,
                                                                          const std::vector<Machine> &_overloadMachines,
                                                                          const std::map<MachineId_t, MachineDynamicInfo> &machineCurrentStates,
-                                                                         double harvestedMassLimit = -1,
-                                                                         Logger *_logger = nullptr);
+                                                                         int numOverloadActivities = -1,
+                                                                         double workedMassLimit = -1,
+                                                                         bool leaveRoutePointBetweenOLActivities = true,
+                                                                         std::shared_ptr<Logger> _logger = nullptr);
 
 
     /**
@@ -103,15 +109,16 @@ public:
      * @param harvester_route Harvester route
      * @param _overloadMachines OLVs assigned to the harvester route
      * @param machineCurrentStates Map containing the current states of the machines (inc. current location, bunker mass, etc.)
-     * @param harvestedMassLimit If an overload activity surpaces this value, no more overload activities will be processed (i.e. overload activities will be computed for only a part of the harvester route). Disregarded if <= 0.
+     * @param workedMassLimit If an overload activity surpaces this value, no more overload activities will be processed (i.e. overload activities will be computed for only a part of the harvester route). Disregarded if <= 0.
      * @param _logger (optional) Pointer to the parent logger (to use the parent's logLevel). If NULL, it creates a default logger.
      * @return The computed overload activities (ordered by time)
      */
     static std::vector<OLVPlan::OverloadInfo> computeTracksEndsOverloadPoints(const Route &harvester_route,
                                                                               std::vector<Machine> overloadMachines,
                                                                               const std::map<MachineId_t, MachineDynamicInfo> &machineCurrentStates,
-                                                                              double harvestedMassLimit = -1,
-                                                                              Logger *_logger = nullptr);
+                                                                              int numOverloadActivities = -1,
+                                                                              double workedMassLimit = -1,
+                                                                              std::shared_ptr<Logger> _logger = nullptr);
 
 protected:
     /**

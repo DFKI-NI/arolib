@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@
 #include "geometry_helper.hpp"
 #include "curves_helper.hpp"
 #include "field_geometry_processing.hpp"
+#include "tracksgenerator.h"
 #include "pathsmoother.hpp"
 #include "boost_geometries_wrapper.hpp"
 

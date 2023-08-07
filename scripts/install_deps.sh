@@ -1,7 +1,6 @@
 #!/bin/sh
 
-# This script installs all dependencies of this project. It is also called by
-# odil_ws/scripts/odil_install_deps, so don't rename!
+# This script installs all dependencies of this project. 
 
 SUDO=''
 if [ $(id -u) -ne 0 ]; then

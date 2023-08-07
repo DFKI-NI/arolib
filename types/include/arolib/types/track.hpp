@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -82,7 +82,24 @@ public:
       * @return True if the track is a main track
       */
     bool isMainTrack() const;
+
+
+    /**
+      * @brief Print the points of a set of tracks in a string with CSV format
+      * @param tracks Tracks to be printed
+      * @param sep Character to be used as separator
+      * @param precision Decimal precision (disregarded if < 0)
+      * @param incZ If true, the z-coordinate is included; otherwise, only x and y are included
+      * @return (CSV) String description of the set of points
+      */
+    static std::string toStringCSV(const std::vector<Track>& tracks, char sep = ';', int precision = 10, bool incZ = false);
 };
+
+inline bool operator==(const Track& lhs, const Track& rhs) {
+  return (lhs.type == rhs.type) &&\
+         (lhs.points == rhs.points) &&\
+        (lhs.boundary == rhs.boundary);
+}
 
 }
 

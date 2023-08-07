@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -60,7 +60,7 @@ bool RouteSmoother::smoothenOLVRoute(Route &route, RouteSmoother::TimeHandlingSt
 {
     auto it = m_machines.find(route.machine_id);
     if(it == m_machines.end()){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Machine not found");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Machine not found");
         return false;
     }
     return smoothenOLVRoute(it->second, route, THStrategy, onlyNonOverloadingSegments);
@@ -70,7 +70,7 @@ bool RouteSmoother::smoothenOLVRoute(const Machine &machine, Route &route, Route
 {
 
     if( machine.machinetype != Machine::OLV ){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "The route does not belong to an OLV machine");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "The route does not belong to an OLV machine");
         return false;
     }
 
@@ -82,7 +82,7 @@ bool RouteSmoother::smoothenHarvesterRoute(Route &route, const Polygon &boundary
 {
     auto it = m_machines.find(route.machine_id);
     if(it == m_machines.end()){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Machine not found");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Machine not found");
         return false;
     }
     return smoothenHarvesterRoute(it->second, route, boundary, THStrategy, smoothenHLSegments);
@@ -96,7 +96,7 @@ bool RouteSmoother::smoothenHarvesterRoute(const Machine &machine,
 {
 
     if( !machine.isOfWorkingType(true) ){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "The route does not belong to a 'working-type' machine");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "The route does not belong to a 'working-type' machine");
         return false;
     }
 
@@ -178,7 +178,7 @@ bool RouteSmoother::smoothenHarvesterRoute(const Machine &machine,
 
             //smoothen the route's extended initial segment (prior to harvesting)
             if( !smoothenRoutePart(route, 0, ind1, machine, THStrategy, false) ){
-                m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error smoothing the initial segment (prior to harvesting)");
+                logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error smoothing the initial segment (prior to harvesting)");
                 return false;
             }
 
@@ -205,7 +205,7 @@ bool RouteSmoother::smoothenHarvesterRoute(const Machine &machine,
                 prevSize = route_points.size();
 
                 if( !smoothenRoutePart(route, ind0, ind1, machine, THStrategy, false) ){
-                    m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error smoothing the headland-harvesting route segment");
+                    logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error smoothing the headland-harvesting route segment");
                     return false;
                 }
 
@@ -232,7 +232,7 @@ bool RouteSmoother::smoothenHarvesterRoute(const Machine &machine,
                 prevSize = route_points.size();
 
                 if( !smoothenRoutePart(route, ind0, ind1, machine, THStrategy, false) ){
-                    m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error smoothing the headland-infield connection segment");
+                    logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error smoothing the headland-infield connection segment");
                     return false;
                 }
 
@@ -299,7 +299,7 @@ bool RouteSmoother::smoothenHarvesterRoute(const Machine &machine,
 
         //smoothen the last segment (after harvesting)
         if( !smoothenRoutePart(route, ind0, route_points.size()-1, machine, THStrategy, false) ){
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error smoothing the final segment (after harvesting)");
+            logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error smoothing the final segment (after harvesting)");
             return false;
         }
     }
@@ -311,7 +311,7 @@ bool RouteSmoother::smoothenHeadlandSegments(Route &route, const Polygon &bounda
 {
     auto it = m_machines.find(route.machine_id);
     if(it == m_machines.end()){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Machine not found");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Machine not found");
         return false;
     }
     return smoothenHeadlandSegments(it->second, route, boundary, THStrategy);
@@ -320,7 +320,7 @@ bool RouteSmoother::smoothenHeadlandSegments(Route &route, const Polygon &bounda
 bool RouteSmoother::smoothenHeadlandSegments(const Machine &machine, Route &route, const Polygon &boundary, RouteSmoother::TimeHandlingStrategy THStrategy) const
 {
     if( !machine.isOfWorkingType(true) ){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "The route does not belong to a working machine");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "The route does not belong to a working machine");
         return false;
     }
 
@@ -438,7 +438,7 @@ bool RouteSmoother::smoothenHeadlandSegments(const Machine &machine, Route &rout
 
             size_t size_prev = route.route_points.size();
             if( !smoothenRoutePart(route, ind_TE, ind_TS, machine, THStrategy, false) ){
-                m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error smoothing the headland segment");
+                logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error smoothing the headland segment");
                 return false;
             }
 
@@ -554,7 +554,7 @@ bool RouteSmoother::smoothenRoute(Route &route, const std::set<RoutePoint::Route
 
     auto it = m_machines.find(route.machine_id);
     if(it == m_machines.end()){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Machine not found");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Machine not found");
         return false;
     }
     return smoothenRoute(it->second, route, filter, filterOut, indFrom, indTo, boundary, THStrategy);
@@ -573,14 +573,14 @@ bool RouteSmoother::smoothenRoute(const Machine &machine, Route &route, const st
 
 bool RouteSmoother::smoothenRoute(const Machine &machine, Route &route, const std::function<bool(const RoutePoint&)>& cutFunct, size_t indFrom, int indTo, const Polygon &boundary, RouteSmoother::TimeHandlingStrategy THStrategy) const
 {
-    return (machine,
-            route,
-            [&](const Route& route, size_t ind)->bool{
-                return ind >= route.route_points.size() || cutFunct( route.route_points.at(ind) );
-            },
-            indFrom, indTo,
-            boundary,
-            THStrategy);
+    return smoothenRoute(machine,
+                         route,
+                         [&](const Route& route, size_t ind)->bool{
+                             return ind >= route.route_points.size() || cutFunct( route.route_points.at(ind) );
+                         },
+                         indFrom, indTo,
+                         boundary,
+                         THStrategy);
 }
 
 bool RouteSmoother::smoothenRoute(const Machine &machine,
@@ -605,7 +605,7 @@ bool RouteSmoother::smoothenRoute(const Machine &machine,
     if(indFrom > indTo
             || indFrom >= route_points.size()
             || indTo >= route_points.size()){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Invalid indexes");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Invalid indexes");
         return false;
     }
     if(indTo - indFrom < 2)
@@ -671,7 +671,7 @@ bool RouteSmoother::smoothenRoutePart(Route &route, size_t route_ind0, size_t ro
     if(route_ind0 > route_indn
             || route_ind0 >= route_points.size()
             || route_indn >= route_points.size()){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Invalid route points' indexes");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Invalid route points' indexes");
         return false;
     }
 
@@ -793,7 +793,7 @@ bool RouteSmoother::smoothenRoutePart(Route &route, size_t route_ind0, size_t ro
                                    THStrategy,
                                    newRPs,
                                    delta_time ) ){
-                m_logger.printOut(LogLevel::ERROR, __FUNCTION__, 10, "Error smoothing segment with ind0 = ", ind0, " and ind1 = ", ind1);
+                logger().printOut(LogLevel::ERROR, __FUNCTION__, 10, "Error smoothing segment with ind0 = ", ind0, " and ind1 = ", ind1);
                 return false;
             }
 
@@ -823,7 +823,7 @@ bool RouteSmoother::smoothenRoutePart(Route &route, const Machine &machine, size
     if(route_ind0 > route_indn
             || route_ind0 >= route_points.size()
             || route_indn >= route_points.size()){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Invalid route points' indexes");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Invalid route points' indexes");
         return false;
     }
 
@@ -932,18 +932,18 @@ bool RouteSmoother::smoothenRoutePart(Route &route, const Machine &machine, size
                                THStrategy,
                                newRPs,
                                delta_time ) ){
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, 10, "Error smoothing segment with ind0 = ", ind0, " and ind1 = ", ind1);
+            logger().printOut(LogLevel::ERROR, __FUNCTION__, 10, "Error smoothing segment with ind0 = ", ind0, " and ind1 = ", ind1);
             return false;
         }
 
         //check timestamps
         if(ind0 != 0 && route_points.at(ind0-1).time_stamp > newRPs.front().time_stamp){
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, 10, "Error in timestamps (prev) after smoothing segment with ind0 = ", ind0, " and ind1 = ", ind1);
+            logger().printOut(LogLevel::ERROR, __FUNCTION__, 10, "Error in timestamps (prev) after smoothing segment with ind0 = ", ind0, " and ind1 = ", ind1);
             return false;
         }
         for(size_t i = 1 ; i < newRPs.size() ; ++i){
             if(newRPs.at(i-1).time_stamp > newRPs.at(i).time_stamp){
-                m_logger.printOut(LogLevel::ERROR, __FUNCTION__, 10, "Error in timestamps after smoothing segment with ind0 = ", ind0, " and ind1 = ", ind1);
+                logger().printOut(LogLevel::ERROR, __FUNCTION__, 10, "Error in timestamps after smoothing segment with ind0 = ", ind0, " and ind1 = ", ind1);
                 return false;
             }
         }
@@ -1587,7 +1587,7 @@ bool RouteSmoother::getNextCornersIndexes(const std::vector<RoutePoint> &route_p
                                           double &ang0_s, double &ang1_s) const
 {
     if(ind0 >= route_points.size() || ind1 >= route_points.size()){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Indexes out of range");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Indexes out of range");
         return false;
     }
     indn = ind1;
@@ -1686,7 +1686,7 @@ bool RouteSmoother::getNextCornersIndexes(const std::vector<RoutePoint> &route_p
     };
 
     if(ind0 >= route_points.size() || ind1 >= route_points.size()){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Indexes out of range");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Indexes out of range");
         return false;
     }
     indn = ind1;

@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,6 +30,13 @@ namespace io {
  * @return True on success
  */
 bool create_directory(std::string dir, bool clearIfExistent = false);
+
+/**
+ * @brief Check if a file or directory exists
+ * @param filename filename
+ * @return True if file or directoryexists
+ */
+bool file_or_dir_exists(std::string path);
 
 /**
  * @brief Get a list of filenames for files in a directory (with optional end-pattern filter)

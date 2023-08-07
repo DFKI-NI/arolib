@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,6 +24,7 @@
 #include "arolib/types/field.hpp"
 #include "arolib/types/machine.hpp"
 #include "arolib/cartography/common.hpp"
+#include "arolib/cartography/sharedgridsmanager.hpp"
 #include "arolib/geometry/geometry_helper.hpp"
 
 namespace arolib {
@@ -59,10 +60,17 @@ public:
     /**
      * @brief Initialized the class with a current remaining-area map.
      * @param field Working field
-     * @param remainingAreaMap Current remaining-area map
+     * @param remainingAreaMap Current remaining-area map.
+     * @param initMap If true, the map values will be initialized based on the field geometries; otherwise the map will be used as it is.
      * @return AroResp with error id (0:=OK) and message
      */
-    AroResp init(const Field &field, const ArolibGrid_t& remainingAreaMap);
+    AroResp init(const Field &field, const ArolibGrid_t& remainingAreaMap, bool initMap);
+
+    /**
+     * @brief Set shared CellsInfoManager to record shared edge cells data
+     * @param cim CellsInfoManager. If null, no recording will be done
+     */
+    void setGridCellsInfoManager(std::shared_ptr<gridmap::GridCellsInfoManager> cim);
 
     /**
      * @brief Check if it is ready (i.e. correctly initialized).
@@ -74,6 +82,17 @@ public:
      * @brief Clear all data
      */
     void clear();
+
+    /**
+     * @brief Forget the last machine location.
+     * @param machineId Machine id
+     */
+    void forgetMachineLocation(const MachineId_t &machineId);
+
+    /**
+     * @brief Forget the last location of all machines.
+     */
+    void forgetAllMachineLocations();
 
     /**
      * @brief Updates the grid/map with the given location (using the edge from the last location, if existent).
@@ -89,13 +108,22 @@ public:
      * @brief Get the current remaining-area map (if not ready, it is not allocated).
      * @return Current remaining-area map
      */
-    const ArolibGrid_t& getRemainingAreaMap() const;
+    gridmap::SharedGridsManager::ConstGridPtr getRemainingAreaMap() const;
+
+protected:
+    /**
+     * @brief Get the initialized RemainingAreaMap.
+     * @return Initialized RemainingAreaMap
+     */
+    gridmap::SharedGridsManager::GridPtr initRemainingAreaMap();
 
 protected:
     bool m_ready = false; /**< Is the manager ready? */
     Field m_field; /**< Field */
-    ArolibGrid_t m_remainingAreaMap; /**< Remaining area map */
+    gridmap::SharedGridsManager::GridPtr m_remainingAreaMap = nullptr; /**< Remaining area map */
+    gridmap::SharedGridsManager m_gridsManager; /**< Shared grids manager >*/
     std::map<MachineId_t, std::vector<Point>> m_drivenEdges; /**< Driven edges */
+    static const std::string RemainingAreaMapName; /**< Remainingg-are grid-map name >*/
 
 };
 

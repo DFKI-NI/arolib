@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -141,6 +141,11 @@ namespace arolib
     /**
       * @brief Constructor with location
       */
+    explicit RoutePoint(const Point &pt) : Point(pt) {}
+
+    /**
+      * @brief Constructor with location
+      */
     explicit RoutePoint(double _x, double _y, double _z=0) : Point(_x, _y, _z) {}
 
     /**
@@ -165,24 +170,6 @@ namespace arolib
       * @return True if the route points have different attributes
       */
     bool operator!=(const RoutePoint &other) const;
-
-    /**
-      * @brief Get a reference to the location (point)
-      * @return Reference to the location (point)
-      */
-    inline Point &point()
-    {
-      return *((Point *)this);
-    }
-
-    /**
-      * @brief Get a reference to the location (point)
-      * @return Reference to the location (point)
-      */
-    inline const Point &point() const
-    {
-      return *((Point *)this);
-    }
 
     /**
       * @brief Check if the route point is of any of the given types
@@ -271,18 +258,13 @@ namespace arolib
     double time_stamp = -1; /**< Time stamp [s] */
     double bunker_mass = 0; /**< Mass [kg] of the yield in the bunker */
     double bunker_volume = 0; /**< Volume [m³] of the yield in the bunker */
-    double harvested_mass = 0;/**< (excusive for harvester routes) Yield-mass [kg] harvested in the route until this point (used to keep track of how much the harvesters have harvested) */
-    double harvested_volume = 0; /**< (excusive for harvester routes) Yield-volume [m³] harvested in the route until this point (used to keep track of how much the harvesters have harvested) */
+    double worked_mass = 0;/**< (excusive for routes of working machines) Material-mass [kg] worked in the route until this point (used to keep track of how much the machines have worked the field) */
+    double worked_volume = 0; /**< (excusive for routes of working machines) Material-volume [m³] worked in the route until this point (used to keep track of how much the machines have worked the field) */
     int track_id = -99; /**< Id of the track to which the route-point belongs */
-    int track_idx = -1; /**< Index of the track to which the route-point belongs */
     RoutePointType type = DEFAULT; /**< Type of the route point */
     std::vector<MachineRelationInfo> machineRelations; /**< Relation that this route-point has with other machines/routes */
   };
 
-
-  /**
-    * @brief Overload << operator to stream RoutePoint
-    */
   inline std::ostream &operator<<(std::ostream &out, const arolib::RoutePoint &point)
   {
     out << point.time_stamp << ": " << point.toString();

@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -50,6 +50,30 @@ double calc_area(const Point &p0, const Point &p1, double width)
 double calc_area(const Polygon &poly)
 {
     return std::fabs( boost::geometry::area(poly.points) );
+}
+
+double calc_area(const PolygonWithHoles &poly)
+{
+    double area = std::fabs( boost::geometry::area(poly.outer.points) );
+    for(auto& hole : poly.holes)
+        area -= std::fabs( boost::geometry::area(hole.points) );
+    return std::max(area, 0.0);
+}
+
+double calc_area(const std::vector<Polygon> &polys)
+{
+    double totalArea = 0;
+    for(auto& poly : polys)
+        totalArea = std::max(0.0, calc_area(poly));
+    return totalArea;
+}
+
+double calc_area(const std::vector<PolygonWithHoles> &polys)
+{
+    double totalArea = 0;
+    for(auto& poly : polys)
+        totalArea = std::max(0.0, calc_area(poly));
+    return totalArea;
 }
 
 void correct_angle(double &ang, bool inDeg, bool onlyPositive){
@@ -187,7 +211,7 @@ bool getCentroid(const Polygon& poly, Point &centroid)
     try{
         auto polyValidity = isPolygonValid(poly);
         if(polyValidity == PolygonValidity::INVALID_POLYGON){
-            std::cout <<"[ERROR : getCentroid] The input polygon is not valid" << std::endl;
+            Logger().printError(__FUNCTION__, "The input polygon is not valid");
             return false;
         }
 
@@ -333,25 +357,41 @@ Point calc_vector_to_line(const Point &p0, const Point &p1, const Point &p, bool
 
 //-----------------------------------------------------------------
 
-PolygonValidity isPolygonValid(const Polygon &poly){
-    if(poly.points.size() < 3)
-        return PolygonValidity::INVALID_POLYGON;
-    std::vector<Point> ring(poly.points.begin(), poly.points.end());
 
-    bool originallyClosed = poly.points.front() == poly.points.back();
+PolygonValidity isPolygonValid(const Polygon &poly){
+    return isPolygonValid(poly.points);
+}
+
+PolygonValidity isPolygonValid(const std::vector<Point>& ring){
+
+    if(ring.size() < 3)
+        return PolygonValidity::INVALID_POLYGON;
+
+    bool originallyClosed = ring.front() == ring.back();
     bool originallyCW = true;
-    if(!originallyClosed)
-        ring.push_back(poly.points.front());
+
+    bool useOriginal = true;
+    std::vector<Point> ringTmp;
+    if(!originallyClosed){
+        ringTmp = ring;
+        ringTmp.push_back(ring.at(0));
+        useOriginal = false;
+    }
 
     boost::geometry::validity_failure_type failure;
-    boost::geometry::is_valid(ring, failure);
+    boost::geometry::is_valid( (useOriginal ? ring : ringTmp) , failure);
     if(failure == boost::geometry::failure_wrong_orientation){
         originallyCW = false;
-        std::reverse(ring.begin(), ring.end());
-        boost::geometry::is_valid(ring, failure);
+        if(useOriginal){
+            ringTmp = ring;
+            useOriginal = false;
+        }
+        std::reverse(ringTmp.begin(), ringTmp.end());
+        boost::geometry::is_valid( (useOriginal ? ring : ringTmp) , failure);
         if(failure == boost::geometry::failure_wrong_orientation){//boost is failing here sometimes!
-            std::cout << "[WARNING : isPolygonValid] Boost is_valid failed: double failure_wrong_orientation" << std::endl;
+            Logger().printWarning(__FUNCTION__, "Boost is_valid failed: double failure_wrong_orientation");
             failure = boost::geometry::no_failure;
+            originallyCW = true;
         }
     }
 
@@ -367,57 +407,41 @@ PolygonValidity isPolygonValid(const Polygon &poly){
     return PolygonValidity::INVALID_POLYGON;
 }
 
-PolygonValidity isPolygonValid(std::vector<Point> ring){
-    boost::geometry::validity_failure_type failure;
-    boost::geometry::is_valid(ring, failure);
-    if(failure == boost::geometry::no_failure)
-        return PolygonValidity::VALID_CLOSED_CW;
-    if(failure == boost::geometry::failure_not_closed){
-        ring.push_back(ring.at(0));
-        boost::geometry::is_valid(ring, failure);
-        if(failure == boost::geometry::no_failure)
-            return PolygonValidity::VALID_OPEN_CW;
-        if(failure == boost::geometry::failure_wrong_orientation)
-            return PolygonValidity::VALID_OPEN_CCW;
-        if(failure == boost::geometry::failure_not_closed){//boost is failing here sometimes!
-            std::cout << "[WARNING : isPolygonValid] Boost is_valid failed: double failure_not_closed" << std::endl;
-            return PolygonValidity::VALID_OPEN_CW;
-        }
-    }
-    else if(failure == boost::geometry::failure_wrong_orientation){
-        std::reverse(ring.begin(), ring.end());
-        boost::geometry::is_valid(ring, failure);
-        if(failure == boost::geometry::no_failure)
-            return PolygonValidity::VALID_CLOSED_CCW;
-        if(failure == boost::geometry::failure_not_closed)
-            return PolygonValidity::VALID_OPEN_CCW;
-        if(failure == boost::geometry::failure_wrong_orientation){//boost is failing here sometimes!
-            std::cout << "[WARNING : isPolygonValid] Boost is_valid failed: double failure_wrong_orientation" << std::endl;
-            return PolygonValidity::VALID_CLOSED_CCW;
-        }
-    }
-    return PolygonValidity::INVALID_POLYGON;
-}
-
-bool isPolygonClosed(const PolygonValidity &polyValidty)
+bool isPolygonClosed(const PolygonValidity &polyValidty, bool defaultOnInvalid)
 {
+    if(polyValidty == PolygonValidity::INVALID_POLYGON)
+        return defaultOnInvalid;
     return polyValidty == PolygonValidity::VALID_CLOSED_CW ||
            polyValidty == PolygonValidity::VALID_CLOSED_CCW ;
 }
-bool isPolygonClosed(const Polygon &poly)
+bool isPolygonClosed(const Polygon &poly, bool defaultOnInvalid)
 {
-    return isPolygonClosed( isPolygonValid(poly) ) ;
+    if(poly.points.size() < 3) return false;
+    return isPolygonClosed( isPolygonValid(poly.points), defaultOnInvalid && (poly.points.front() == poly.points.back()) );
 }
 
-bool isPolygonClockwise(const PolygonValidity &polyValidty)
+bool isPolygonClosed(const std::vector<Point> &ring, bool defaultOnInvalid)
 {
+    if(ring.size() < 3) return false;
+    return isPolygonClosed( isPolygonValid(ring), defaultOnInvalid && (ring.front() == ring.back()) );
+}
+
+bool isPolygonClockwise(const PolygonValidity &polyValidty, bool defaultOnInvalid)
+{
+    if(polyValidty == PolygonValidity::INVALID_POLYGON)
+        return defaultOnInvalid;
     return polyValidty == PolygonValidity::VALID_CLOSED_CW ||
             polyValidty == PolygonValidity::VALID_OPEN_CW ;
 }
 
-bool isPolygonClockwise(const Polygon &poly)
+bool isPolygonClockwise(const Polygon &poly, bool defaultOnInvalid)
 {
-    return isPolygonClockwise( isPolygonValid(poly) ) ;
+    return isPolygonClockwise( isPolygonValid(poly.points), defaultOnInvalid ) ;
+}
+
+bool isPolygonClockwise(const std::vector<Point> &ring, bool defaultOnInvalid)
+{
+    return isPolygonClockwise( isPolygonValid(ring), defaultOnInvalid ) ;
 }
 
 void correct_polygon(Polygon &poly, bool clockwise)
@@ -486,6 +510,29 @@ bool setVectorLength(const Point &p0, Point &p1, double length)
     return true;
 }
 
+Polygon rotate(const Point &pivot, const Polygon &poly, double angle, bool inDeg)
+{
+    auto ret = poly;
+    ret.points = rotate(pivot, ret.points, angle, inDeg);
+    return ret;
+}
+
+PolygonWithHoles rotate(const Point &pivot, const PolygonWithHoles &poly, double angle, bool inDeg)
+{
+    auto ret = poly;
+    ret.outer = rotate(pivot, ret.outer, angle, inDeg);
+    for(auto& p : ret.holes)
+        p = rotate(pivot, p, angle, inDeg);
+    return ret;
+}
+
+Linestring rotate(const Point &pivot, const Linestring &ls, double angle, bool inDeg)
+{
+    auto ret = ls;
+    ret.points = rotate(pivot, ret.points, angle, inDeg);
+    return ret;
+}
+
 bool move_point_to_dist_to_line(const Point &p0, const Point &p1, Point &p, double d, bool abs)
 {
     if(abs)
@@ -535,7 +582,7 @@ Point extend_line(const Point &p0, const Point &p1, double dist){
 }
 
 bool extend_linestring(std::vector<Point>& ls, double dist0, double distn, bool keepExtremaPoints){
-    if(ls.size() < 2 || dist0 < 1e-9 || distn < 1e-9 )
+    if(ls.size() < 2 || dist0 < -1e-9 || distn < -1e-9 )
         return false;
 
     if(dist0 > 1e-9){
@@ -590,13 +637,22 @@ bool offsetLinestring(const std::vector<Point> &points_in,
     return offsetLinestring_boost(points_in, poly_out, offset1, offset2, endFlat, points_per_circle);
 }
 
+bool offsetLinestring(const std::vector<Point> &points_in,
+                      PolygonWithHoles &poly_out,
+                      double offset1,
+                      double offset2,
+                      bool endFlat,
+                      int points_per_circle){
+    return offsetLinestring_boost(points_in, poly_out, offset1, offset2, endFlat, points_per_circle);
+}
+
 bool offsetLinestring_boost(const std::vector<Point> &points_in,
                             std::vector<Point> &points_out,
                             double offset,
                             bool keepSamples,
                             int points_per_circle){
-    if(points_in.size() < 2){
-        std::cout << "[ERROR - offsetLinestring_boost] Input points have less that 2 points" << std::endl;
+    if(points_in.size() < 2){        
+        Logger().printError(__FUNCTION__, "Input points have less that 2 points");
         return false;
     }
 
@@ -641,10 +697,21 @@ bool offsetLinestring_boost(const std::vector<Point> &points_in,
 
     ind = 0;
     for( ; ind < points_out.size() ; ++ind){
-        if( calc_dist(r_at(points_out, ind), pRef2) < offset*1e-3 )
+        double dist = calc_dist(r_at(points_out, ind), pRef2);
+        if( dist < offset*1e-3 )
             break;
     }
-    pop_back(points_out, ind);
+
+    if (ind < points_out.size() ){pop_back(points_out, ind);
+    }
+    else{
+        ind = addSampleToGeometryClosestToPoint(points_out, pRef2, 1);
+        if(ind < 0)
+            points_out.clear();
+        else
+            points_out.erase(points_out.begin()+ind+1, points_out.end());
+
+    }
 
     unsample_linestring(points_out);
 
@@ -664,20 +731,20 @@ bool offsetLinestring_boost(const std::vector<Point> &points_in,
 }
 
 bool offsetLinestring_boost(const std::vector<Point> &points_in,
-                            Polygon &boundary_out,
+                            Polygon &poly_out,
                             double offset1,
                             double offset2,
                             bool endFlat,
                             int points_per_circle)
 {
-    boundary_out.points.clear();
+    poly_out.points.clear();
     if(points_in.empty()){
-        std::cout << "[ERROR - offsetLinestring_boost] No points given" << std::endl;
+        Logger().printError(__FUNCTION__, "No points given");
         return false;
     }
 
     if(offset1 < 1e-9 || offset2 < 1e-9){
-        std::cout << "[ERROR - offsetLinestring_boost] Invalid offsets" << std::endl;
+        Logger().printError(__FUNCTION__, "Invalid offsets");
         return false;
     }
 
@@ -722,7 +789,7 @@ bool offsetLinestring_boost(const std::vector<Point> &points_in,
         return false;
     if(result.size() == 1){
         for (auto && p : boost::geometry::exterior_ring(result.at(0))) {
-            boundary_out.points.emplace_back(Point(boost::geometry::get<0>(p),
+            poly_out.points.emplace_back(Point(boost::geometry::get<0>(p),
                                                    boost::geometry::get<1>(p), 0));
         }
     }
@@ -737,27 +804,131 @@ bool offsetLinestring_boost(const std::vector<Point> &points_in,
             double area = calc_area(poly);
             if(maxArea < area){
                 maxArea = area;
-                boundary_out = poly;
+                poly_out = poly;
             }
         }
     }
 
-    openPolygon(boundary_out);
-    size_t indMinDist = getGeomIndex(boundary_out.points, points_in.front());
+    openPolygon(poly_out);
+    size_t indMinDist = getGeomIndex(poly_out.points, points_in.front());
 
-    boundary_out.points.insert(boundary_out.points.end(), boundary_out.points.begin(), boundary_out.points.begin()+indMinDist);
-    boundary_out.points.erase(boundary_out.points.begin(), boundary_out.points.begin()+indMinDist);
+    poly_out.points.insert(poly_out.points.end(), poly_out.points.begin(), poly_out.points.begin()+indMinDist);
+    poly_out.points.erase(poly_out.points.begin(), poly_out.points.begin()+indMinDist);
 
-    closePolygon(boundary_out);
+    closePolygon(poly_out);
+    correct_polygon(poly_out);
+    remove_repeated_points(poly_out.points);
 
-    if(isPolygonValid(boundary_out) == PolygonValidity::INVALID_POLYGON){
-        std::cout << "[ERROR - offsetLinestring_boost] Final polygon is no valid" << std::endl;
+    if(isPolygonValid(poly_out) == PolygonValidity::INVALID_POLYGON){
+        Logger().printError(__FUNCTION__, "Final polygon is no valid");
         return false;
     }
 
     return true;
 
 }
+
+
+bool offsetLinestring_boost(const std::vector<Point> &points_in,
+                            PolygonWithHoles &poly_out,
+                            double offset1,
+                            double offset2,
+                            bool endFlat,
+                            int points_per_circle)
+{
+    poly_out.outer.points.clear();
+    poly_out.holes.clear();
+    if(points_in.empty()){
+        Logger().printError(__FUNCTION__, "No points given");
+        return false;
+    }
+
+    if(offset1 < 1e-9 || offset2 < 1e-9){
+        Logger().printError(__FUNCTION__, "Invalid offsets");
+        return false;
+    }
+
+    typedef double coordinate_type;
+    typedef boost::geometry::model::point<coordinate_type, 2, boost::geometry::cs::cartesian> boost_point_t;
+    typedef boost::geometry::model::polygon<boost_point_t> boost_polygon_t;
+    typedef boost::geometry::model::linestring<boost_point_t> boost_linestring_t;
+
+    boost_linestring_t input;
+    boost::geometry::model::multi_polygon<boost_polygon_t> result;
+
+    auto toArolibPolygon = [](const boost_polygon_t::ring_type& boost_poly, Polygon& aro_poly){
+        aro_poly.points.clear();
+        for (auto && p : boost_poly) {
+            aro_poly.points.emplace_back(Point(boost::geometry::get<0>(p), boost::geometry::get<1>(p), 0));
+        }
+    };
+
+    auto toArolibPolygonWithHoles = [&toArolibPolygon](const boost_polygon_t& boost_poly, PolygonWithHoles& aro_poly){
+        aro_poly.outer.points.clear();
+        aro_poly.holes.clear();
+        toArolibPolygon(boost_poly.outer(), aro_poly.outer);
+        for(size_t i = 0 ; i < boost_poly.inners().size() ; ++i){
+            aro_poly.holes.emplace_back(Polygon());
+            toArolibPolygon(boost_poly.inners().at(i), aro_poly.holes.back());
+            correct_polygon(aro_poly.holes.back());
+        }
+    };
+
+    for (auto && p : points_in) {
+        boost::geometry::append(input, boost_point_t(p.x, p.y));
+    }
+
+    boost::geometry::strategy::buffer::distance_asymmetric<coordinate_type> distance_strategy(offset1, offset2);
+    boost::geometry::strategy::buffer::join_round join_strategy_round(points_per_circle);
+    boost::geometry::strategy::buffer::join_miter join_strategy_flat;
+    boost::geometry::strategy::buffer::end_round end_strategy_round(points_per_circle);
+    boost::geometry::strategy::buffer::end_flat end_strategy_flat;
+    boost::geometry::strategy::buffer::point_circle circle_strategy(points_per_circle);
+    boost::geometry::strategy::buffer::side_straight side_strategy;
+
+    if(endFlat){
+        if(points_per_circle >= 0)
+            boost::geometry::buffer(input, result, distance_strategy,
+                                    side_strategy, join_strategy_round, end_strategy_flat, circle_strategy);
+        else
+            boost::geometry::buffer(input, result, distance_strategy,
+                                    side_strategy, join_strategy_flat, end_strategy_flat, circle_strategy);
+    }
+    else{
+        if(points_per_circle >= 0)
+            boost::geometry::buffer(input, result, distance_strategy,
+                                    side_strategy, join_strategy_round, end_strategy_round, circle_strategy);
+        else
+            boost::geometry::buffer(input, result, distance_strategy,
+                                    side_strategy, join_strategy_flat, end_strategy_round, circle_strategy);
+    }
+
+    if(result.empty())
+        return false;
+    if(result.size() == 1){
+        toArolibPolygonWithHoles(result.at(0), poly_out);
+    }
+    else{
+        double maxArea = std::numeric_limits<double>::lowest();
+        for(size_t i = 0 ; i < result.size() ; ++i){
+            PolygonWithHoles poly;
+            toArolibPolygonWithHoles(result.at(i), poly_out);
+            double area = calc_area(poly);
+            if(maxArea < area){
+                maxArea = area;
+                poly_out = poly;
+            }
+        }
+    }
+
+    if(isPolygonValid(poly_out.outer) == PolygonValidity::INVALID_POLYGON){
+        Logger().printError(__FUNCTION__, "Final polygon is no valid");
+        return false;
+    }
+
+    return true;
+}
+
 
 
 bool offsetLinestring_old(const std::vector<Point> &ls_in, std::vector<Point> &ls_out, const double &offset)
@@ -771,7 +942,7 @@ bool offsetLinestring_old(const std::vector<Point> &ls_in, std::vector<Point> &l
         return true;
     }
     if(!unsample_linestring(points_in)){
-        std::cout << "[Error : offsetLinestring] Error unsampling linestring" << std::endl;
+        Logger().printError(__FUNCTION__, "Error unsampling linestring");
         return false;
     }
     std::vector<Point> segments;
@@ -803,7 +974,7 @@ bool offsetLinestring_old(const std::vector<Point> &ls_in, std::vector<Point> &l
                               true,
                               true,
                               0) ){
-            std::cout << "[Error : offsetLinestring] Error obtaining the intersections between the offset segments" << std::endl;
+            Logger().printError(__FUNCTION__, "Error obtaining the intersections between the offset segments");
             return false;
         }
         if(i == 0){
@@ -820,7 +991,7 @@ bool offsetLinestring_old(const std::vector<Point> &ls_in, std::vector<Point> &l
                 points_in.erase(points_in.begin());
                 i-=2;
                 if(points_in.size() < 3){
-                    std::cout << "[Warning : offsetLinestring] No intersection between the offset segments obtained. Longest segment set as output." << std::endl;
+                    Logger().printWarning(__FUNCTION__, "No intersection between the offset segments obtained. Longest segment set as output");
                     ls_out.clear();
                     ls_out.push_back( longestSegment.first );
                     ls_out.push_back( longestSegment.second );
@@ -854,7 +1025,7 @@ bool offsetLinestring_old(const std::vector<Point> &ls_in, std::vector<Point> &l
             ls_out.back() = segments.back();
             points_in.pop_back();
             if(points_in.size() < 3){
-                std::cout << "[Warning : offsetLinestring] No intersection between the offset segments obtained. Longest segment set as output." << std::endl;
+                Logger().printWarning(__FUNCTION__, "No intersection between the offset segments obtained. Longest segment set as output");
                 ls_out.clear();
                 ls_out.push_back( longestSegment.first );
                 ls_out.push_back( longestSegment.second );
@@ -912,23 +1083,31 @@ bool offsetPolygon_boost(const Polygon &_poly_in, Polygon &poly_out, double offs
     poly_out.points.clear();
     auto polyValidity = isPolygonValid(_poly_in);
     if(polyValidity == PolygonValidity::INVALID_POLYGON){
-        std::cout <<"[ERROR : offsetBoundary_boost] The input polygon is not valid" << std::endl;
+        Logger().printError(__FUNCTION__, "The input polygon is not valid");
         return false;
     }
 
-    bool clockwise = isPolygonClockwise(_poly_in);
+    bool clockwise = isPolygonClockwise(polyValidity);
 
     offset = std::fabs(offset);
     if(!inflated)
         offset = -offset;
 
-    Polygon poly_in = _poly_in;
-    correct_polygon(poly_in);
+    Polygon poly_in;
+    Point ptTranslate = Point::invalidPoint();
 
+    if(std::fabs(offset) > 1e-2)
+       poly_in = _poly_in;
+    else{
+        ptTranslate = Point(0,0) - _poly_in.points.front();
+        poly_in.points = translate(_poly_in.points, ptTranslate);
+    }
+
+    correct_polygon(poly_in);
 
     openPolygon(poly_in);
     if(poly_in.points.size() < 3){
-        std::cout <<"[ERROR : offsetBoundary_boost] The input polygon must have at least 3 different points" << std::endl;
+        //Logger().printError(__FUNCTION__, "The input polygon must have at least 3 different points");
         return false;
     }
 
@@ -1048,8 +1227,11 @@ bool offsetPolygon_boost(const Polygon &_poly_in, Polygon &poly_out, double offs
     if(!clockwise)
         std::reverse( poly_out.points.begin() , poly_out.points.end() );
 
+    if(ptTranslate.isValid())
+        poly_out.points = translate(poly_out.points, Point(0,0) - ptTranslate);
+
     if(isPolygonValid(poly_out) == PolygonValidity::INVALID_POLYGON){
-        std::cout << "[ERROR - offsetBoundary_boost] Final polygon is no valid" << std::endl;
+        //Logger().printError(__FUNCTION__, "Final polygon is not valid");
         return false;
     }
 
@@ -1061,11 +1243,11 @@ bool offsetPolygon_clipper(const Polygon &_poly_in, Polygon &poly_out, double of
     poly_out.points.clear();
     auto polyValidity = isPolygonValid(_poly_in);
     if(polyValidity == PolygonValidity::INVALID_POLYGON){
-        std::cout <<"[ERROR : offsetBoundary_clipper] The input boundary is not valid" << std::endl;
+        Logger().printError(__FUNCTION__, "The input boundary is not valid");
         return false;
     }
 
-    bool clockwise = isPolygonClockwise(_poly_in);
+    bool clockwise = isPolygonClockwise(polyValidity);
 
     const double mult = 100000;
     const double multInv = 1/mult;
@@ -1079,7 +1261,7 @@ bool offsetPolygon_clipper(const Polygon &_poly_in, Polygon &poly_out, double of
 
     openPolygon(poly_in);
     if(poly_in.points.size() < 3){
-        std::cout <<"[ERROR : offsetBoundary_clipper] The input boundary must have at least 3 different points" << std::endl;
+        Logger().printError(__FUNCTION__, "The input boundary must have at least 3 different points");
         return false;
     }
     closePolygon(poly_in);
@@ -1174,11 +1356,11 @@ bool offsetPolygon_clipper(const Polygon &_poly_in, Polygon &poly_out, double of
 
     closePolygon(poly_out);
 
-    if(clockwise && !isPolygonClockwise(poly_out))
+    if(clockwise && !isPolygonClockwise(poly_out, clockwise))
         std::reverse(poly_out.points.begin(), poly_out.points.end());
 
     if(isPolygonValid(poly_out) == PolygonValidity::INVALID_POLYGON){
-        std::cout << "[ERROR - offsetBoundary_clipper] Final polygon is no valid" << std::endl;
+        Logger().printError(__FUNCTION__, "Final polygon is no valid");
         return false;
     }
 
@@ -1235,15 +1417,22 @@ int addSampleToGeometryClosestToPoint(std::vector<Point>& geom, const Point& p, 
 
 bool removeSpikes(Polygon &poly)
 {
-    PolygonValidity polyValidity;
-    bool clockwise, closed;
-    polyValidity = isPolygonValid(poly);
-
-    if(polyValidity==PolygonValidity::INVALID_POLYGON)
+    if(poly.points.size() < 3)
         return false;
 
-    clockwise = isPolygonClockwise(polyValidity);
-    closed = isPolygonClosed(polyValidity);
+    PolygonValidity polyValidity = isPolygonValid(poly);
+    bool clockwise = true, closed;
+    bool valid = polyValidity != PolygonValidity::INVALID_POLYGON;
+
+    if(valid){
+        clockwise = isPolygonClockwise(polyValidity);
+        closed = isPolygonClosed(polyValidity);
+    }
+    else{
+        auto size_orig = poly.points.size();
+        closePolygon(poly);
+        closed = (size_orig == poly.points.size());
+    }
 
     boost::geometry::correct(poly.points);
     boost::geometry::remove_spikes(poly.points);
@@ -1253,7 +1442,7 @@ bool removeSpikes(Polygon &poly)
     if(!closed)
         poly.points.pop_back();
 
-    return true;
+    return isPolygonValid(poly) != PolygonValidity::INVALID_POLYGON;
 }
 
 std::vector<Polygon> extractSubPolygons(const Polygon &_poly_in)
@@ -1582,7 +1771,8 @@ bool checkLineSegmentInPolygon(const Polygon &poly, const Point &p0, const Point
     boost::geometry::append(ls, p0);
     boost::geometry::append(ls, p1);
 
-    boost::geometry::intersection(poly.points, ls, intersectionPoints);
+    if(!boost::geometry::intersection(poly.points, ls, intersectionPoints))
+        return false;
 
     return (intersectionPoints.size() > 1); //if size == 1 -> the line is only in contact with the border
 }
@@ -1787,7 +1977,7 @@ Polygon create_circle(const Point &centroid,
         //circle.points.push_back( create_line(centroid, _radius, delta_angle*i, false) );
     }
     closePolygon(circle);
-    if(alwaysClockwise && !isPolygonClockwise(circle))
+    if(alwaysClockwise && !isPolygonClockwise(circle, alwaysClockwise))
         std::reverse( circle.points.begin() , circle.points.end() );
     return circle;
 }
@@ -2050,7 +2240,8 @@ std::vector<Point> get_intersection(const Point &p0, const Point &p1, const Poly
     boost::geometry::append(ls, p0);
     boost::geometry::append(ls, p1);
 
-    boost::geometry::intersection(ls,poly.points,intersection);
+    if(!boost::geometry::intersection(ls,poly.points,intersection))
+        return ret;
     for (unsigned int i = 0 ; i < intersection.size() ; ++i)
         ret.insert( ret.end(), intersection.at(i).begin(), intersection.at(i).end() );
 
@@ -2059,18 +2250,33 @@ std::vector<Point> get_intersection(const Point &p0, const Point &p1, const Poly
 
 std::vector<Point> get_intersection(const std::deque<Point>& ls, const Polygon& poly){
     std::vector<Point> ret;
-    boost::geometry::intersection(ls, poly.points, ret);
+    if(!boost::geometry::intersection(ls, poly.points, ret))
+        ret.clear();
     return ret;
 }
 
 std::vector<Point> get_intersection(const std::deque<Point>& ls1, const std::deque<Point>& ls2){
     std::vector<Point> ret;
-    boost::geometry::intersection(ls1, ls2, ret);
+    if(!boost::geometry::intersection(ls1, ls2, ret))
+        ret.clear();
     return ret;
 }
 
-std::vector<Polygon> get_intersection(const Polygon &poly1, const Polygon &poly2)
+std::vector<Polygon> get_intersection(const Polygon &poly1, const Polygon &poly2, double tolerance)
 {
+    double exp_dist = std::max(tolerance, 1e-9);
+
+    auto isSamePoly = [](const std::vector<Point>& pts1, const std::vector<Point>& pts2){
+        if(pts1.size() != pts2.size())
+            return false;
+        for(size_t i = 0 ; i < pts1.size() ; ++i){
+            if(std::fabs(pts1.at(i).x - pts2.at(i).x) > 1e-5
+                    || std::fabs(pts1.at(i).y - pts2.at(i).y) > 1e-5)
+                return false;
+        }
+        return true;
+    };
+
     std::vector< std::vector<Point> > intersection;
     std::vector<Polygon> ret;
 
@@ -2079,12 +2285,129 @@ std::vector<Polygon> get_intersection(const Polygon &poly1, const Polygon &poly2
 
 //    boost::geometry::correct(poly1.points);
 //    boost::geometry::correct(poly2.points);
-    boost::geometry::intersection(poly1.points,poly2.points,intersection);
+    if(!boost::geometry::intersection(poly1.points,poly2.points,intersection))
+        return ret;
+
+    Polygon poly1Tmp;
+    Polygon poly2Tmp;
+
+    const Polygon *poly1Compare = &poly1;
+
+    if(intersection.empty()){//boost sometimes fails when the polygons are adjacent
+        if(poly1Tmp.points.empty())
+            offsetPolygon(poly1, poly1Tmp, exp_dist, true, 0);
+        if(!boost::geometry::intersection(poly1Tmp.points,poly2.points,intersection))
+            return ret;
+        poly1Compare = &poly1Tmp;
+    }
 
     for (unsigned int i = 0 ; i < intersection.size() ; ++i){
+
+        //boost sometimes fails when the polygons are adjacent, returning the second polygon as intersection when in reality there is no intersection, hence this annoying check
+        if(isSamePoly(poly2.points, intersection.at(i))){//if the intersecction is indeed equal to poly2 -> all points must be inside poly1
+            if(poly1Tmp.points.empty())
+                offsetPolygon(poly1, poly1Tmp, exp_dist, true, 0);
+            if(!in_polygon(poly2.points, poly1Tmp, true))//wrong intersection!
+                continue;
+        }
+        if(isSamePoly(poly1Compare->points, intersection.at(i))){//if the intersecction is indeed equal to poly1 -> all points must be inside poly2
+            if(poly2Tmp.points.empty())
+                offsetPolygon(poly2, poly2Tmp, exp_dist, true, 0);
+            if(!in_polygon(poly1.points, poly2Tmp, true))//wrong intersection!
+                continue;
+        }
+
         ret.push_back(Polygon());
-        ret.back().points =intersection.at(i);
+        ret.back().points = intersection.at(i);
     }
+    return ret;
+
+    //Note: the following code gets the intersection using the booost geometries, but it still shows problems when the polygons are adjacent
+
+//    std::deque<boost_polygon_t> intersection;
+//    std::vector<Polygon> ret;
+
+//    if (poly1.points.empty() || poly2.points.empty())
+//        return ret;
+
+//    auto poly1_boost = toBoostPolygon(poly1);
+//    auto poly2_boost = toBoostPolygon(poly2);
+
+////    boost::geometry::correct(poly1_boost);
+////    boost::geometry::correct(poly2_boost);
+//    if(!boost::geometry::intersection(poly1_boost, poly2_boost, intersection))
+//        return ret;
+
+//    for (unsigned int i = 0 ; i < intersection.size() ; ++i){
+
+//        ret.push_back( fromBoostPolygon(intersection.at(i)).outer );
+//    }
+//    return ret;
+}
+
+std::vector<PolygonWithHoles> get_intersection(const Polygon &poly1, const PolygonWithHoles &poly2)
+{
+    std::vector<PolygonWithHoles> ret;
+    if (poly1.points.size() < 3 || poly2.outer.points.size() < 3)
+        return ret;
+
+    if(poly2.holes.empty()){
+        auto polys = get_intersection(poly1, poly2.outer);
+        ret.resize(polys.size());
+        for(size_t i = 0 ; i < ret.size() ; ++i)
+            ret.at(i).outer = polys.at(i);
+        return ret;
+    }
+
+    boost_polygon_t boostPoly1 = toBoostPolygon(poly1);
+    boost_polygon_t boostPoly2 = toBoostPolygon(poly2);
+    std::vector<boost_polygon_t> intersection;
+
+//    boost::geometry::correct(boostPoly1);
+//    boost::geometry::correct(boostPoly2);
+    if(!boost::geometry::intersection(boostPoly1, boostPoly2, intersection))
+        return ret;
+
+    ret.resize(intersection.size());
+    for (unsigned int i = 0 ; i < intersection.size() ; ++i)
+        ret.at(i) = fromBoostPolygon( intersection.at(i) );
+    return ret;
+}
+
+std::vector<PolygonWithHoles> get_intersection(const PolygonWithHoles &poly1, const PolygonWithHoles &poly2)
+{
+    std::vector<PolygonWithHoles> ret;
+    if (poly1.outer.points.size() < 3 || poly2.outer.points.size() < 3)
+        return ret;
+
+    if(poly1.holes.empty() && poly2.holes.empty()){
+        auto polys = get_intersection(poly1.outer, poly2.outer);
+        ret.resize(polys.size());
+        for(size_t i = 0 ; i < ret.size() ; ++i)
+            ret.at(i).outer = polys.at(i);
+        return ret;
+    }
+    if(poly1.holes.empty()){
+        ret = get_intersection(poly1.outer, poly2);
+        return ret;
+    }
+    if(poly2.holes.empty()){
+        ret = get_intersection(poly2.outer, poly1);
+        return ret;
+    }
+
+    boost_polygon_t boostPoly1 = toBoostPolygon(poly1);
+    boost_polygon_t boostPoly2 = toBoostPolygon(poly2);
+    std::vector<boost_polygon_t> intersection;
+
+//    boost::geometry::correct(boostPoly1);
+//    boost::geometry::correct(boostPoly2);
+    if(!boost::geometry::intersection(boostPoly1, boostPoly2, intersection))
+        return ret;
+
+    ret.resize(intersection.size());
+    for (unsigned int i = 0 ; i < intersection.size() ; ++i)
+        ret.at(i) = fromBoostPolygon( intersection.at(i) );
     return ret;
 }
 
@@ -2122,7 +2445,8 @@ bool getLineSegmentInPolygon(const Polygon &poly, const Point &p0_in, const Poin
     boost::geometry::append(ls, p0_in);
     boost::geometry::append(ls, p1_in);
 
-    boost::geometry::intersection(poly.points, ls, intersectionPoints);
+    if(!boost::geometry::intersection(poly.points, ls, intersectionPoints))
+        return false;
 
     if (intersectionPoints.size() == 0)
         return false;
@@ -2239,10 +2563,8 @@ bool getLineSegmentInRectangle(const Point& reference_corner,
         return true;
     }
 
-    //***debug
-    if (int_points.size() > 2)
-        std::cout << "[ERROR : getLineSegmentInRectangle] More than two intersection points found!" << std::endl;
-    //***debug
+//    if (int_points.size() > 2)
+//        Logger().printWarning(__FUNCTION__, "More than two intersection points found!");
 
     //keep the direction of the original line
     if ( p0_in.x == p1_in.x ){
@@ -2396,6 +2718,8 @@ void subtract_intersection(const Polygon& poly1, const Polygon& poly2, std::vect
 
     polys_out.resize( diffPolys.size() );
     for (unsigned int i = 0 ; i < diffPolys.size() ; ++i){
+        boost::geometry::correct(diffPolys.at(i));
+        boost::geometry::remove_spikes(diffPolys.at(i));
         polys_out.at(i) = fromBoostPolygon(diffPolys.at(i));
     }
 

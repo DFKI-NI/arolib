@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -49,7 +49,7 @@ AroKMLOutDocument::~AroKMLOutDocument()
 bool AroKMLOutDocument::setCoordinatesTypes(Point::ProjectionType in, Point::ProjectionType out)
 {
     if(m_isDocOpen){
-        m_logger.printError(__FUNCTION__, "Cannot set the coordinates' types when the document is already open");
+        logger().printError(__FUNCTION__, "Cannot set the coordinates' types when the document is already open");
         return false;
     }
     m_coordinatesType_in = in;
@@ -86,7 +86,7 @@ bool AroKMLOutDocument::add(const Point &pt, const std::string &name, const std:
             *m_os <<pt.x<<","<<pt.y<<","<<pt.z;
     }
     catch(...){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Exception cought. point = " + pt.toString(10));
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Exception cought. point = " + pt.toString(10));
         ok = false;
     }
     *m_os << std::endl;
@@ -141,7 +141,7 @@ bool AroKMLOutDocument::add(const std::vector<Point> &pts, const std::string &na
                 *m_os <<pt.x<<","<<pt.y<<","<<pt.z<<" ";
         }
         catch(...){
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Exception cought. point = " + pt.toString(10));
+            logger().printOut(LogLevel::ERROR, __FUNCTION__, "Exception cought. point = " + pt.toString(10));
             ok = false;
         }
     }
@@ -190,7 +190,7 @@ bool AroKMLOutDocument::add(const Linestring &ls, const std::string &name, const
                 *m_os <<pt.x<<","<<pt.y<<","<<pt.z<<" ";
         }
         catch(...){
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Exception cought. point = " + pt.toString(10));
+            logger().printOut(LogLevel::ERROR, __FUNCTION__, "Exception cought. point = " + pt.toString(10));
             ok = false;
         }
     }
@@ -251,7 +251,7 @@ bool AroKMLOutDocument::add(const Polygon &poly, const std::string &name, const 
                 *m_os <<pt.x<<","<<pt.y<<","<<pt.z<<" ";
         }
         catch(...){
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Exception cought. point = " + pt.toString(10));
+            logger().printOut(LogLevel::ERROR, __FUNCTION__, "Exception cought. point = " + pt.toString(10));
             ok = false;
         }
     }
@@ -437,6 +437,7 @@ bool AroKMLOutDocument::add(const Headlands &headlands, std::string tag, const s
     }
 
     ok &= add(headlands.complete, UseDefaultTag, styleUrl_complete);
+    ok &= add(headlands.partial, UseDefaultTag, styleUrl_partial);
 
     if(!tag.empty())
         closeTag();
@@ -469,6 +470,54 @@ bool AroKMLOutDocument::add(const CompleteHeadland &hl, std::string tag, const s
     return ok;
 }
 
+bool AroKMLOutDocument::add(const PartialHeadland &hl, std::string tag, const std::string &styleUrl)
+{
+    bool ok = true;
+    if(!isReadyToWrite())
+        return false;
+
+    tag = getTag<PartialHeadland>(tag);
+    if(!tag.empty()){
+        openTag(KMLTag_folder);
+        ok &= add(tag, KMLTag_name);
+    }
+
+    ok &= add(getDescription(hl), KMLTag_description);
+    ok &= add(hl.boundary, "boundary", "", getStyleUrl(Geom_Headland_boundary, styleUrl) );
+    ok &= add(hl.tracks, UseDefaultTag, getStyleUrl(Geom_Headland_track, styleUrl), getStyleUrl(Geom_Headland_track_boundary, styleUrl));
+
+    if(!tag.empty())
+        closeTag();
+
+    return ok;
+}
+
+bool AroKMLOutDocument::add(const std::vector<PartialHeadland> &headlands, std::string tag, const std::string &styleUrl)
+{
+    bool ok = true;
+    if(!isReadyToWrite())
+        return false;
+
+    if(headlands.empty())
+        return true;
+
+    tag = getTag<std::vector<PartialHeadland>>(tag);
+    if(!tag.empty()){
+        openTag(KMLTag_folder);
+        ok &= add(tag, KMLTag_name);
+    }
+
+    for(auto &hl : headlands){
+        ok &= add(hl, UseDefaultTag, styleUrl);
+        if(!ok)
+            break;
+    }
+    if(!tag.empty())
+        closeTag();
+
+    return ok;
+
+}
 
 bool AroKMLOutDocument::add(const Obstacle &obs, std::string tag, const std::string &styleUrl){
     bool ok = true;
@@ -873,21 +922,15 @@ std::string AroKMLOutDocument::getDescription(const ResourcePoint &pt)
 
 }
 
-std::string AroKMLOutDocument::getDescription(const HeadlandPoint &pt)
-{
-    return    "track_id=" + std::to_string(pt.track_id);
-}
-
 std::string AroKMLOutDocument::getDescription(const RoutePoint &pt)
 {
     return    getTag(pt.type) + "=" + std::to_string(pt.type) + "\n"
             + "time_stamp=" + double2string(pt.time_stamp) + "\n"
             + "track_id=" + std::to_string(pt.track_id) + "\n"
-            + "track_idx=" + std::to_string(pt.track_idx) + "\n"
             + "bunker_mass=" + double2string(pt.bunker_mass) + "\n"
             + "bunker_volume=" + double2string(pt.bunker_volume) + "\n"
-            + "harvested_mass=" + double2string(pt.harvested_mass) + "\n"
-            + "harvested_volume=" + double2string(pt.harvested_volume);
+            + "worked_mass=" + double2string(pt.worked_mass) + "\n"
+            + "worked_volume=" + double2string(pt.worked_volume);
     //todo add machineRelations
 
 }
@@ -909,6 +952,13 @@ std::string AroKMLOutDocument::getDescription(const Obstacle &obs)
 std::string AroKMLOutDocument::getDescription(const CompleteHeadland &hl)
 {
     return  "width=" + double2string(hl.headlandWidth);
+}
+
+std::string AroKMLOutDocument::getDescription(const PartialHeadland &hl)
+{
+    return  "id=" + std::to_string(hl.id) + "\n"
+            + "connectingHeadlandId1=" + std::to_string(hl.connectingHeadlandIds.first) + "\n"
+            + "connectingHeadlandId2=" + std::to_string(hl.connectingHeadlandIds.second);
 }
 
 }

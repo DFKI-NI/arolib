@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -116,7 +116,9 @@ Point& Point::operator/=(const double s)
 
 bool Point::operator==(const Point& p) const
 {
-    static double epsilon = 0.00001;
+    if(!this->isValid() || !p.isValid())
+        return false;
+    static const double epsilon = 0.00001;
     return ( fabs(x-p.x) < epsilon && fabs(y-p.y) < epsilon );
 }
 
@@ -127,7 +129,7 @@ bool Point::operator!=(const Point& p) const
 
 bool Point::operator <(const Point& p) const
 {
-    static double epsilon = 0.00001;
+    static const double epsilon = 0.00001;
     if (fabs(x-p.x) > epsilon)
         return x < p.x;
     else if (fabs(y - p.y) > epsilon)
@@ -190,22 +192,29 @@ std::string Point::toStringCSV(const std::vector<Point> &points, char sep, int p
 
 std::string Point::toStringCSV(const std::vector<std::vector<Point> > &v_points, char sep, int precision, bool incZ)
 {
+    std::vector<const std::vector<Point> *> v_points_p(v_points.size());
+    for(size_t i = 0 ; i < v_points_p.size() ; ++i)
+        v_points_p[i] = &(v_points[i]);
+    return toStringCSV(v_points_p, sep, precision, incZ);
+}
+
+std::string Point::toStringCSV(const std::vector<const std::vector<Point> *> &v_points, char sep, int precision, bool incZ)
+{
     std::string sout;
     size_t maxSize = 0;
     for(const auto& v : v_points)
-        maxSize = std::max(maxSize, v.size());
+        maxSize = std::max(maxSize, v->size());
 
     for(size_t i = 0 ; i < maxSize ; ++i){
         for(const auto& v : v_points){
-            if(i < v.size())
-                sout += ( v.at(i).toStringCSV(sep, precision, incZ) + ";;" );
+            if(i < v->size())
+                sout += ( v->at(i).toStringCSV(sep, precision, incZ) + ";;" );
             else
                 sout += (incZ ? ";;;;" : ";;;");
         }
         sout += "\n";
     }
     return sout;
-
 }
 
 void Point::setInvalid()

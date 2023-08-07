@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ namespace io {
 XMLOutDocument::XMLOutDocument(LogLevel logLevel):
     AroOutDocument(logLevel)
 {
-    m_logger = Logger(logLevel, __FUNCTION__);
+    logger() = Logger(logLevel, __FUNCTION__);
 }
 
 XMLOutDocument::~XMLOutDocument()
@@ -81,8 +81,8 @@ bool XMLOutDocument::add(const char *value, std::string tag)
 bool XMLOutDocument::add(const std::string &value, std::string tag){
     if(!isReadyToWrite())
         return false;
-    if(value.empty())
-        return true;
+//    if(value.empty())
+//        return true;
     tabs();
     *m_os << "<" << tag << ">" << value << "</" << tag << ">\n";
     return true;

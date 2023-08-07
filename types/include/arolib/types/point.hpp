@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,8 +21,11 @@
 #include <vector>
 #include <string>
 #include <cmath>
+#include <iomanip>
 
 #include <boost/functional/hash.hpp>
+
+#include "arolib/misc/basicconversions.hpp"
 
 namespace arolib {
 /**
@@ -30,6 +33,7 @@ namespace arolib {
   */
 class Point {
 public:
+
     double x; /**< X-coordinate (UTM: easting ; geo: longitude) */
     double y; /**< Y-coordinate (UTM: northing ; geo: latitude) */
     double z; /**< Z-coordinate (height) */
@@ -190,7 +194,7 @@ public:
       * @param incZ If true, the z-coordinate is included; otherwise, only x and y are included
       * @return String description of the point
       */
-    std::string toString(int precision = -1, bool incZ = false) const;
+    std::string toString(int precision = 10, bool incZ = false) const;
 
     /**
       * @brief Get the point attributes as a string with CSV format (separator)
@@ -199,7 +203,7 @@ public:
       * @param incZ If true, the z-coordinate is included; otherwise, only x and y are included
       * @return String description of the point
       */
-    std::string toStringCSV(char sep = ';', int precision = -1, bool incZ = false) const;
+    std::string toStringCSV(char sep = ';', int precision = 10, bool incZ = false) const;
 
     /**
       * @brief Print a set of points in a string with CSV format
@@ -220,6 +224,16 @@ public:
       * @return (CSV) String description of the sets of points
       */
     static std::string toStringCSV(const std::vector< std::vector<Point> >& v_points, char sep = ';', int precision = 10, bool incZ = false);
+
+    /**
+      * @brief Print a (several) sets of points in a string with CSV format
+      * @param points Sets of points to be printed
+      * @param sep Character to be used as separator
+      * @param precision Decimal precision (disregarded if < 0)
+      * @param incZ If true, the z-coordinate is included; otherwise, only x and y are included
+      * @return (CSV) String description of the sets of points
+      */
+    static std::string toStringCSV(const std::vector< const std::vector<Point>* >& v_points, char sep = ';', int precision = 10, bool incZ = false);
 
     /**
       * @brief Set the point as invalid
@@ -268,7 +282,7 @@ public:
         if(indn < 0 || indn >= in.size())
             indn = in.size()-1;
         ind0 = std::min(ind0, in.size());
-        std::vector<Point> ret( indn-ind0+1 );
+        std::vector<T> ret( indn-ind0+1 );
         for(size_t i = 0 ; i < ret.size(); ++i)
            ret[i].point() = in[i+ind0];
         return ret;
@@ -296,10 +310,12 @@ public:
   * @return Updated output stream
   */
 inline std::ostream& operator<< (std::ostream &ostr, const Point& pt) {
-    ostr << "(" << pt.x << ", " << pt.y << ")";
+    ostr <<  std::setprecision(3) << "(" << pt.x << ", " << pt.y << ")";
     return ostr;
 }
 
+using PointVec = std::vector<Point>;
+using PointVecVec = std::vector<std::vector<Point>>;
 
 /**
   * @brief Scalar multiplication

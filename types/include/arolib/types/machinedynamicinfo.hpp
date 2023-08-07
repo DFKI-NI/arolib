@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@
 
 #include <vector>
 #include "point.hpp"
+#include "machine.hpp"
 
 namespace arolib {
 
@@ -31,19 +32,44 @@ public:
     /**
       * @brief Constructor
       */
-    explicit MachineDynamicInfo():
-        position( Point(0,0) ),
-        theta(0),
-        bunkerMass(0),
-        bunkerVolume(0){}
+    explicit MachineDynamicInfo() = default;
 
-    Point position; /**< Position/location of the machine */
-    double theta; /**< Orientation angle of the machine w.r.t. the x-axis [Rad] */
-    double bunkerMass; /**< Yield mass in the bunker [kg] */
-    double bunkerVolume; /**< Yield volume in the bunker [m³] */
+    Point position = Point(0,0); /**< Position/location of the machine */
+    double theta = 0; /**< Orientation angle of the machine w.r.t. the x-axis [Rad] */
+    double bunkerMass = 0; /**< Yield mass in the bunker [kg] */
+    double bunkerVolume = 0; /**< Yield volume in the bunker [m³] */
+    double timestamp = 0; /**< Current timestamp of the machine */
+
+    /**
+      * @brief Check if the information is valid
+      * @return True if valid
+      */
+    bool isValid() const;
+
+    /**
+      * @brief Check if the information is valid
+      * @param mdi Map containing machine dynamic info
+      * @return True if valid
+      */
+    static bool isValid(const std::map<MachineId_t, MachineDynamicInfo>& mdi);
+
+    /**
+      * @brief Check if the information is valid
+      * @param mdi Vector containing machine dynamic info
+      * @return True if valid
+      */
+    static bool isValid(const std::vector<MachineDynamicInfo>& mdi);
 
 };
 
+inline bool operator==(const MachineDynamicInfo& lhs, const MachineDynamicInfo& rhs) {
+    const double eps = 1e-9;
+  return (lhs.position == rhs.position)
+          && std::fabs(lhs.theta - rhs.theta) < eps
+          && std::fabs(lhs.bunkerMass - rhs.bunkerMass)  < eps
+          && std::fabs(lhs.bunkerVolume - rhs.bunkerVolume) < eps
+          && std::fabs(lhs.timestamp - rhs.timestamp) < eps;
+}
 
 }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -41,20 +41,11 @@ public:
     std::vector<Polygon> holes; /**< Holes */
 };
 
-
-/**
-  * @brief Overload << operator to make Polygon printable 
-  */
 inline std::ostream& operator<< (std::ostream &out, const arolib::Polygon& data) {
   out << "Polygon { ";
-  
   for(const auto& point: data.points)
-  {
-    out << point << " ";
-  }
-
+  { out << point << " "; }
   out << "}";
-
   return out;
 }
 

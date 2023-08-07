@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -61,7 +61,7 @@ struct DubinsParams{
     Point p2; /**< Target point */
     double rho1; /**< Sourse orientation/angle */
     double rho2;/**< Target orientation/angle */
-    PathType type; /**< Path type */
+    PathType type = DubinsParams::SHORTEST; /**< Path type */
 };
 
 /**

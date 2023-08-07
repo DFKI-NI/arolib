@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,57 @@
 
 namespace arolib {
 namespace io {
+namespace {
+
+template< typename T,
+          typename = typename std::enable_if<std::is_arithmetic<T>::value, T>::type >
+bool from_single_string( const std::string & values_str, std::vector<T>& values_out, char sep = ';' ){
+    values_out.clear();
+    try{
+        std::string _sep;
+        _sep.push_back(sep);
+        std::vector<std::string> strs;
+        boost::split(strs, values_str, boost::is_any_of(_sep));
+
+        values_out.reserve(strs.size());
+
+        for(auto& v : strs){
+            if(!v.empty())
+                values_out.push_back(string2double(v));
+        }
+        return true;
+
+    }
+    catch(...){
+        values_out.clear();
+        return false;
+    }
+}
+
+template< typename T,
+          typename = typename std::enable_if<std::is_arithmetic<T>::value, T>::type >
+bool from_single_string( const std::string & values_str, std::set<T> & values_out, char sep = ';' ){
+    values_out.clear();
+    try{
+        std::string _sep;
+        _sep.push_back(sep);
+        std::vector<std::string> strs;
+        boost::split(strs, values_str, boost::is_any_of(_sep));
+
+        for(auto& v : strs){
+            if(!v.empty())
+                values_out.insert(string2double(v));
+        }
+        return true;
+
+    }
+    catch(...){
+        values_out.clear();
+        return false;
+    }
+}
+
+}
 
 AroXMLInDocument::AroXMLInDocument(LogLevel logLevel):
     XMLInDocument(logLevel)
@@ -37,7 +88,7 @@ bool AroXMLInDocument::readCoodinatesInputType(const XMLInDocument::ReadHandler 
 
     sType = boost::to_upper_copy(sType0);
     if(sType != "UTM" && sType != "WGS"){
-        m_logger.printWarning(__FUNCTION__, "Invalid coordinates type " + sType0 + ". Using default." );
+        logger().printWarning(__FUNCTION__, "Invalid coordinates type " + sType0 + ". Using default." );
         return false;
     }
     if(sType == "UTM")
@@ -49,7 +100,7 @@ bool AroXMLInDocument::readCoodinatesInputType(const XMLInDocument::ReadHandler 
 bool AroXMLInDocument::read( const ReadHandler & base, Point &pt)
 {
     if(!m_isDocOpen){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
         return false;
     }
 
@@ -59,7 +110,7 @@ bool AroXMLInDocument::read( const ReadHandler & base, Point &pt)
 bool AroXMLInDocument::read( const ReadHandler & base, std::vector<Point> &pts)
 {
     if(!m_isDocOpen){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
         return false;
     }
 
@@ -68,7 +119,7 @@ bool AroXMLInDocument::read( const ReadHandler & base, std::vector<Point> &pts)
 
 bool AroXMLInDocument::read( const ReadHandler & base, Linestring &ls){
     if(!m_isDocOpen){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
         return false;
     }
 
@@ -86,14 +137,14 @@ bool AroXMLInDocument::read( const ReadHandler & base, Linestring &ls){
         return ( !m_strict || (ok_id) );
     }
     catch(std::exception &e){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, std::string("Linestring: ") + e.what());
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, std::string("Linestring: ") + e.what());
         return false;
     }
 }
 
 bool AroXMLInDocument::read( const ReadHandler & base, Polygon &poly){
     if(!m_isDocOpen){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
         return false;
     }
 
@@ -108,7 +159,7 @@ bool AroXMLInDocument::read( const ReadHandler & base, Polygon &poly){
         return true;
     }
     catch(std::exception &e){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, std::string("Polygon: ") + e.what());
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, std::string("Polygon: ") + e.what());
         return false;
     }
 }
@@ -117,7 +168,7 @@ bool AroXMLInDocument::read( const ReadHandler & base, FieldAccessPoint &pt){
 
     pt = FieldAccessPoint();
     if(!m_isDocOpen){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
         return false;
     }
 
@@ -142,7 +193,7 @@ bool AroXMLInDocument::read( const ReadHandler & base, FieldAccessPoint &pt){
         return ( !m_strict || (ok_id && ok_at) );
     }
     catch(std::exception &e){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, std::string("FieldAccessPoint: ") + e.what());
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, std::string("FieldAccessPoint: ") + e.what());
         return false;
     }
 }
@@ -155,7 +206,7 @@ bool AroXMLInDocument::read( const ReadHandler & base, ResourcePoint &pt){
 
     pt = ResourcePoint();
     if(!m_isDocOpen){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
         return false;
     }
 
@@ -187,7 +238,7 @@ bool AroXMLInDocument::read( const ReadHandler & base, ResourcePoint &pt){
         return ( !m_strict || (ok_id && ok_ut) );
     }
     catch(std::exception &e){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, std::string("ResourcePoint: ") + e.what());
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, std::string("ResourcePoint: ") + e.what());
         return false;
     }
 }
@@ -216,13 +267,13 @@ bool AroXMLInDocument::read(const AroXMLInDocument::ReadHandler &base, std::set<
                 resourceTypes.insert( type );
             }
             catch(std::exception &e){
-                m_logger.printWarning(__FUNCTION__, std::string("Invalid resource types: ") + e.what() );
+                logger().printWarning(__FUNCTION__, std::string("Invalid resource types: ") + e.what() );
                 continue;
             }
         }
     }
     catch(std::exception &e){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Cannot parse/split the resource types '" + sTypes + "': " + e.what());
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Cannot parse/split the resource types '" + sTypes + "': " + e.what());
         return false;
     }
 
@@ -232,7 +283,7 @@ bool AroXMLInDocument::read(const AroXMLInDocument::ReadHandler &base, std::set<
 bool AroXMLInDocument::read( const ReadHandler & base, RoutePoint &pt){
     pt = RoutePoint();
     if(!m_isDocOpen){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
         return false;
     }
 
@@ -254,11 +305,10 @@ bool AroXMLInDocument::read( const ReadHandler & base, RoutePoint &pt){
 
         ok_bm = getValue(RHTree(base), "bunker_mass", pt.bunker_mass);
         ok_bv = getValue(RHTree(base), "bunker_volume", pt.bunker_volume);
-        ok_hm = getValue(RHTree(base), "harvested_mass", pt.harvested_mass);
-        ok_hv = getValue(RHTree(base), "harvested_volume", pt.harvested_volume);
+        ok_hm = getValue(RHTree(base), "worked_mass", pt.worked_mass) || getValue(RHTree(base), "harvested_mass", pt.worked_mass);
+        ok_hv = getValue(RHTree(base), "worked_volume", pt.worked_volume) || getValue(RHTree(base), "harvested_volume", pt.worked_volume);
         ok_ts = getValue(RHTree(base), "time_stamp", pt.time_stamp);
         ok_ti = getValue(RHTree(base), "track_id", pt.track_id);
-        getValue(RHTree(base), "track_idx", pt.track_idx);
 
         if( getValue(RHTree(base), getTag(pt.type), tmp) ){
             pt.type = RoutePoint::intToRoutePointType(tmp);
@@ -268,7 +318,7 @@ bool AroXMLInDocument::read( const ReadHandler & base, RoutePoint &pt){
         return ( !m_strict || (ok_bm && ok_bv && ok_hm && ok_hv && ok_ts && ok_ti && ok_t) );
     }
     catch(std::exception &e){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, std::string("RoutePoint: ") + e.what());
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, std::string("RoutePoint: ") + e.what());
         return false;
     }
 }
@@ -277,39 +327,10 @@ bool AroXMLInDocument::read( const ReadHandler & base, std::vector<RoutePoint> &
     return readMultiple(base, pts, UseDefaultTag, true);
 }
 
-bool AroXMLInDocument::read( const ReadHandler & base, HeadlandPoint &pt){
-    pt = HeadlandPoint();
-    if(!m_isDocOpen){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
-        return false;
-    }
-
-    try{
-        bool ok_ti = false;
-        ReadHandler branch;
-
-        if(!getBranch(base, getTag(pt.point()), branch))
-            return false;
-        if(!read(branch, pt.point()))
-            return false;
-
-        ok_ti = getValue(RHTree(base), "track_id", pt.track_id);
-
-        return ( !m_strict || (ok_ti) );
-    }
-    catch(std::exception &e){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, std::string("RoutePoint: ") + e.what());
-        return false;
-    }
-}
-
-bool AroXMLInDocument::read( const ReadHandler & base, std::vector<HeadlandPoint> &pts){
-    return readMultiple(base, pts, UseDefaultTag, true);
-}
 bool AroXMLInDocument::read( const ReadHandler & base, Track &track){
     track = Track();
     if(!m_isDocOpen){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
         return false;
     }
 
@@ -338,7 +359,7 @@ bool AroXMLInDocument::read( const ReadHandler & base, Track &track){
         return (true);
     }
     catch(std::exception &e){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, std::string("Track: ") + e.what());
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, std::string("Track: ") + e.what());
         return false;
     }
 }
@@ -351,7 +372,7 @@ bool AroXMLInDocument::read(const AroXMLInDocument::ReadHandler &base, Headlands
 {
     headlands = Headlands();
     if(!m_isDocOpen){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
         return false;
     }
 
@@ -363,10 +384,15 @@ bool AroXMLInDocument::read(const AroXMLInDocument::ReadHandler &base, Headlands
                 return false;
         }
 
+        if(getBranch(base, getTag(headlands.partial), branch)){
+            if(!read(branch, headlands.partial))
+                return false;
+        }
+
         return (true);
     }
     catch(std::exception &e){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, std::string("Headlands: ") + e.what());
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, std::string("Headlands: ") + e.what());
         return false;
     }
 
@@ -376,7 +402,7 @@ bool AroXMLInDocument::read(const AroXMLInDocument::ReadHandler &base, CompleteH
 {
     hl = CompleteHeadland();
     if(!m_isDocOpen){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
         return false;
     }
 
@@ -407,17 +433,62 @@ bool AroXMLInDocument::read(const AroXMLInDocument::ReadHandler &base, CompleteH
         return (true);
     }
     catch(std::exception &e){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, std::string("CompleteHeadland: ") + e.what());
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, std::string("CompleteHeadland: ") + e.what());
         return false;
     }
 
+}
+
+bool AroXMLInDocument::read(const AroXMLInDocument::ReadHandler &base, PartialHeadland &hl)
+{
+    hl = PartialHeadland();
+    if(!m_isDocOpen){
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
+        return false;
+    }
+
+    try{
+        ReadHandler branch;
+        bool ok_ob = false;
+
+        getValue(RHTree(base), "id", hl.id);
+
+        int connectingHeadlandId1 = hl.connectingHeadlandIds.first;
+        int connectingHeadlandId2 = hl.connectingHeadlandIds.second;
+        getValue(RHTree(base), "connectingHeadlandId1", connectingHeadlandId1);
+        getValue(RHTree(base), "connectingHeadlandId2", connectingHeadlandId2);
+        hl.connectingHeadlandIds = std::make_pair(connectingHeadlandId1, connectingHeadlandId2);
+
+        if(getBranch(base, "boundary", branch)){
+            if(!read(branch, hl.boundary))
+                return false;
+            ok_ob = true;
+        }
+
+        if(getBranch(base, getTag(hl.tracks), branch)){
+            if(!read(branch, hl.tracks))
+                return false;
+        }
+
+        return ( !m_strict || (ok_ob) );
+    }
+    catch(std::exception &e){
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, std::string("PartialHeadland: ") + e.what());
+        return false;
+    }
+
+}
+
+bool AroXMLInDocument::read(const AroXMLInDocument::ReadHandler &base, std::vector<PartialHeadland> &headlands)
+{
+    return readMultiple(base, headlands, UseDefaultTag, true);
 }
 
 bool AroXMLInDocument::read(const AroXMLInDocument::ReadHandler &base, Obstacle &obs)
 {
     obs = Obstacle();
     if(!m_isDocOpen){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
         return false;
     }
 
@@ -438,7 +509,7 @@ bool AroXMLInDocument::read(const AroXMLInDocument::ReadHandler &base, Obstacle 
         return true;
     }
     catch(std::exception &e){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, std::string("Obstacle: ") + e.what());
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, std::string("Obstacle: ") + e.what());
         return false;
     }
 
@@ -453,7 +524,7 @@ bool AroXMLInDocument::read( const ReadHandler & base, Subfield &sf){
 
     sf = Subfield();
     if(!m_isDocOpen){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
         return false;
     }
 
@@ -487,7 +558,7 @@ bool AroXMLInDocument::read( const ReadHandler & base, Subfield &sf){
                 if(v.first == "reference_line"){
                     sf.reference_lines.push_back( Linestring() );
                     if(!read( createRH(v.second), sf.reference_lines.back())){
-                        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error reading reference line " + std::to_string(sf.reference_lines.size()));
+                        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error reading reference line " + std::to_string(sf.reference_lines.size()));
                         sf.reference_lines.pop_back();
                         return false;
                     }
@@ -520,7 +591,7 @@ bool AroXMLInDocument::read( const ReadHandler & base, Subfield &sf){
                             sf.obstacles.push_back( Obstacle() );
                             sf.obstacles.back().type = Obstacle::OBS_OTHER;
                             if(!read( createRH(v.second), sf.obstacles.back().boundary)){
-                                m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error reading obstacle " + std::to_string(sf.obstacles.size()));
+                                logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error reading obstacle " + std::to_string(sf.obstacles.size()));
                                 sf.obstacles.pop_back();
                                 return false;
                             }
@@ -555,7 +626,7 @@ bool AroXMLInDocument::read( const ReadHandler & base, Subfield &sf){
         return ( !m_strict || (ok_ob) );
     }
     catch(std::exception &e){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, std::string("Subfield: ") + e.what());
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, std::string("Subfield: ") + e.what());
         return false;
     }
 
@@ -567,7 +638,7 @@ bool AroXMLInDocument::read( const ReadHandler & base, std::vector<Subfield> &sf
 
 bool AroXMLInDocument::read( const ReadHandler & base, Field &field){
     if(!m_isDocOpen){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
         return false;
     }
 
@@ -599,7 +670,7 @@ bool AroXMLInDocument::read( const ReadHandler & base, Field &field){
         return ( !m_strict || (ok_id && ok_n) );
     }
     catch(std::exception &e){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, std::string("Field: ") + e.what());
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, std::string("Field: ") + e.what());
         return false;
     }
 }
@@ -608,7 +679,7 @@ bool AroXMLInDocument::read( const ReadHandler & base, Machine &m){
 
     m = Machine();
     if(!m_isDocOpen){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
         return false;
     }
 
@@ -636,7 +707,10 @@ bool AroXMLInDocument::read( const ReadHandler & base, Machine &m){
         requiredCount += getValue(RHTree(base), "max_speed_empty", m.max_speed_empty);
         requiredCount += getValue(RHTree(base), "max_speed_full", m.max_speed_full);
         requiredCount += getValue(RHTree(base), "def_working_speed", m.def_working_speed);
+        getValue(RHTree(base), "unloading_speed_mass", m.unloading_speed_mass);
+        getValue(RHTree(base), "unloading_speed_volume", m.unloading_speed_volume);
         getValue(RHTree(base), "turning_radius", m.turning_radius);
+        getValue(RHTree(base), "num_axis", m.num_axis);
         getValue(RHTree(base), "axis_distance", m.axis_distance);
         getValue(RHTree(base), "gauge", m.gauge);
         getValue(RHTree(base), "engine_power", m.engine_power);
@@ -659,7 +733,7 @@ bool AroXMLInDocument::read( const ReadHandler & base, Machine &m){
         return (requiredCount == 6) && ( !m_strict || optionalCount == 8 );
     }
     catch(std::exception &e){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, std::string("Machine: ") + e.what());
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, std::string("Machine: ") + e.what());
         return false;
     }
 
@@ -673,7 +747,7 @@ bool AroXMLInDocument::read( const ReadHandler & base, Route &route){
 
     route = Route();
     if(!m_isDocOpen){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
         return false;
     }
 
@@ -696,41 +770,10 @@ bool AroXMLInDocument::read( const ReadHandler & base, std::vector<Route> &route
     return readMultiple(base, routes, UseDefaultTag, true);
 }
 
-bool AroXMLInDocument::read( const ReadHandler & base, HeadlandRoute &route){
-
-    route = HeadlandRoute();
-    if(!m_isDocOpen){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
-        return false;
-    }
-
-
-    bool ok_mid = false;
-    bool ok_rid = false;
-    bool ok_sfid = false;
-    ReadHandler branch;
-
-
-    ok_mid = getValue(RHTree(base), "machine_id", route.machine_id);
-    ok_rid = getValue(RHTree(base), "route_id", route.route_id);
-    ok_sfid = getValue(RHTree(base), "subfield_id", route.subfield_id);
-
-    if( getBranch(base, getTag(route.route_points), branch) ){
-        if(!read(branch, route.route_points))
-            return false;
-    }
-
-    return ( !m_strict || (ok_mid && ok_rid && ok_sfid) );
-}
-
-bool AroXMLInDocument::read( const ReadHandler & base, std::vector<HeadlandRoute> &routes){
-    return readMultiple(base, routes, UseDefaultTag, true);
-}
-
 bool AroXMLInDocument::read( const ReadHandler & base, std::pair< MachineId_t, MachineDynamicInfo> &dynamicInfo){
 
     if(!m_isDocOpen){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
         return false;
     }
 
@@ -738,13 +781,14 @@ bool AroXMLInDocument::read( const ReadHandler & base, std::pair< MachineId_t, M
 
     dynamicInfo.second.bunkerMass = 0;
     dynamicInfo.second.bunkerVolume = 0;
+    dynamicInfo.second.timestamp = 0;
 
     if(!getValue(RHTree(base), "machine_id", dynamicInfo.first)){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "MachineDynamicInfo: MachineId not found");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "MachineDynamicInfo: MachineId not found");
         return false;
     }
     if(!getBranch(base, getTag(dynamicInfo.second.position), branch)){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "MachineDynamicInfo: Position not found");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "MachineDynamicInfo: Position not found");
         return false;
     }
     else{
@@ -753,6 +797,7 @@ bool AroXMLInDocument::read( const ReadHandler & base, std::pair< MachineId_t, M
     }
     getValue(RHTree(base), "bunkerMass", dynamicInfo.second.bunkerMass);
     getValue(RHTree(base), "bunkerVolume", dynamicInfo.second.bunkerVolume);
+    getValue(RHTree(base), "timestamp", dynamicInfo.second.timestamp);
     return true;
 }
 
@@ -760,7 +805,7 @@ bool AroXMLInDocument::read( const ReadHandler & base, std::map<MachineId_t, Mac
 
     dynamicInfo.clear();
     if(!m_isDocOpen){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
         return false;
     }
 
@@ -773,7 +818,7 @@ bool AroXMLInDocument::read( const ReadHandler & base, std::map<MachineId_t, Mac
             ++count;
             std::pair<MachineId_t, MachineDynamicInfo> di;
             if ( !read( createRH(v.second), di) ){
-                m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error reading machine dynamic info " + std::to_string(count));
+                logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error reading machine dynamic info " + std::to_string(count));
                 return false;
             }
             dynamicInfo.insert(di);
@@ -785,7 +830,7 @@ bool AroXMLInDocument::read( const ReadHandler & base, std::map<MachineId_t, Mac
 bool AroXMLInDocument::read(const ReadHandler & base, OutFieldInfo &ofi){
 
     if(!m_isDocOpen){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
         return false;
     }
 
@@ -814,7 +859,7 @@ bool AroXMLInDocument::read( const ReadHandler & base, std::map<int, std::map<in
 
     map.clear();
     if(!m_isDocOpen){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
         return false;
     }
 
@@ -888,7 +933,7 @@ bool AroXMLInDocument::read( const ReadHandler & base, OutFieldInfo::MapUnloadin
 
     map.clear();
     if(!m_isDocOpen){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
         return false;
     }
 
@@ -935,7 +980,7 @@ bool AroXMLInDocument::read( const ReadHandler & base, OutFieldInfo::MapArrivalC
 
     map.clear();
     if(!m_isDocOpen){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
         return false;
     }
 
@@ -994,7 +1039,7 @@ bool AroXMLInDocument::read( const ReadHandler & base, OutFieldInfo::MapArrivalC
 bool AroXMLInDocument::read( const ReadHandler & base, OutFieldInfo::TravelCosts &tc)
 {
     if(!m_isDocOpen){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
         return false;
     }
 
@@ -1010,7 +1055,7 @@ bool AroXMLInDocument::read( const ReadHandler & base, OutFieldInfo::TravelCosts
 bool AroXMLInDocument::read( const ReadHandler & base, OutFieldInfo::UnloadingCosts &uc)
 {
     if(!m_isDocOpen){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
         return false;
     }
 
@@ -1022,18 +1067,47 @@ bool AroXMLInDocument::read( const ReadHandler & base, OutFieldInfo::UnloadingCo
     return ok_t;
 }
 
+bool AroXMLInDocument::read(const ReadHandler &base, std::map<std::string, ArolibGrid_t> &gridmaps)
+{
+    gridmaps.clear();
+    if(!m_isDocOpen){
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
+        return false;
+    }
+
+    bool ok_all = true;
+
+    BOOST_FOREACH( boost::property_tree::ptree::value_type const& pair, RHTree(base)){
+        std::string base64;
+        if(!getValue(pair.second, base64)){
+            ok_all = false;
+            logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error reading gridmap '" + pair.first + "' Base64 string");
+            continue;
+        }
+        auto& gridmap = gridmaps[pair.first];
+        if( !gridmap.readGridFromGeoTiffString( base64_decode(base64), false ) ){
+            ok_all = false;
+            logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error decoding gridmap '" + pair.first + "' from Base64 string");
+            gridmaps.erase( pair.first );
+            continue;
+        }
+    }
+    return ok_all;
+
+}
+
 bool AroXMLInDocument::read(const XMLInDocument::ReadHandler &base, DirectedGraph::Graph &graph)
 {
     if(!m_isDocOpen){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
         return false;
     }
 
     graph.clear();
 
     //Note: the new vertices and edges ids may differ from the originals
-    std::unordered_map<DirectedGraph::vertex_t, DirectedGraph::vertex_t> verticesMap;// < old_vertex_id <vertex_prop, new_vertex_id> >
-    std::unordered_map<std::string, DirectedGraph::edge_t> edgesMap;// < old_edge_id <edge_prop, new_edge_id> >
+    std::unordered_map<DirectedGraph::vertex_t, DirectedGraph::vertex_t> verticesMap;// < old_vertex_id, new_vertex_id >
+    std::unordered_map<std::string, DirectedGraph::edge_t> edgesMap;// < old_edge_id, new_edge_id >
     std::vector< std::pair<DirectedGraph::edge_t, std::string> > revEdges;
 
     ReadHandler branch;
@@ -1048,7 +1122,7 @@ bool AroXMLInDocument::read(const XMLInDocument::ReadHandler &base, DirectedGrap
         if(val.first == tag_vt){
             DirectedGraph::vertex_pair old_vt;
             if(!read(createRH(val.second), old_vt)){
-                m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error reading vertex on entry " + std::to_string(count));
+                logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error reading vertex on entry " + std::to_string(count));
                 return false;
             }
             verticesMap[old_vt.first] = graph.addVertex(old_vt.second);
@@ -1069,24 +1143,24 @@ bool AroXMLInDocument::read(const XMLInDocument::ReadHandler &base, DirectedGrap
             DirectedGraph::edge_property e_prop;
 
             if(!read(createRH(val.second), edge, vt_from, vt_to, e_prop, revEdge)){
-                m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error reading edge on entry " + std::to_string(count));
+                logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error reading edge on entry " + std::to_string(count));
                 return false;
             }
 
             auto it_vt_from = verticesMap.find(vt_from);
             if(it_vt_from == verticesMap.end()){
-                m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Vertex [from] " + std::to_string(vt_from) + " of edge " + edge + " on entry " + std::to_string(count) + " not found.");
+                logger().printOut(LogLevel::ERROR, __FUNCTION__, "Vertex [from] " + std::to_string(vt_from) + " of edge " + edge + " on entry " + std::to_string(count) + " not found.");
                 return false;
             }
 
             auto it_vt_to = verticesMap.find(vt_to);
             if(it_vt_to == verticesMap.end()){
-                m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Vertex [to] " + std::to_string(vt_to) + " of edge " + edge + " on entry " + std::to_string(count) + " not found.");
+                logger().printOut(LogLevel::ERROR, __FUNCTION__, "Vertex [to] " + std::to_string(vt_to) + " of edge " + edge + " on entry " + std::to_string(count) + " not found.");
                 return false;
             }
 
             if(!graph.addEdge(it_vt_from->second, it_vt_to->second, e_prop, false)){
-                m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error adding edge " + edge + " on entry " + std::to_string(count));
+                logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error adding edge " + edge + " on entry " + std::to_string(count));
                 return false;
             }
 
@@ -1095,7 +1169,7 @@ bool AroXMLInDocument::read(const XMLInDocument::ReadHandler &base, DirectedGrap
             boost::tie(new_edge, found) = boost::edge(it_vt_from->second, it_vt_to->second, graph);
 
             if(!found){
-                m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error retrieving edge " + edge + " on entry " + std::to_string(count));
+                logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error retrieving edge " + edge + " on entry " + std::to_string(count));
                 return false;
             }
 
@@ -1109,7 +1183,7 @@ bool AroXMLInDocument::read(const XMLInDocument::ReadHandler &base, DirectedGrap
     for(auto& revEdge : revEdges){
         auto it_edge = edgesMap.find(revEdge.second);
         if(it_edge == edgesMap.end()){
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Reverse edge " + revEdge.second + " not found.");
+            logger().printOut(LogLevel::ERROR, __FUNCTION__, "Reverse edge " + revEdge.second + " not found.");
             return false;
         }
 
@@ -1117,13 +1191,20 @@ bool AroXMLInDocument::read(const XMLInDocument::ReadHandler &base, DirectedGrap
         e_prop.revEdge = it_edge->second;
     }
 
+
+    if( getBranch(base, getTag( DirectedGraph::Graph::GraphMetaData() ), branch) ){
+        if(!read(branch, getGraphData(graph), verticesMap))
+            return false;
+    }
+
+
     return true;
 }
 
 bool AroXMLInDocument::read(const XMLInDocument::ReadHandler &base, DirectedGraph::vertex_pair &vt)
 {
     if(!m_isDocOpen){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
         return false;
     }
 
@@ -1145,7 +1226,7 @@ bool AroXMLInDocument::read(const XMLInDocument::ReadHandler &base, std::string 
                                                                     DirectedGraph::edge_property &e_prop, std::string &revEdge)
 {
     if(!m_isDocOpen){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
         return false;
     }
 
@@ -1170,7 +1251,7 @@ bool AroXMLInDocument::read(const XMLInDocument::ReadHandler &base, std::string 
 bool AroXMLInDocument::read(const XMLInDocument::ReadHandler &base, DirectedGraph::vertex_property &v_prop)
 {
     if(!m_isDocOpen){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
         return false;
     }
 
@@ -1241,7 +1322,7 @@ bool AroXMLInDocument::read(const XMLInDocument::ReadHandler &base, DirectedGrap
     try{
 
         if(!m_isDocOpen){
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
+            logger().printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
             return false;
         }
         if(!getValue(RHTree(base), "bidir", e_prop.bidirectional))
@@ -1294,7 +1375,7 @@ bool AroXMLInDocument::read(const XMLInDocument::ReadHandler &base, DirectedGrap
 bool AroXMLInDocument::read(const XMLInDocument::ReadHandler &base, DirectedGraph::VisitPeriod &vp)
 {
     if(!m_isDocOpen){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
         return false;
     }
 
@@ -1339,7 +1420,7 @@ bool AroXMLInDocument::read(const XMLInDocument::ReadHandler &base, DirectedGrap
 bool AroXMLInDocument::read(const XMLInDocument::ReadHandler &base, DirectedGraph::overroll_property &o)
 {
     if(!m_isDocOpen){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
         return false;
     }
 
@@ -1351,6 +1432,198 @@ bool AroXMLInDocument::read(const XMLInDocument::ReadHandler &base, DirectedGrap
         return false;
 
     return true;
+
+}
+
+bool AroXMLInDocument::read(const ReadHandler &base, DirectedGraph::Graph::GraphMetaData &meta, const std::unordered_map<DirectedGraph::vertex_t, DirectedGraph::vertex_t>& verticesMap)
+{
+    auto readAndUpdateVts = [&verticesMap](const std::string& values_str, std::set<DirectedGraph::vertex_t>& vts)->bool{
+        std::vector<DirectedGraph::vertex_t> oldVts;
+        if(!from_single_string(values_str, oldVts))
+            return false;
+        for(auto& vt : oldVts){
+            vts.insert( verticesMap.at(vt) );
+        }
+    };
+
+    try{
+
+        if(!m_isDocOpen){
+            logger().printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
+            return false;
+        }
+
+        if(!getValue(RHTree(base), "hasPartialHeadlands", meta.hasPartialHeadlands))
+            return false;
+        if(!getValue(RHTree(base), "workingWidth_IF", meta.workingWidth_IF))
+            return false;
+        if(!getValue(RHTree(base), "workingWidth_HL", meta.workingWidth_HL))
+            return false;
+
+        ReadHandler branch;
+        std::string values_str;
+
+        meta.tracks_vertices_map.clear();
+        if(getBranch(base, "tracks_vertices_map", branch) ){
+            BOOST_FOREACH( boost::property_tree::ptree::value_type const& val, RHTree(branch)){
+                if(val.first == "item"){
+                    int key;
+                    if(!getValue(val.second, "id", key))
+                        return false;
+
+                    if(!getValue(val.second, "vts", values_str))
+                        return false;
+                    auto& vts = meta.tracks_vertices_map[key];
+                    if(!from_single_string(values_str, vts))
+                        return false;
+                    for(auto& vt : vts)
+                        vt = verticesMap.at(vt);
+                }
+            }
+        }
+
+        meta.extremaTrackIds_IF.clear();
+        if(getValue(RHTree(base), "extremaTrackIds_IF", values_str)){
+            if(!from_single_string(values_str, meta.extremaTrackIds_IF))
+                return false;
+        }
+
+        meta.adjacentTrackIds_IF.clear();
+        if(getBranch(base, "adjacentTrackIds_IF", branch) ){
+            BOOST_FOREACH( boost::property_tree::ptree::value_type const& val, RHTree(branch)){
+                if(val.first == "item"){
+                    int key;
+                    if(!getValue(val.second, "id", key))
+                        return false;
+                    std::string values_str;
+                    if(!getValue(val.second, "adj", values_str))
+                        return false;
+                    if(!from_single_string(values_str, meta.adjacentTrackIds_IF[key]))
+                        return false;
+                }
+            }
+        }
+
+        meta.adjacentTrackIds_HL.clear();
+        if(getBranch(base, "adjacentTrackIds_HL", branch) ){
+            BOOST_FOREACH( boost::property_tree::ptree::value_type const& val, RHTree(branch)){
+                if(val.first == "item"){
+                    int key;
+                    if(!getValue(val.second, "id", key))
+                        return false;
+                    std::string values_str;
+                    if(!getValue(val.second, "adj", values_str))
+                        return false;
+                    if(!from_single_string(values_str, meta.adjacentTrackIds_HL[key]))
+                        return false;
+                }
+            }
+        }
+
+        meta.outermostTrackIds_HL.clear();
+        if(getValue(RHTree(base), "outermostTrackIds_HL", values_str)){
+            if(!from_single_string(values_str, meta.outermostTrackIds_HL))
+                return false;
+        }
+
+        meta.outFieldInfo.clearAll();
+        if(getBranch(base, getTag( meta.outFieldInfo ), branch) ){
+            if(!read(branch, meta.outFieldInfo))
+                return false;
+        }
+
+        meta.routepoint_vertex_map.clear();
+        if(getBranch(base, "routepoint_vertex_map", branch) ){
+            BOOST_FOREACH( boost::property_tree::ptree::value_type const& val, RHTree(branch)){
+                if(val.first == "item"){
+                    RoutePoint key;
+                    ReadHandler branch2;
+
+                    if(!getBranch(val.second, getTag(key), RHTree(branch2)))
+                        return false;
+                    if(!read(branch2, key))
+                        return false;
+
+                    auto& vt = meta.routepoint_vertex_map[key];
+                    if(!getValue(val.second, "vt", vt))
+                        return false;
+                    vt = verticesMap.at(vt);
+                }
+            }
+        }
+
+
+        meta.accesspoint_vertex_map.clear();
+        if(getBranch(base, "accesspoint_vertex_map", branch) ){
+            BOOST_FOREACH( boost::property_tree::ptree::value_type const& val, RHTree(branch)){
+                if(val.first == "item"){
+                    FieldAccessPoint key;
+                    ReadHandler branch2;
+
+                    if(!getBranch(val.second, getTag(key), RHTree(branch2)))
+                        return false;
+                    if(!read(branch2, key))
+                        return false;
+
+                    auto& vt = meta.accesspoint_vertex_map[key];
+                    if(!getValue(val.second, "vt", vt))
+                        return false;
+                    vt = verticesMap.at(vt);
+                }
+            }
+        }
+
+
+        meta.resourcepoint_vertex_map.clear();
+        if(getBranch(base, "resourcepoint_vertex_map", branch) ){
+            BOOST_FOREACH( boost::property_tree::ptree::value_type const& val, RHTree(branch)){
+                if(val.first == "item"){
+                    ResourcePoint key;
+                    ReadHandler branch2;
+
+                    if(!getBranch(val.second, getTag(key), RHTree(branch2)))
+                        return false;
+                    if(!read(branch2, key))
+                        return false;
+
+                    auto& vt = meta.resourcepoint_vertex_map[key];
+                    if(!getValue(val.second, "vt", vt))
+                        return false;
+                    vt = verticesMap.at(vt);
+                }
+            }
+        }
+
+
+        meta.initialpoint_vertex_map.clear();
+        if(getBranch(base, "initialpoint_vertex_map", branch) ){
+            BOOST_FOREACH( boost::property_tree::ptree::value_type const& val, RHTree(branch)){
+                if(val.first == "item"){
+                    MachineId_t key;
+                    if(!getValue(val.second, "machine_id", key))
+                        return false;
+                    auto& vt = meta.initialpoint_vertex_map[key];
+                    if(!getValue(val.second, "vt", vt))
+                        return false;
+                    vt = verticesMap.at(vt);
+                }
+            }
+        }
+
+        meta.boundary_vts.clear();
+        if(getValue(RHTree(base), "boundary_vts", values_str)){
+            if(!from_single_string(values_str, meta.boundary_vts))
+                return false;
+        }
+
+        return true;
+
+    }
+    catch(...){
+        return false;
+    }
+
+
 
 }
 
@@ -1472,18 +1745,113 @@ bool AroXMLInDocument::readOutFieldInfo(const std::string &filename, OutFieldInf
 
 }
 
+bool AroXMLInDocument::readResourcePoints(const std::string &filename, std::vector<ResourcePoint> &resource_points, const std::vector<std::string> &parentTags, LogLevel logLevel)
+{
+    AroXMLInDocument doc(logLevel);
+    bool ok = true;
+    resource_points.clear();
+
+    if( !doc.openFile(filename) )
+        return false;
+
+    //required
+    return doc.read( resource_points , getTag(resource_points), parentTags)
+           && doc.closeFile();
+
+
+}
+
+bool AroXMLInDocument::readPlanParameters(const std::string& filename,
+                                          Field& field,
+                                          std::vector<Machine>& workingGroup,
+                                          std::map<std::string, std::map<std::string, std::string> > &configParameters,
+                                          OutFieldInfo &outFieldInfo,
+                                          std::map<MachineId_t, MachineDynamicInfo>& machinesDynamicInfo,
+                                          std::map<std::string, ArolibGrid_t>& gridmaps,
+                                          Point::ProjectionType coordinatesType_out,
+                                          const std::vector<std::string>& parentTags,
+                                          LogLevel logLevel){
+
+    AroXMLInDocument doc(logLevel);
+
+    doc.setCoordinatesType(coordinatesType_out);
+
+    field.clear();
+    workingGroup.clear();
+    configParameters.clear();
+    outFieldInfo.clearAll();
+    machinesDynamicInfo.clear();
+    gridmaps.clear();
+
+    if( !doc.openFile(filename) || !doc.openDocument() )
+        return false;
+
+    ReadHandler branch;
+    if(!doc.getBranchHandler(parentTags, branch))
+        return false;
+
+    //optional
+    doc.read( gridmaps, branch );
+    doc.read( outFieldInfo, branch );
+    doc.read( machinesDynamicInfo, branch );
+
+    //required
+    return doc.read( field, branch )
+           && doc.read( workingGroup, branch )
+           && doc.read( configParameters, branch, "configParameters" )
+           && doc.closeFile();
+}
+
+bool AroXMLInDocument::readPlanParameters(const std::string& filename,
+                                          std::vector<Machine>& workingGroup,
+                                          std::map<std::string, std::map<std::string, std::string> > &configParameters,
+                                          OutFieldInfo &outFieldInfo,
+                                          std::map<MachineId_t, MachineDynamicInfo>& machinesDynamicInfo,
+                                          std::map<std::string, ArolibGrid_t> &gridmaps,
+                                          Point::ProjectionType coordinatesType_out,
+                                          const std::vector<std::string>& parentTags,
+                                          LogLevel logLevel){
+    AroXMLInDocument doc(logLevel);
+
+    doc.setCoordinatesType(coordinatesType_out);
+
+    workingGroup.clear();
+    configParameters.clear();
+    outFieldInfo.clearAll();
+    machinesDynamicInfo.clear();
+    gridmaps.clear();
+
+    if( !doc.openFile(filename) || !doc.openDocument() )
+        return false;
+
+    ReadHandler branch;
+    if(!doc.getBranchHandler(parentTags, branch))
+        return false;
+
+    //optional
+    doc.read( gridmaps, branch );
+    doc.read( outFieldInfo, branch );
+    doc.read( machinesDynamicInfo, branch );
+
+    //required
+    return doc.read( workingGroup, branch )
+           && doc.read( configParameters, branch, "configParameters" )
+           && doc.closeFile();
+
+}
+
 bool AroXMLInDocument::readPlanParameters(const std::string &filename,
-                                       Field &field,
-                                       std::vector<Machine> &workingGroup,
-                                       std::map<std::string, std::map<std::string, std::string> > &configParameters,
-                                       OutFieldInfo &outFieldInfo,
-                                       std::map<MachineId_t, MachineDynamicInfo> &machinesDynamicInfo,
-                                       std::string &yieldmap_tifBase64,
-                                       std::string &drynessmap_tifBase64,
-                                       std::string &soilmap_tifBase64,
-                                       std::string &remainingAreaMap_tifBase64, Point::ProjectionType coordinatesType_out,
-                                       const std::vector<std::string> &parentTags,
-                                       LogLevel logLevel)
+                                          Field &field,
+                                          std::vector<Machine> &workingGroup,
+                                          std::map<std::string, std::map<std::string, std::string> > &configParameters,
+                                          OutFieldInfo &outFieldInfo,
+                                          std::map<MachineId_t, MachineDynamicInfo> &machinesDynamicInfo,
+                                          std::string &yieldmap_tifBase64,
+                                          std::string &drynessmap_tifBase64,
+                                          std::string &soilmap_tifBase64,
+                                          std::string &remainingAreaMap_tifBase64, Point::ProjectionType coordinatesType_out,
+                                          const std::vector<std::string> &parentTags,
+                                          LogLevel logLevel)
 {
     AroXMLInDocument doc(logLevel);
 
@@ -1619,60 +1987,6 @@ bool AroXMLInDocument::readPlan(const std::string &filename,
 
             && doc.closeFile();
 
-}
-
-bool AroXMLInDocument::readPlan(const std::string &filename,
-                             std::map<int, std::vector<HeadlandRoute> > &routes,
-                             bool syncRoutes, Point::ProjectionType coordinatesType_out,
-                             const std::vector<std::string> &parentTags,
-                             LogLevel logLevel)
-{
-    AroXMLInDocument doc(logLevel);
-    Logger logger(logLevel, "AroXMLInDocument");
-
-    doc.setCoordinatesType(coordinatesType_out);
-
-    routes.clear();
-
-    if( !doc.openFile(filename) || !doc.openDocument() )
-        return false;
-
-    std::vector<std::string> parentTags_plan = parentTags;
-    parentTags_plan.emplace_back("plan");
-
-    ReadHandler branch;
-    if(!doc.getBranchHandler(parentTags_plan, branch))
-        return false;
-
-    size_t count = 0;
-    return doc.getMultiBranchHandlers(branch,
-                                      getTag<Subfield>(),
-                                      [&](const ReadHandler& rh) {
-                                          count++;
-                                          int id;
-                                          if( !doc.read(id, rh, "id" ) ){
-                                              logger.printOut(LogLevel::WARNING, __FUNCTION__, "Error reading 'id' of element #" + std::to_string( count ));
-                                              return true;
-                                          }
-                                          auto it = routes.find(id);
-                                          if(it != routes.end()){
-                                              logger.printOut(LogLevel::WARNING, __FUNCTION__, "Repeated 'id' " + std::to_string( id ) + " in element #" + std::to_string( count ) + ". Desregarding input.");
-                                              return true;
-                                          }
-                                          std::vector<HeadlandRoute> rts;
-                                          ReadHandler branch;
-                                          doc.getBranch( rh, getTag(rts), branch );
-                                          if( !doc.read(branch, rts ) ){
-                                              logger.printOut(LogLevel::WARNING, __FUNCTION__, "Error reading 'routes' of element #" + std::to_string( count ));
-                                              return true;
-                                          }
-                                          if(syncRoutes)
-                                              HeadlandRoute::syncRoutes(rts);
-                                          routes[id] = rts;
-                                          return true;
-                                      })
-
-            && doc.closeFile();
 }
 
 bool AroXMLInDocument::readPlan(const std::string &filename,
@@ -1825,74 +2139,6 @@ bool AroXMLInDocument::readPlan(const std::string &filename,
 
 }
 
-bool AroXMLInDocument::readPlan(const std::string &filename,
-                             Field &field,
-                             std::vector<Machine> &workingGroup,
-                             std::map<int, std::vector<HeadlandRoute> > &routes,
-                             std::string &yieldmap_tifBase64,
-                             std::string &drynessmap_tifBase64,
-                             std::string &soilmap_tifBase64,
-                             std::string &remainingAreaMap_tifBase64,
-                             bool syncRoutes, Point::ProjectionType coordinatesType_out,
-                             const std::vector<std::string> &parentTags,
-                             LogLevel logLevel)
-{
-    AroXMLInDocument doc(logLevel);
-    Logger logger(logLevel, "AroXMLInDocument");
-
-    doc.setCoordinatesType(coordinatesType_out);
-
-    routes.clear();
-
-    if( !doc.openFile(filename) || !doc.openDocument() )
-        return false;
-
-    std::vector<std::string> parentTags_plan = parentTags;
-    parentTags_plan.emplace_back("plan");
-
-    ReadHandler branch;
-    if(!doc.getBranchHandler(parentTags_plan, branch))
-        return false;
-
-    //optional
-    doc.read( yieldmap_tifBase64, branch, "yieldmap_tifBase64" );
-    doc.read( drynessmap_tifBase64, branch, "drynessmap_tifBase64" );
-    doc.read( soilmap_tifBase64, branch, "soilmap_tifBase64" );
-    doc.read( remainingAreaMap_tifBase64, branch, "remainingAreaMap_tifBase64" );
-
-    size_t count = 0;
-    return doc.read(field, branch)
-           && doc.read(workingGroup, branch)
-           && doc.getMultiBranchHandlers(branch,
-                                      getTag<Subfield>(),
-                                      [&](const ReadHandler& rh) {
-                                          count++;
-                                          int id;
-                                          if( !doc.read(id, rh, "id" ) ){
-                                              logger.printOut(LogLevel::WARNING, __FUNCTION__, "Error reading 'id' of element #" + std::to_string( count ));
-                                              return true;
-                                          }
-                                          auto it = routes.find(id);
-                                          if(it != routes.end()){
-                                              logger.printOut(LogLevel::WARNING, __FUNCTION__, "Repeated 'id' " + std::to_string( id ) + " in element #" + std::to_string( count ) + ". Desregarding input.");
-                                              return true;
-                                          }
-                                          std::vector<HeadlandRoute> rts;
-                                          ReadHandler branch;
-                                          doc.getBranch( rh, getTag(rts), branch );
-                                          if( !doc.read(branch, rts ) ){
-                                              logger.printOut(LogLevel::WARNING, __FUNCTION__, "Error reading 'routes' of element #" + std::to_string( count ));
-                                              return true;
-                                          }
-                                          if(syncRoutes)
-                                              HeadlandRoute::syncRoutes(rts);
-                                          routes[id] = rts;
-                                          return true;
-                                      })
-
-            && doc.closeFile();
-}
-
 bool AroXMLInDocument::readGraph(const std::string &filename, DirectedGraph::Graph &graph, Point::ProjectionType coordinatesType_out, const std::vector<std::string> &parentTags, LogLevel logLevel)
 {
 
@@ -1946,7 +2192,7 @@ bool AroXMLInDocument::stringToPoint(std::string coordinates, Point &pt){
         else if (xyz.size() == 3)
             pt_in = Point(string2double(xyz[0]), string2double(xyz[1]), string2double(xyz[2]));
         else{
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Cannot parse/split the point '" + coordinates + "'");
+            logger().printOut(LogLevel::ERROR, __FUNCTION__, "Cannot parse/split the point '" + coordinates + "'");
             return false;
         }
 
@@ -1961,7 +2207,7 @@ bool AroXMLInDocument::stringToPoint(std::string coordinates, Point &pt){
         return true;
     }
     catch(std::exception &e){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Cannot parse/split the point '" + coordinates + "': " + e.what());
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Cannot parse/split the point '" + coordinates + "': " + e.what());
         return false;
     }
 }
@@ -1977,7 +2223,7 @@ bool AroXMLInDocument::stringToPointList(std::string coordinates, std::vector<Po
             continue;
         Point pt;
         if( !stringToPoint(strs.at(i), pt) ){
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error reading point " + std::to_string(i));
+            logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error reading point " + std::to_string(i));
             return false;
         }
         pts.push_back(pt);

@@ -27,6 +27,8 @@ add_library(${AROLIB_LIB_NAME} SHARED
   include/arolib/misc/mappable_parameters.h
 )
 
+#set_target_properties(${AROLIB_LIB_NAME} PROPERTIES DEBUG_POSTFIX ${CMAKE_DEBUG_POSTFIX})
+
 target_include_directories(${AROLIB_LIB_NAME}
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -35,7 +37,7 @@ target_include_directories(${AROLIB_LIB_NAME}
 )
 
 target_link_libraries(${AROLIB_LIB_NAME}
-    INTERFACE
+    PUBLIC
       cryptopp
       ${Boost_LIBRARIES}
 )

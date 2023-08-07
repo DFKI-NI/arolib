@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -43,6 +43,18 @@ bool AroResp::isOK() const
 AroResp AroResp::ok(const std::string& _msg)
 {
     return AroResp(0, _msg);
+}
+
+AroResp AroResp::LoggingResp(int errorID, const std::string &msg, const Logger &logger, LogLevel logLevel, const std::string &function)
+{
+    logger.printOut(logLevel, function, msg);
+    return AroResp(errorID, msg);
+}
+
+AroResp AroResp::LoggingResp(int errorID, const std::string &msg_print, const std::string &msg_no_print, const Logger &logger, LogLevel logLevel, const std::string &function)
+{
+    logger.printOut(logLevel, function, msg_print);
+    return AroResp(errorID, msg_print+msg_no_print);
 }
 
 }

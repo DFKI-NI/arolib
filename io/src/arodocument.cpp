@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,7 +35,7 @@ AroDocument::~AroDocument()
 bool AroDocument::openDocument()
 {
     if(m_isDocOpen){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Document is already open.");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Document is already open.");
         return false;
     }
 
@@ -46,7 +46,7 @@ bool AroDocument::openDocument()
 bool AroDocument::closeDocument()
 {
     if(!m_isDocOpen){
-        m_logger.printOut(LogLevel::WARNING, __FUNCTION__, "Document is not open.");
+        logger().printOut(LogLevel::WARNING, __FUNCTION__, "Document is not open.");
         return false;
     }
 
@@ -59,7 +59,7 @@ bool AroDocument::closeDocument()
 AroOutDocument::AroOutDocument(LogLevel logLevel):
     AroDocument(logLevel)
 {
-    m_logger = Logger(logLevel, __FUNCTION__);
+    logger() = Logger(logLevel, __FUNCTION__);
 }
 
 AroOutDocument::~AroOutDocument()
@@ -71,18 +71,18 @@ AroOutDocument::~AroOutDocument()
 bool AroOutDocument::openFile(const std::string &filename)
 {
     if(m_isOpen){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Document (file) is already open.");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Document (file) is already open.");
         return false;
     }
     if(m_os){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "The output stream was set externally already.");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "The output stream was set externally already.");
         return false;
     }
 
     auto os = new std::ofstream();
     os->open(filename);
     if(!os->is_open()){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error opening file '" + filename + "'.");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error opening file '" + filename + "'.");
         delete os;
         return false;
     }
@@ -94,15 +94,15 @@ bool AroOutDocument::openFile(const std::string &filename)
 bool AroOutDocument::closeFile()
 {
     if(!m_isOpen && m_os){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "The output stream was set externally and cannot be closed.");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "The output stream was set externally and cannot be closed.");
         return false;
     }
     if(!m_isOpen){
-        m_logger.printOut(LogLevel::WARNING, __FUNCTION__, "The output stream (file) is not open.");
+        logger().printOut(LogLevel::WARNING, __FUNCTION__, "The output stream (file) is not open.");
         return false;
     }
     if(!m_os){
-        m_logger.printOut(LogLevel::CRITIC, __FUNCTION__, "The output stream is open but not allocated!!!.");
+        logger().printOut(LogLevel::CRITIC, __FUNCTION__, "The output stream is open but not allocated!!!.");
         return false;
     }
 
@@ -120,11 +120,11 @@ bool AroOutDocument::closeFile()
 bool AroOutDocument::setOutputStream(std::ostream *os)
 {
     if(m_isOpen){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "The output stream (file) was set internally after callin 'open'. Cannot be (re)set externally.");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "The output stream (file) was set internally after callin 'open'. Cannot be (re)set externally.");
         return false;
     }
     if(m_os)
-        m_logger.printOut(LogLevel::WARNING, __FUNCTION__, "The output stream was already set externally. Resetting it...");
+        logger().printOut(LogLevel::WARNING, __FUNCTION__, "The output stream was already set externally. Resetting it...");
 
     m_os = os;
     return true;
@@ -134,11 +134,11 @@ bool AroOutDocument::setOutputStream(std::ostream *os)
 bool AroOutDocument::unsetOutputStream()
 {
     if(m_isOpen){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "The output stream (file) was set internally after callin 'open'. Cannot be unset externally.");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "The output stream (file) was set internally after callin 'open'. Cannot be unset externally.");
         return false;
     }
     if(!m_os){
-        m_logger.printOut(LogLevel::WARNING, __FUNCTION__, "The output stream is not set.");
+        logger().printOut(LogLevel::WARNING, __FUNCTION__, "The output stream is not set.");
         return false;
     }
     m_os = nullptr;
@@ -160,7 +160,7 @@ bool AroOutDocument::setCoordinatesTypes(Point::ProjectionType in, Point::Projec
 bool AroOutDocument::isReadyToWrite() const
 {
     if(!m_os){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "The output stream is not ready.");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "The output stream is not ready.");
         return false;
     }
     return true;
@@ -169,7 +169,7 @@ bool AroOutDocument::isReadyToWrite() const
 AroInDocument::AroInDocument(LogLevel logLevel):
     AroDocument(logLevel)
 {
-    m_logger = Logger(logLevel, __FUNCTION__);
+    logger() = Logger(logLevel, __FUNCTION__);
 }
 
 AroInDocument::~AroInDocument()
@@ -181,18 +181,18 @@ AroInDocument::~AroInDocument()
 bool AroInDocument::openFile(const std::string &filename)
 {
     if(m_isOpen){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Document (file) is already open.");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Document (file) is already open.");
         return false;
     }
     if(m_is){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "The input stream was set externally already.");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "The input stream was set externally already.");
         return false;
     }
 
     auto is = new std::ifstream();
     is->open(filename);
     if(!is->is_open()){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error opening file '" + filename + "'.");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error opening file '" + filename + "'.");
         delete is;
         return false;
     }
@@ -205,15 +205,15 @@ bool AroInDocument::openFile(const std::string &filename)
 bool AroInDocument::closeFile()
 {
     if(!m_isOpen && m_is){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "The input stream was set externally and cannot be closed.");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "The input stream was set externally and cannot be closed.");
         return false;
     }
     if(!m_isOpen){
-        m_logger.printOut(LogLevel::WARNING, __FUNCTION__, "The input stream (file) is not open.");
+        logger().printOut(LogLevel::WARNING, __FUNCTION__, "The input stream (file) is not open.");
         return false;
     }
     if(!m_is){
-        m_logger.printOut(LogLevel::CRITIC, __FUNCTION__, "The input stream is open but not allocated!!!.");
+        logger().printOut(LogLevel::CRITIC, __FUNCTION__, "The input stream is open but not allocated!!!.");
         return false;
     }
 
@@ -230,11 +230,11 @@ bool AroInDocument::closeFile()
 bool AroInDocument::setInputStream(std::istream *is)
 {
     if(m_isOpen){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "The input stream (file) was set internally after callin 'open'. Cannot be (re)set externally.");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "The input stream (file) was set internally after callin 'open'. Cannot be (re)set externally.");
         return false;
     }
     if(m_is)
-        m_logger.printOut(LogLevel::WARNING, __FUNCTION__, "The input stream was already set externally. Resetting it...");
+        logger().printOut(LogLevel::WARNING, __FUNCTION__, "The input stream was already set externally. Resetting it...");
 
     m_is = is;
     return true;
@@ -243,11 +243,11 @@ bool AroInDocument::setInputStream(std::istream *is)
 bool AroInDocument::unsetInputStream()
 {
     if(m_isOpen){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "The input stream (file) was set internally after callin 'open'. Cannot be unset externally.");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "The input stream (file) was set internally after callin 'open'. Cannot be unset externally.");
         return false;
     }
     if(!m_is){
-        m_logger.printOut(LogLevel::WARNING, __FUNCTION__, "The input stream is not set.");
+        logger().printOut(LogLevel::WARNING, __FUNCTION__, "The input stream is not set.");
         return false;
     }
     m_is = nullptr;
@@ -269,7 +269,7 @@ bool AroInDocument::setCoordinatesType(Point::ProjectionType out)
 bool AroInDocument::isReadyToRead() const
 {
     if(!m_is){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "The input stream is not ready.");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "The input stream is not ready.");
         return false;
     }
     return true;

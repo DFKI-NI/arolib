@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -269,6 +269,24 @@ public:
     bool add(const CompleteHeadland& hl, std::string tag = "", const std::string &styleUrl = "");
 
     /**
+     * @brief Add/write a partial headland with a given tag and KML style url.
+     * @param hl Partial headland to be written
+     * @param tag Tag (if empty, the default tag for the type will be used)
+     * @param styleUrl KML style url (disregarded if empty)
+     * @return True on success
+     */
+    bool add(const PartialHeadland& hl, std::string tag = "", const std::string &styleUrl = "");
+
+    /**
+     * @brief Add/write a set of partial headlands with a given tag and KML style url.
+     * @param headlands Partiasl headland to be written
+     * @param tag Tag (if empty, the default tag for the type will be used)
+     * @param styleUrl KML style url (disregarded if empty)
+     * @return True on success
+     */
+    bool add(const std::vector<PartialHeadland>& headlands, std::string tag = "", const std::string& styleUrl = "");
+
+    /**
      * @brief Add/write a obstacle with a given tag and KML style url.
      * @param obs Obstacle to be written
      * @param tag Tag (if empty, the default tag for the type will be used)
@@ -505,13 +523,6 @@ protected:
     static std::string getDescription(const ResourcePoint& pt);
 
     /**
-     * @brief Get the description for a headland point (holding its properties)
-     * @param pt Headland point
-     * @return Description
-     */
-    static std::string getDescription(const HeadlandPoint& pt);
-
-    /**
      * @brief Get the description for a route point (holding its properties)
      * @param pt Route point
      * @return Description
@@ -538,6 +549,13 @@ protected:
      * @return Description
      */
     static std::string getDescription(const CompleteHeadland& hl);
+
+    /**
+     * @brief Get the description for a partial headland (holding its properties)
+     * @param hl Partial headland
+     * @return Description
+     */
+    static std::string getDescription(const PartialHeadland& hl);
 
 protected:
     std::map<GeometryType, KmlStyle> m_styles; /**< Map holding the default KML styles for each geometry type */

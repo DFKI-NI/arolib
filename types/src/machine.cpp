@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -107,12 +107,12 @@ double Machine::workingRadius() const{
 
 double Machine::getTurningRadius() const
 {
-    if(turning_radius > 0)
-        return turning_radius;
+    if(turning_radius > -1e-9)
+        return std::max(0.0, turning_radius);
     double d;
-    if(axis_distance > 0)
+    if(axis_distance > 1e-9)
         d = axis_distance;
-    else if(length > 0){
+    else if(length > 1e-9){
         const double deltaAxisDist = 0.5;//estimeted location of the front/back axis from the machine front/back
         d = length > 2*deltaAxisDist ? length - 2*deltaAxisDist : length;
     }
@@ -137,6 +137,38 @@ bool Machine::isOfWorkingType(Machine::MachineType machinetype, bool includeScan
     return machinetype != OLV
             && machinetype != UNDEFINED_TYPE
             && ( includeScanner || machinetype != SCANNER ); //@TODO add new working types
+}
+
+bool Machine::isOfWorkingTypeForMaterialOutput() const
+{
+    return isOfWorkingTypeForMaterialOutput(machinetype);
+}
+
+bool Machine::isOfWorkingTypeForMaterialOutput(MachineType machinetype)
+{
+    return machinetype == HARVESTER;
+}
+
+bool Machine::isOfWorkingTypeForMaterialInput() const
+{
+    return isOfWorkingTypeForMaterialInput(machinetype);
+}
+
+bool Machine::isOfWorkingTypeForMaterialInput(MachineType machinetype)
+{
+    return machinetype == SOWER ||
+            machinetype == SPRAYER;
+}
+
+bool Machine::isOfWorkingTypeForNoMaterialFlow(bool includeScanner) const
+{
+    return isOfWorkingTypeForNoMaterialFlow(machinetype);
+}
+
+bool Machine::isOfWorkingTypeForNoMaterialFlow(MachineType machinetype, bool includeScanner)
+{
+    return machinetype == CULTIVATOR ||
+            machinetype == PLOUGH;
 }
 
 std::string Machine::machineTypeToString(Machine::MachineType type)

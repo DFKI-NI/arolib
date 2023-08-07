@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,7 +24,6 @@
 #include "arolib/misc/logger.h"
 #include "arolib/types/machine.hpp"
 #include "arolib/types/field.hpp"
-#include "arolib/types/headlandroute.hpp"
 #include "arolib/types/outfieldinfo.hpp"
 #include "arolib/types/machinedynamicinfo.hpp"
 #include "arolib/types/route.hpp"
@@ -194,13 +193,13 @@ public:
      * @brief Retrieve the base routes for headland harvesting
      * @return Map containing the base routes for headland harvesting for each subfield. <subfield id, routes> (at the moment, the subfield id = subfield index in the fields' subfields vector).
      */
-    const std::map< int, std::vector<HeadlandRoute> >& getBaseRoutes_headland(bool processed) const;
+    const std::map< int, std::vector<Route> >& getBaseRoutes_headland(bool processed) const;
 
     /**
      * @brief Retrieve the base routes for headland harvesting
      * @return Map containing the base routes for headland harvesting for each subfield. <subfield id, routes> (at the moment, the subfield id = subfield index in the fields' subfields vector).
      */
-    std::map< int, std::vector<HeadlandRoute> >& getBaseRoutes_headland(bool processed);
+    std::map< int, std::vector<Route> >& getBaseRoutes_headland(bool processed);
 
     /**
      * @brief Retrieve the base routes for inner-field harvesting
@@ -313,9 +312,9 @@ protected:
     OutFieldInfo m_outFieldInfo; /**< Out-of-field information (inc. arrival times, transport times, etc.) */
     std::map<MachineId_t, MachineDynamicInfo> m_machineCurrentStates; /**< Current states of the machines */
     std::vector< ArolibGrid_t > m_maps; /**< Vector containing all working grids/maps */
-    std::map< int, std::vector<HeadlandRoute> > m_baseRoutes_headland; /**< Map containing the base routes for headland processing for each subfield. <subfield id, routes> (at the moment, the subfield id = subfield index in the fields' subfields vector). */
+    std::map< int, std::vector<Route> > m_baseRoutes_headland; /**< Map containing the base routes for headland processing for each subfield. <subfield id, routes> (at the moment, the subfield id = subfield index in the fields' subfields vector). */
     std::map< int, std::vector<Route> > m_baseRoutes_infield; /**< Map containing the base routes for inner-field processing for each subfield. <subfield id, routes> (at the moment, the subfield id = subfield index in the fields' subfields vector). */
-    std::map< int, std::vector<HeadlandRoute> > m_baseRoutesProcessed_headland; /**< Map containing processed the base routes for headland processing for each subfield. <subfield id, routes> (at the moment, the subfield id = subfield index in the fields' subfields vector). */
+    std::map< int, std::vector<Route> > m_baseRoutesProcessed_headland; /**< Map containing processed the base routes for headland processing for each subfield. <subfield id, routes> (at the moment, the subfield id = subfield index in the fields' subfields vector). */
     std::map< int, std::vector<Route> > m_baseRoutesProcessed_infield; /**< Map containing the processed base routes for inner-field processing for each subfield. <subfield id, routes> (at the moment, the subfield id = subfield index in the fields' subfields vector). */
     std::map< int, std::vector<Route> > m_connectedBaseRoutes; /**< Map containing the connected processsed base routes for each subfield. <subfield id, routes> (at the moment, the subfield id = subfield index in the fields' subfields vector) */
     std::map< int, std::vector<Route> > m_plannedRoutes; /**< Map containing the planned routes (all machines) for each subfield. <subfield id, routes> (at the moment, the subfield id = subfield index in the fields' subfields vector) */
@@ -403,7 +402,7 @@ protected:
      * @param pw PlanningWorkspace.
      * @return Headland base routes (reference to)
      */
-    static inline std::map< int, std::vector<HeadlandRoute> >& getBaseRoutes_headland(PlanningWorkspace& pw){ return pw.m_baseRoutes_headland; }
+    static inline std::map< int, std::vector<Route> >& getBaseRoutes_headland(PlanningWorkspace& pw){ return pw.m_baseRoutes_headland; }
 
     /**
      * @brief Get the infield base routes from the given PlanningWorkspace.
@@ -417,7 +416,7 @@ protected:
      * @param pw PlanningWorkspace.
      * @return Headland processed base routes (reference to)
      */
-    static inline std::map< int, std::vector<HeadlandRoute> >& getBaseRoutesProcessed_headland(PlanningWorkspace& pw){ return pw.m_baseRoutesProcessed_headland; }
+    static inline std::map< int, std::vector<Route> >& getBaseRoutesProcessed_headland(PlanningWorkspace& pw){ return pw.m_baseRoutesProcessed_headland; }
 
     /**
      * @brief Get the processed infield base routes from the given PlanningWorkspace.

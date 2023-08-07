@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -55,6 +55,14 @@ bool Track::isHeadlandTrack(int trackId)
 bool Track::isMainTrack() const
 {
     return type == MAIN_IF || type == MAIN_HL;
+}
+
+std::string Track::toStringCSV(const std::vector<Track> &tracks, char sep, int precision, bool incZ)
+{
+    std::vector<const std::vector<Point> *> v_points_p(tracks.size());
+    for(size_t i = 0 ; i < v_points_p.size() ; ++i)
+        v_points_p[i] = &(tracks[i].points);
+    return Point::toStringCSV(v_points_p, sep, precision, incZ);
 }
 
 }

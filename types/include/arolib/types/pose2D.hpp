@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,6 +33,11 @@ public:
     explicit Pose2D() = default;
 
     /**
+      * @brief Copy constructor
+      */
+    Pose2D(const Pose2D&) = default;
+
+    /**
       * @brief Constructor with location arguments
       * @param _x x-coordinate
       * @param _y y-coordinate
@@ -48,10 +53,48 @@ public:
       */
     explicit Pose2D( const Point & point, double _angle = 0);
 
+    /**
+      * @brief Check if 2 poses are equal (with a very small tolerance)
+      *
+      * @param p Other pose to be compared
+      * @return True if equal.
+      */
+    bool operator==(const Pose2D &other) const;
+
+    /**
+      * @brief Check if two poses are diferent (with a very small tolerance)
+      *
+      * @param p Other pose to be compared
+      * @return True if differetnt.
+      */
+    bool operator!=(const Pose2D &other) const;
+
+    /**
+      * @brief operator < (used for sorting --> no significant 'quantitative/qualitative' meaning)
+      *
+      * The order of checking is: 1) point; 2) angle
+      * @param p Other pose to be compared
+      * @return True if the (local) pose has lower attributes than p (following the order in the method description)
+      */
+    bool operator<(const Pose2D &other) const;
+
+    /**
+      * @brief Struct to get hash value
+      */
+    struct KeyHash
+    {
+      std::size_t operator()(const Pose2D &p) const;
+      static std::size_t get(const Pose2D &p, std::size_t seed = 0);
+    };
+
 
 public:
     double angle = 0;
 };
+
+inline bool operator==(const Pose2D& lhs, const Pose2D& rhs) {
+  return (lhs.angle == rhs.angle) && (lhs.x == rhs.x) && (lhs.y == rhs.y) && (lhs.z == rhs.z);
+}
 
 }
 

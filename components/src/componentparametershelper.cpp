@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -101,12 +101,12 @@ void setParameterFromMap(const std::map<std::string, std::map<std::string, std::
 void setParameterFromMap(const std::map<std::string, std::map<std::string, std::string> > &map,
                          const std::string& tag1,
                          const std::string& tag2,
-                         HeadlandPlanner::TracksSamplingStrategy& param){
+                         FieldGeometryProcessor::HeadlandParameters::TracksSamplingStrategy& param){
     std::string sParam = getParameterString(map, tag1, tag2);
     if(sParam.empty())
         return;
     try{
-        param = HeadlandPlanner::intToTracksSamplingStrategy( std::stoi(sParam) );
+        param = FieldGeometryProcessor::HeadlandParameters::intToTracksSamplingStrategy( std::stoi(sParam) );
     }
     catch(const std::exception&){}
 }
@@ -114,12 +114,12 @@ void setParameterFromMap(const std::map<std::string, std::map<std::string, std::
 void setParameterFromMap(const std::map<std::string, std::map<std::string, std::string> > &map,
                          const std::string& tag1,
                          const std::string& tag2,
-                         TracksGenerator::ShiftingStrategy& param){
+                         geometry::TracksGenerator::ShiftingStrategy& param){
     std::string sParam = getParameterString(map, tag1, tag2);
     if(sParam.empty())
         return;
     try{
-        param = TracksGenerator::intToShiftingStrategy( std::stoi(sParam) );
+        param = geometry::TracksGenerator::intToShiftingStrategy( std::stoi(sParam) );
     }
     catch(const std::exception&){}
 }
@@ -127,25 +127,12 @@ void setParameterFromMap(const std::map<std::string, std::map<std::string, std::
 void setParameterFromMap(const std::map<std::string, std::map<std::string, std::string> > &map,
                          const std::string& tag1,
                          const std::string& tag2,
-                         TracksGenerator::TrackOrderStrategy& param){
+                         geometry::TracksGenerator::TrackOrderStrategy& param){
     std::string sParam = getParameterString(map, tag1, tag2);
     if(sParam.empty())
         return;
     try{
-        param = TracksGenerator::intToTrackOrderStrategy( std::stoi(sParam) );
-    }
-    catch(const std::exception&){}
-}
-
-void setParameterFromMap(const std::map<std::string, std::map<std::string, std::string> > &map,
-                         const std::string& tag1,
-                         const std::string& tag2,
-                         SimpleTrackSequencer::SequenceStrategy& param){
-    std::string sParam = getParameterString(map, tag1, tag2);
-    if(sParam.empty())
-        return;
-    try{
-        param = SimpleTrackSequencer::intToSequenceStrategy( std::stoi(sParam) );
+        param = geometry::TracksGenerator::intToTrackOrderStrategy( std::stoi(sParam) );
     }
     catch(const std::exception&){}
 }
@@ -179,25 +166,25 @@ void setParameterFromMap(const std::map<std::string, std::map<std::string, std::
 }
 
 std::map<std::string, std::map<std::string, std::string> >
-    getParametersAsMap(const HeadlandPlanner::PlannerParameters &headlandPlannerParameters,
-                       const TracksGenerator::TracksGeneratorParameters &tracksGeneratorParameters,
-                       const BaseRoutesInfieldPlanner::PlannerParameters &baseRoutesPlannerParameters,
+    getParametersAsMap(const FieldGeometryProcessor::HeadlandParameters &fieldGeometryProcessorParameters_headland,
+                       const FieldGeometryProcessor::InfieldParameters &fieldGeometryProcessorParameters_infield,
+                       const BaseRoutesPlanner::PlannerParameters &baseRoutesPlannerParameters,
                        const FieldProcessPlanner::PlannerParameters &fieldProcessPlannerParameters)
 {
     std::map<std::string, std::map<std::string, std::string> > map;
     std::map<std::string, std::string> subMap;
     std::string tag1;
 
-    tag1 = "headlandPlannerParameters";
-    subMap = HeadlandPlanner::PlannerParameters::parseToStringMap(headlandPlannerParameters);
+    tag1 = "fieldGeometryProcessorParameters_headland";
+    subMap = FieldGeometryProcessor::HeadlandParameters::parseToStringMap(fieldGeometryProcessorParameters_headland);
     map[tag1].insert(subMap.begin(), subMap.end());
 
-    tag1 = "tracksGeneratorParameters";
-    subMap = TracksGenerator::TracksGeneratorParameters::parseToStringMap(tracksGeneratorParameters);
+    tag1 = "fieldGeometryProcessorParameters_infield";
+    subMap = FieldGeometryProcessor::InfieldParameters::parseToStringMap(fieldGeometryProcessorParameters_infield);
     map[tag1].insert(subMap.begin(), subMap.end());
 
     tag1 = "baseRoutesPlannerParameters";
-    subMap = BaseRoutesInfieldPlanner::PlannerParameters::parseToStringMap(baseRoutesPlannerParameters);
+    subMap = BaseRoutesPlanner::PlannerParameters::parseToStringMap(baseRoutesPlannerParameters);
     map[tag1].insert(subMap.begin(), subMap.end());
 
     tag1 = "fieldProcessPlannerParameters";
@@ -208,39 +195,30 @@ std::map<std::string, std::map<std::string, std::string> >
 }
 
 bool setParametersFromMap(const std::map<std::string, std::map<std::string, std::string> > &map,
-                          HeadlandPlanner::PlannerParameters &headlandPlannerParameters,
-                          TracksGenerator::TracksGeneratorParameters &tracksGeneratorParameters,
-                          BaseRoutesInfieldPlanner::PlannerParameters &baseRoutesPlannerParameters,
+                          FieldGeometryProcessor::HeadlandParameters &fieldGeometryProcessorParameters_headland,
+                          FieldGeometryProcessor::InfieldParameters &fieldGeometryProcessorParameters_infield,
+                          BaseRoutesPlanner::PlannerParameters &baseRoutesPlannerParameters,
                           FieldProcessPlanner::PlannerParameters &fieldProcessPlannerParameters)
 {
-    try{
-        std::string tag1;
-        bool ok = true;
+    std::string tag1;
+    bool ok = true;
 
-        tag1 = "headlandPlannerParameters";
-        if(map.find(tag1) != map.end())
-            ok &= HeadlandPlanner::PlannerParameters::parseFromStringMap(headlandPlannerParameters, map.at(tag1), false);
+    tag1 = "fieldGeometryProcessorParameters_headland";
+    if(map.find(tag1) != map.end())
+        ok &= FieldGeometryProcessor::HeadlandParameters::parseFromStringMap(fieldGeometryProcessorParameters_headland, map.at(tag1), false);
 
-        tag1 = "tracksGeneratorParameters";
-        if(map.find(tag1) != map.end())
-            ok &= TracksGenerator::TracksGeneratorParameters::parseFromStringMap(tracksGeneratorParameters, map.at(tag1), false);
+    tag1 = "fieldGeometryProcessorParameters_infield";
+    if(map.find(tag1) != map.end())
+        ok &= FieldGeometryProcessor::InfieldParameters::parseFromStringMap(fieldGeometryProcessorParameters_infield, map.at(tag1), false);
 
-        tag1 = "baseRoutesPlannerParameters";
-        if(map.find(tag1) != map.end())
-            ok &= BaseRoutesInfieldPlanner::PlannerParameters::parseFromStringMap(baseRoutesPlannerParameters, map.at(tag1), false);
+    tag1 = "baseRoutesPlannerParameters";
+    if(map.find(tag1) != map.end())
+        ok &= BaseRoutesPlanner::PlannerParameters::parseFromStringMap(baseRoutesPlannerParameters, map.at(tag1), false);
 
-        tag1 = "fieldProcessPlannerParameters";
-        if(map.find(tag1) != map.end())
-            ok &= FieldProcessPlanner::PlannerParameters::parseFromStringMap(fieldProcessPlannerParameters, map.at(tag1), false);
+    tag1 = "fieldProcessPlannerParameters";
+    if(map.find(tag1) != map.end())
+        ok &= FieldProcessPlanner::PlannerParameters::parseFromStringMap(fieldProcessPlannerParameters, map.at(tag1), false);
 
-        return ok;
-
-    }
-    catch(...){
-        return false;
-    }
-
-
+    return ok;
 }
-
 }

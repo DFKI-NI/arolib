@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH and Universität Osnabrück
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,6 +24,8 @@
 
 namespace arolib {
 namespace io {
+
+Logger g_logger(LogLevel::DEBUG, "io_hdf5");
 
 // Helper functions (only needed here)
 namespace
@@ -121,6 +123,34 @@ namespace
                 toPointVec(boundary_points,subfield.headlands.complete.boundaries.first);
                 boundary_points = readMatrix(file,sub_group.getPath() + "/boundary_in");
                 toPointVec(boundary_points,subfield.headlands.complete.boundaries.second);
+            }
+            // -----------------------------
+            // Headlands/Partials
+            // -----------------------------
+            current_node_str2 = "partial";
+            if(group.exist(current_node_str2))
+            {
+                auto sub_group = group.getGroup(current_node_str2);
+                std::vector<std::string> child_list = sub_group.listObjectNames();
+                for(auto&& child : child_list)
+                {
+                    arolib::PartialHeadland partial;
+                    size_t child_id = std::stoi(child);
+                    partial.id = child_id;
+                    auto boundary_points = readMatrix(file, sub_group.getPath() + "/" + child  + "/boundary");
+                    toPointVec(boundary_points, partial.boundary);
+
+                    int connectingHeadlandId1 = H5Easy::load<int>(file,sub_group.getPath() + "/" + child  + "/connectingHeadlandId1");
+                    int connectingHeadlandId2 = H5Easy::load<int>(file,sub_group.getPath() + "/" + child  + "/connectingHeadlandId2");
+                    partial.connectingHeadlandIds = std::make_pair(connectingHeadlandId1, connectingHeadlandId2);
+
+                    // -----------------------------
+                    // Headlands/Partials/Tracks
+                    // -----------------------------
+                    auto child_group = sub_group.getGroup(child);
+                    partial.tracks = readTracks(file,child_group);
+                    subfield.headlands.partial.push_back(partial);
+                }
             }
 
         }
@@ -249,7 +279,7 @@ namespace
             {
                 arolib::Track track;
                 auto points = readMatrix(file,group.getPath() + "/" + child  + "/points");
-                auto boundary_points = readMatrix(file,group.getPath() + "/" + child + "/boundary_out");
+                auto boundary_points = readMatrix(file,group.getPath() + "/" + child + "/boundary");
                 track.type = Track::intToTrackType(H5Easy::load<int>(file,group.getPath() + "/" + child + "/type"));
                 track.width = H5Easy::load<double>(file,group.getPath() + "/" + child + "/width");
                 // convert to arolib objects
@@ -427,7 +457,7 @@ bool read_field_hdf5(const std::string& file_path, const std::string& field_name
             {
                 // convert to arolib objects
                 auto subgroup = group.getGroup(child);
-                Subfield s = readSubField(hdf5_file,subgroup);
+                Subfield s = readSubField(hdf5_file, subgroup);
                 f.subfields.push_back(s);
             }
         }
@@ -463,7 +493,8 @@ bool write_field_hdf5(const std::string& file_path, const std::string& field_nam
          if (field_group.exist(field_name))
          {
              field_group.unlink(field_name);
-             std::cout << field_name << " already exists" << std::endl;
+
+             g_logger.printWarning(__FUNCTION__, "Field " + field_name + "' already exists. It will be overwritten.");
              file.flush();
          }
          H5Easy::DumpOptions dump_ops(H5Easy::Compression(), H5Easy::DumpMode::Overwrite);
@@ -528,7 +559,18 @@ bool write_field_hdf5(const std::string& file_path, const std::string& field_nam
                  write_points(subfield.headlands.complete.boundaries.first.points,group_path + "/boundary_out");
                  write_points(subfield.headlands.complete.boundaries.second.points,group_path + "/boundary_in");
              }
-
+             // -----------------------------
+             // subfields/headlands/partials
+             // -----------------------------
+             for(size_t j = 0 ; j < subfield.headlands.partial.size(); j++)
+             {
+                 auto&& partial = subfield.headlands.partial[j];
+                 auto group_path = base_path + "/" + string_format("subfields/%05u/headlands/partial/%05u",subfield.id, partial.id);
+                 write_points(partial.boundary.points, group_path + "/boundary");
+                 writeTracks(partial.tracks,group_path, file, dump_ops);
+                 H5Easy::dump(file, group_path + "/connectingHeadlandId1", partial.connectingHeadlandIds.first, dump_ops);
+                 H5Easy::dump(file, group_path + "/connectingHeadlandId2", partial.connectingHeadlandIds.second, dump_ops);
+             }
              // -----------------------------
              // subfields/obstacles
              // -----------------------------
@@ -540,7 +582,6 @@ bool write_field_hdf5(const std::string& file_path, const std::string& field_nam
                  H5Easy::dump(file, group_path + "/description",obs.type_description,dump_ops);
                  write_points(obs.boundary.points,group_path + "/boundary");
              }
-
              // -----------------------------
              // subfields/tracks
              // -----------------------------
@@ -630,11 +671,9 @@ bool delete_field_hdf5(const std::string& file_path, const std::string& field_na
 }
 bool read_grid_hdf5(const std::string& file_path, const std::string& grid_type, const std::string& grid_name, std::vector<arolib::ArolibGrid_t> &grids)
 {
-    std::cout << "READING GRID " << std::endl;
     try {
         grids.clear();
         HighFive::File file(file_path, HighFive::File::ReadOnly);
-        std::cout << "OPEN H5 " << std::endl;
 
         std::string path = "/maps/" + grid_type + "/" + grid_name + "/map";
         if(!file.exist(path))
@@ -712,10 +751,8 @@ bool read_grid_hdf5(const std::string& file_path, const std::string& grid_type, 
 
 bool read_grid_hdf5(const std::string& file_path, const std::string& grid_type, const std::string& grid_name, arolib::ArolibGrid_t &g)
 {
-    std::cout << "READING GRID " << std::endl;
      try {
          HighFive::File file(file_path, HighFive::File::ReadOnly);
-         std::cout << "OPEN H5 " << std::endl;
 
          std::string path = "/maps/" + grid_type + "/" + grid_name + "/map";
          if(!file.exist(path)) return false;

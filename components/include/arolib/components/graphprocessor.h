@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,12 +22,11 @@
 #include <math.h>
 #include <string>
 
-#include "arolib/misc/loggingcomponent.h"
-
-#include "arolib/planning/graph_builder_tracks_based.hpp"
-#include "arolib/planning/graph_builder_routes_based.hpp"
-#include "arolib/planning/planningworkspace.h"
 #include "arolib/misc/basic_responses.h"
+#include "arolib/misc/loggingcomponent.h"
+#include "arolib/cartography/sharedgridsmanager.hpp"
+#include "arolib/planning/path_search/graph_builder_tracks_based.hpp"
+#include "arolib/planning/planningworkspace.h"
 
 
 namespace arolib {
@@ -47,6 +46,22 @@ public:
         bool bePreciseWithMaps = true; /**< Perform map/grid operations precisely (except for remaining-area map) */
         bool incVisitPeriods = false; /**< Include the visiting periods of the base routes */
         Settings() = default;
+
+        /**
+         * @brief Parse the parameters from a string map, starting from a default Settings
+         * @param [out] param Settings
+         * @param map String map containing the parameter values
+         * @param strict If true, all parameters have to be in the map to suceed; if false, only parameters present in the map will be set (otherwise the default values will remain)
+         * @return True on success
+         */
+        static bool parseFromStringMap( Settings& params, const std::map<std::string, std::string>& map, bool strict = false);
+
+        /**
+         * @brief Parse the parameters to a string map
+         * @param param Parameters
+         * @return String map containing the parameter values
+         */
+        static std::map<std::string, std::string> parseToStringMap(const Settings &params);
     };
 
     /**
@@ -75,50 +90,6 @@ public:
                          DirectedGraph::Graph& graph);
 
     /**
-     * @brief Generates a graph based on the (processed) base routes and other information.
-     * @param [in/out] pw Planning workspace containing the necessary data (subfield, initial base routes, etc.) for planning, as well as the resulting harvester and olv planned routes.
-     * @param subfieldIdx Index of the subfield (in pw) that will be planned
-     * @param settings Settings
-     * @param [out] graph Resulting graph
-     * @return AroResp with error id (0:=OK) and message
-     */
-    AroResp createGraph(PlanningWorkspace &pw, size_t subfieldIdx, const Settings& settings, DirectedGraph::Graph &graph);
-
-    /**
-     * @brief Generates a graph based on the (processed) base routes and other information.
-     * @param subfield Processed subfield
-     * @param baseRoutes_headland Headland processed base routes
-     * @param baseRoutes_infield Inner-field processed base routes
-     * @param machines Machines used for planning
-     * @param settings Settings
-     * @param outFieldInfo Out-of-field information (inc. arrival times, transport times, etc.)
-     * @param machineCurrentStates Map containing the current states of the machines
-     * @param [out] graph Resulting graph
-     * @return AroResp with error id (0:=OK) and message
-     */
-    AroResp createGraph_old( const Subfield& subfield,
-                         const std::vector<arolib::HeadlandRoute> &baseRoutes_headland,
-                         const std::vector<arolib::Route> &baseRoutes_infield,
-                         const std::vector<arolib::Machine>& machines,
-                         const Settings& settings,
-                         OutFieldInfo &outFieldInfo,
-                         const std::map<MachineId_t, arolib::MachineDynamicInfo>& machineCurrentStates,
-                         DirectedGraph::Graph& graph);
-
-    /**
-     * @brief Generates a graph based on the (processed) base routes and other information.
-     * @param [in/out] pw Planning workspace containing the necessary data (subfield, base routes routes, etc.).
-     * @param subfieldIdx Index of the subfield (in pw)
-     * @param settings Settings
-     * @param [out] graph Resulting graph
-     * @return AroResp with error id (0:=OK) and message
-     */
-    AroResp createGraph_old( PlanningWorkspace &pw,
-                         size_t subfieldIdx,
-                         const Settings& settings,
-                         DirectedGraph::Graph& graph);
-
-    /**
      * @brief Generates a graph based on the (processed) subfield and worked area map.
      *
      * The track vertex-points will have a timestamp = -1 if it is processed (available), and very high it it is not
@@ -137,19 +108,6 @@ public:
                                OutFieldInfo &outFieldInfo,
                                const std::map<MachineId_t, arolib::MachineDynamicInfo>& machineCurrentStates,
                                const ArolibGrid_t &remainingAreaMap,
-                               DirectedGraph::Graph& graph);
-
-    /**
-     * @brief Generates a graph based on the (processed) subfield and worked area map.
-     * @param [in/out] pw Planning workspace containing the necessary data (subfield, maps, etc.).
-     * @param subfieldIdx Index of the subfield (in pw)
-     * @param settings Settings
-     * @param [out] graph Resulting graph
-     * @return AroResp with error id (0:=OK) and message
-     */
-    AroResp createSimpleGraph( PlanningWorkspace &pw,
-                               size_t subfieldIdx,
-                               const Settings& settings,
                                DirectedGraph::Graph& graph);
 
 
@@ -178,6 +136,32 @@ public:
      * @param filename_graphBuilding File name/path where the gragh-building information will be stored (if empty-string, no data will be saved)
      */
     void setOutputFiles(const std::string& filename_graphBuilding);
+
+    /**
+     * @brief Edit the vertex information of vertices corresponding to points of the ẃorking routes (incl. timestamp) in a graph where no routes info has been added before
+     * @param [in/out] graph graph
+     * @param machines Machines corresponding to the routes
+     * @param baseWorkingRoutes Routes
+     * @param includeVisitPeriods Include visit periods of the base routes? (including them might not be necesary if no collition avoidance will be carried out)
+     * @return AroResp with error id (0:=OK) and message
+     */
+    AroResp addBaseRouteInformationToGraph(DirectedGraph::Graph & graph,
+                                           const std::vector<Machine> &machines,
+                                           const std::vector<Route> &baseWorkingRoutes,
+                                           bool includeVisitPeriods = true) const;
+
+    /**
+     * @brief Edit the vertex information of vertices corresponding to points of the ẃorking routes (incl. timestamp) in a graph where no routes info has been added before
+     * @param [in/out] graph graph
+     * @param remainingAreaMap Remaining-area gridmap
+     * @param resetIfWorked The timestamps of the vertices considered worked (true) or not worked (false) will be reset
+     * @param cim (optinal) CellsInfoManager
+     * @return AroResp with error id (0:=OK) and message
+     */
+    AroResp resetVertexTimestampsFromWorkedArea(DirectedGraph::Graph & graph,
+                                                std::shared_ptr<const ArolibGrid_t> remainingAreaMap,
+                                                bool resetIfWorked,
+                                                std::shared_ptr<gridmap::GridCellsInfoManager> cim = nullptr) const;
 
 protected:
     /**
@@ -210,25 +194,7 @@ protected:
                  bool onlyIfNotExisting = true,
                  bool overwrite = false);
 
-    /**
-     * @brief Generate some pseudo base routes based on the subfield geometry and worked area
-     * @param subfield subfield
-     * @param settings settings
-     * @param remainingAreaMap Remaining-area map map/grid
-     * @param [out] Generated headland routes
-     * @param [out] Generated inner-field routes
-     * @return AroResp with error id (0:=OK) and message
-     */
-    AroResp generatePseudoRoutes(const Subfield& subfield,
-                                 const Settings& settings,
-                                 const ArolibGrid_t &remainingAreaMap,
-                                 arolib::HeadlandRoute& headlandRoute,
-                                 arolib::Route& infieldRoute) const;
-
 protected:
-    mutable PlanningWorkspace* m_planningWorkspace = nullptr;/**< Pointer to the planning workspace (if NULL, no methods with a planning workspace as parameter were called) */
-    mutable size_t m_pw_subfieldIdx; /**< Index of the subfield to be planned (in case the planning workspace is being used */
-
     std::string m_filename_graphBuilding = "";/**< File name/path where the gragh-building information will be stored (if empty-string, no data will be saved) */
 };
 

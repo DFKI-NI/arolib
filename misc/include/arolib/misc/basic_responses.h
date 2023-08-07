@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@
 
 #include <string>
 #include <sstream>
+#include "arolib/misc/logger.h"
 
 namespace arolib {
 
@@ -41,7 +42,6 @@ struct AroResp{
      * @param _msg Message
      */
     explicit AroResp(int _errorID, const std::string& _msg);
-
 
     /**
      * @brief Constructor
@@ -81,6 +81,36 @@ struct AroResp{
      * @return True if the current error ID corresponds to "OK"
      */
     static AroResp ok(const std::string& _msg = "OK");
+
+    /**
+     * @brief Prints the message with the given logger and returns the coresponding AroResp
+     * @param errorID Error ID
+     * @param msg Message
+     * @param logger Logger
+     * @param logLevel Log level of the message
+     * @param function Function from where the message is printed, to be added in the printed message's header. Disregarded id empty-string
+     */
+    static AroResp LoggingResp(int errorID,
+                               const std::string& msg,
+                               const Logger& logger,
+                               LogLevel logLevel,
+                               const std::string& function);
+
+    /**
+     * @brief Prints the message with the given logger and returns the coresponding AroResp
+     * @param errorID Error ID
+     * @param msg_print Initial part of the message, which will be printed
+     * @param msg_no_print Last part of the message, which will not be printed
+     * @param logger Logger
+     * @param logLevel Log level of the message
+     * @param function Function from where the message is printed, to be added in the printed message's header. Disregarded id empty-string
+     */
+    static AroResp LoggingResp(int errorID,
+                               const std::string& msg_print,
+                               const std::string& msg_no_print,
+                               const Logger& logger,
+                               LogLevel logLevel,
+                               const std::string& function);
 
 private:
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -43,8 +43,8 @@ MultiOLVPlanner::OlvOrderStrategy MultiOLVPlanner::intToOlvOrderStrategy(int val
 
 MultiOLVPlanner::OlvAssignmentStrategy MultiOLVPlanner::intToOlvAssignmentStrategy(int value)
 {
-    if(value == OlvAssignmentStrategy::HARVESTER_EXCLUSIVE)
-        return OlvAssignmentStrategy::HARVESTER_EXCLUSIVE;
+    if(value == OlvAssignmentStrategy::EXCLUSIVE)
+        return OlvAssignmentStrategy::EXCLUSIVE;
     else if(value == OlvAssignmentStrategy::SHARED_OLVS)
         return OlvAssignmentStrategy::SHARED_OLVS;
 
@@ -107,41 +107,36 @@ bool MultiOLVPlanner::PlannerSettings::parseFromStringMap(MultiOLVPlanner::Plann
 {
     MultiOLVPlanner::PlannerSettings tmp;
 
-    try{
+    if( !OverloadActivitiesPlanner::PlannerSettings::parseFromStringMap(tmp, map, strict) )
+        return false;
+    if( !OLVPlan::PlannerSettings::parseFromStringMap(tmp, map, strict) )
+        return false;
 
-        if( !OverloadActivitiesPlanner::PlannerSettings::parseFromStringMap(tmp, map, strict) )
-            return false;
-        if( !OLVPlan::PlannerSettings::parseFromStringMap(tmp, map, strict) )
-            return false;
+    int replanning_strategy, olvOrderStrategy, olvAssignmentStrategy, threadsOption;
+    std::map<std::string, double*> dMap = { {"max_waiting_time" , &tmp.max_waiting_time},
+                                            {"harvestedMassLimit" , &tmp.harvestedMassLimit},
+                                            {"max_planning_time" , &tmp.max_planning_time} };
+    std::map<std::string, int*> iMap = { {"numOverloadActivities" , &tmp.numOverloadActivities},
+                                            {"numFixedInitalOlvsInOrder" , &tmp.numFixedInitalOlvsInOrder} };
+    std::map<std::string, bool*> bMap = { {"sendLastOlvToResourcePoint" , &tmp.sendLastOlvToResourcePoint} ,
+                                          {"leaveRoutePointBetweenOLActivities" , &tmp.leaveRoutePointBetweenOLActivities}};
+    std::map<std::string, int*> enumMap = { {"replanning_strategy" , &replanning_strategy},
+                                            {"olvOrderStrategy" , &olvOrderStrategy},
+                                            {"olvAssignmentStrategy" , &olvAssignmentStrategy},
+                                            {"threadsOption" , &threadsOption} };
 
-        int replanning_strategy, olvOrderStrategy, olvAssignmentStrategy, threadsOption;
-        std::map<std::string, double*> dMap = { {"max_waiting_time" , &tmp.max_waiting_time},
-                                                {"harvestedMassLimit" , &tmp.harvestedMassLimit},
-                                                {"max_planning_time" , &tmp.max_planning_time} };
-        std::map<std::string, int*> iMap = { {"numOLActivitiesPerSubplan" , &tmp.numOLActivitiesPerSubplan},
-                                             {"numFixedInitalOlvsInOrder" , &tmp.numFixedInitalOlvsInOrder} };
-        std::map<std::string, bool*> bMap = { {"sendLastOlvToResourcePoint" , &tmp.sendLastOlvToResourcePoint} };
-        std::map<std::string, int*> enumMap = { {"replanning_strategy" , &replanning_strategy},
-                                                {"olvOrderStrategy" , &olvOrderStrategy},
-                                                {"olvAssignmentStrategy" , &olvAssignmentStrategy},
-                                                {"threadsOption" , &threadsOption} };
+    if( !setValuesFromStringMap( map, dMap, strict)
+            || !setValuesFromStringMap( map, iMap, strict)
+            || !setValuesFromStringMap( map, bMap, strict)
+            || !setValuesFromStringMap( map, enumMap, strict) )
+        return false;
 
-        if( !setValuesFromStringMap( map, dMap, strict)
-                || !setValuesFromStringMap( map, iMap, strict)
-                || !setValuesFromStringMap( map, bMap, strict)
-                || !setValuesFromStringMap( map, enumMap, strict) )
-            return false;
-
-        tmp.olvOrderStrategy = intToOlvOrderStrategy( olvOrderStrategy );
-        tmp.olvAssignmentStrategy = intToOlvAssignmentStrategy( olvAssignmentStrategy );
-        tmp.threadsOption = intToThreadsOption( threadsOption );
-
-    } catch(...){ return false; }
+    tmp.olvOrderStrategy = intToOlvOrderStrategy( olvOrderStrategy );
+    tmp.olvAssignmentStrategy = intToOlvAssignmentStrategy( olvAssignmentStrategy );
+    tmp.threadsOption = intToThreadsOption( threadsOption );
 
     params = tmp;
-
     return true;
-
 }
 
 std::map<std::string, std::string> MultiOLVPlanner::PlannerSettings::parseToStringMap(const MultiOLVPlanner::PlannerSettings &params)
@@ -155,19 +150,20 @@ std::map<std::string, std::string> MultiOLVPlanner::PlannerSettings::parseToStri
     ret["max_waiting_time"] = double2string( params.max_waiting_time );
     ret["harvestedMassLimit"] = double2string( params.harvestedMassLimit );
     ret["max_planning_time"] = double2string( params.max_planning_time );
-    ret["numOLActivitiesPerSubplan"] = std::to_string( params.numOLActivitiesPerSubplan );
+    ret["numOverloadActivities"] = std::to_string( params.numOverloadActivities );
     ret["numFixedInitalOlvsInOrder"] = std::to_string( params.numFixedInitalOlvsInOrder );
     ret["sendLastOlvToResourcePoint"] = std::to_string( params.sendLastOlvToResourcePoint );
     ret["olvOrderStrategy"] = std::to_string( params.olvOrderStrategy );
     ret["olvAssignmentStrategy"] = std::to_string( params.olvAssignmentStrategy );
     ret["threadsOption"] = std::to_string( params.threadsOption );
+    ret["leaveRoutePointBetweenOLActivities"] = std::to_string( params.leaveRoutePointBetweenOLActivities );
 
     return ret;
 
 }
 
 MultiOLVPlanner::MultiOLVPlanner(const DirectedGraph::Graph &graph,
-                                 const std::vector<Route> &harv_routes,
+                                 const std::vector<Route> &base_routes,
                                  const std::vector<Machine> &machines,
                                  const std::map<MachineId_t, MachineDynamicInfo> &machineCurrentStates,
                                  const MultiOLVPlanner::PlannerSettings &settings,
@@ -176,7 +172,6 @@ MultiOLVPlanner::MultiOLVPlanner(const DirectedGraph::Graph &graph,
                                  LogLevel logLevel):
     LoggingComponent(logLevel, __FUNCTION__),
     m_graph(graph),
-    m_harvesterRoutes(harv_routes),
     m_machineInitialStates(machineCurrentStates),
     m_settings(settings),
     m_edgeCostCalculator(edgeCostCalculator),
@@ -193,6 +188,43 @@ MultiOLVPlanner::MultiOLVPlanner(const DirectedGraph::Graph &graph,
         else if(m.machinetype == Machine::OLV)
             m_olvs.emplace_back(m);
     }
+
+
+    m_harvesterRoutes.reserve(base_routes.size());
+    for(const auto& route : base_routes){
+        double machineTimestamp = 0;
+        auto mdi_it = m_machineInitialStates.find(route.machine_id);
+        if(mdi_it != m_machineInitialStates.end())
+            machineTimestamp = std::max(0.0, mdi_it->second.timestamp);
+
+        size_t indStart = route.route_points.size();
+        for(size_t i = 0 ; i < route.route_points.size() ; ++i){
+            if(route.route_points.at(i).time_stamp > -1e-9){
+                indStart = i;
+                break;
+            }
+        }
+
+        if(indStart > 0)//set the timestamps of the vertices corresponding to the disregarded segment to "worked"
+            resetTimestampsFromBaseRoute(m_graph, route, 0, indStart-1);
+
+        m_harvesterRoutes.emplace_back(Route());
+        route.copyToWithoutPoints(m_harvesterRoutes.back(), true);
+        if(indStart < route.route_points.size()){
+
+            m_harvesterRoutes.back().route_points.insert(m_harvesterRoutes.back().route_points.end(),
+                                                         route.route_points.begin() + indStart,
+                                                         route.route_points.end());
+            if(machineTimestamp > 1e-9 && m_harvesterRoutes.back().route_points.front().time_stamp < machineTimestamp){
+                double delta_time = machineTimestamp - m_harvesterRoutes.back().route_points.front().time_stamp;
+                for(auto& rp : m_harvesterRoutes.back().route_points)
+                    rp.time_stamp += delta_time;
+            }
+
+            //update the timestamps of the vertices corresponding to the remaining route points
+            updateTimestampsFromBaseRoute(m_graph, m_harvesterRoutes.back(), 0, 0, -1, 0);
+        }
+    }
 }
 
 void MultiOLVPlanner::reset()
@@ -204,31 +236,36 @@ void MultiOLVPlanner::reset()
 std::string MultiOLVPlanner::planAll()
 {
     if(!m_edgeCostCalculator){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Invalid edgeCostCalculator." );
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Invalid edgeCostCalculator." );
         return "Invalid edgeCostCalculator";
     }
 
     if(m_harvesterRoutes.empty()){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "No harvester routes were given");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "No harvester routes were given");
         return "No harvester routes were given";
     }
     for(auto &r : m_harvesterRoutes){
         if(r.route_points.size() < 2){
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "One or more harvester routes are invalid");
+            logger().printOut(LogLevel::ERROR, __FUNCTION__, "One or more harvester routes are invalid");
             return "One or more harvester routes are invalid";
         }
     }
 
     if(m_olvs.empty()){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "No overload machines were given");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "No overload machines were given");
         return "No overload machines were given";
+    }
+
+    if(!MachineDynamicInfo::isValid(m_machineInitialStates)){
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Invalid machine initial states");
+        return "Invalid machine initial states";
     }
 
     reset();
 
     std::string sError;
 
-    if(m_settings.olvAssignmentStrategy == OlvAssignmentStrategy::HARVESTER_EXCLUSIVE )
+    if(m_settings.olvAssignmentStrategy == OlvAssignmentStrategy::EXCLUSIVE )
         sError = planAll_exclusive();
     else
         sError = planAll_shared();
@@ -299,15 +336,15 @@ std::string MultiOLVPlanner::planAll_exclusive()
      *       Second harvester route: <OLV2, OLV4>
      */
     int pos = 0;
-    m_logger.printOut(LogLevel::DEBUG, __FUNCTION__, "Overload machines:");
+    logger().printOut(LogLevel::DEBUG, __FUNCTION__, "Overload machines:");
     for (int i = 0; i < m_olvs.size(); ++i) {
         Machine m = m_olvs.at(i);
         overloadMachines.at(pos).push_back(m);
         if (m.bunker_mass < 1)
-            m_logger.printOut(LogLevel::WARNING, __FUNCTION__, "Overload machine has bunker mass capacity " + std::to_string(m.bunker_mass) );
+            logger().printOut(LogLevel::WARNING, __FUNCTION__, "Overload machine has bunker mass capacity " + std::to_string(m.bunker_mass) );
         pos = (pos + 1) % overloadMachines.size();
 
-        m_logger.printOut(LogLevel::DEBUG, __FUNCTION__, "\t" + m.toString());
+        logger().printOut(LogLevel::DEBUG, __FUNCTION__, "\t" + m.toString());
     }
 
     m_bestPlan.plannedRoutes.clear();
@@ -327,23 +364,25 @@ std::string MultiOLVPlanner::planAll_exclusive()
 
 
         if (m_settings.olvOrderStrategy == CHECK_ALL_PERMUTATIONS){
-            m_logger.printOut(LogLevel::DEBUG, __FUNCTION__, "Reordering working group... " );
+            logger().printOut(LogLevel::DEBUG, __FUNCTION__, "Reordering working group... " );
             //start with the permutation that is likely to be the best one (other plans will be discarded faster)
             overloadMachines.at(i) = reorderWorkingGroup(overloadMachines.at(i),
                                                          m_harvesterRoutes.at(i),
                                                          m_machineInitialStates,
                                                          m_settings,
                                                          0,
+                                                         m_settings.numOverloadActivities,
                                                          m_settings.harvestedMassLimit,
-                                                         &m_logger);
+                                                         m_settings.leaveRoutePointBetweenOLActivities,
+                                                         loggerPtr());
         }
 
         if(m_settings.numFixedInitalOlvsInOrder < 0){//estimate the optimal number of fixed OLVs to avoid unnecessary computations of computations likely to NOT be the best one
-            m_logger.printOut(LogLevel::DEBUG, __FUNCTION__, "Estimating optimal OLV order... " );
+            logger().printOut(LogLevel::DEBUG, __FUNCTION__, "Estimating optimal OLV order... " );
             numFixed = estimateNumFixedInitalOlvsInOrder(m_harvesterRoutes.at(i),
                                                          overloadMachines.at(i),
                                                          m_machineInitialStates);
-            m_logger.printOut(LogLevel::DEBUG, __FUNCTION__, std::to_string(numFixed) + " initial fixed olvs estimated automatically");
+            logger().printOut(LogLevel::DEBUG, __FUNCTION__, std::to_string(numFixed) + " initial fixed olvs estimated automatically");
         }
         else
             numFixed = std::max( 0, std::min(m_settings.numFixedInitalOlvsInOrder, (int)overloadMachines.at(i).size() ) );
@@ -383,7 +422,7 @@ std::string MultiOLVPlanner::planAll_exclusive()
         std::vector< std::future< void > > futures_perm (numThreads);
         std::mutex mutex;
 
-        m_logger.printOut(LogLevel::DEBUG, __FUNCTION__, "Started planning for " + std::to_string(numPerms) + "  permutations in " + std::to_string(numThreads) + " threads... " );
+        logger().printOut(LogLevel::DEBUG, __FUNCTION__, "Started planning for " + std::to_string(numPerms) + "  permutations in " + std::to_string(numThreads) + " threads... " );
         for(size_t kk = 0 ; kk < futures_perm.size() ; ++kk){
             auto& fu = futures_perm.at(kk);
             auto& perms = parallelPerm.at(kk);
@@ -418,7 +457,7 @@ std::string MultiOLVPlanner::planAll_exclusive()
                         sPermutation += ( std::to_string(perm.at(j)) + "(" + std::to_string(olvPermutation.back().id) + ") " );
                         permutationSubfolder += ( std::to_string(olvPermutation.back().id) + "-" );
                     }
-                    m_logger.printOut(LogLevel::DEBUG, __FUNCTION__, "Planning for OLV permutation " + sPermutation);
+                    logger().printOut(LogLevel::DEBUG, __FUNCTION__, "Planning for OLV permutation " + sPermutation);
 
                     if(!outputFolder.empty() && !permutationSubfolder.empty()){//update the folder where the planning (search) information the current permutation will be stored
                         permutationSubfolder.back() = '/';
@@ -432,18 +471,18 @@ std::string MultiOLVPlanner::planAll_exclusive()
                         std::lock_guard<std::mutex> guard(mutex);
                         if(sError.empty()){//a plan was computed and is better that the current BEST plan
                             found_plan = true;
-                            m_logger.printOut(LogLevel::DEBUG, __FUNCTION__, sPermutation + " : Found new best plan with cost: " + std::to_string( bestPlanCost ) );
-                            m_logger.printOut(LogLevel::DEBUG, __FUNCTION__, sPermutation + " : New best cost: " + std::to_string(oldBestCost) + " --> " + std::to_string( bestPlanCost ) );
+                            logger().printOut(LogLevel::DEBUG, __FUNCTION__, sPermutation + " : Found new best plan with cost: " + std::to_string( bestPlanCost ) );
+                            logger().printOut(LogLevel::DEBUG, __FUNCTION__, sPermutation + " : New best cost: " + std::to_string(oldBestCost) + " --> " + std::to_string( bestPlanCost ) );
                             sBestPermutation = sPermutation;
                         }
                         else //either no plan was computed (e.g. because of an error, or the max planning time was reached), or the computed plan has a higher cost that the curren best plan
-                            m_logger.printOut(LogLevel::DEBUG, __FUNCTION__, sPermutation + " : Could not find a (-/better) plan: " + sError );
+                            logger().printOut(LogLevel::DEBUG, __FUNCTION__, sPermutation + " : Could not find a (-/better) plan: " + sError );
 
                         ++countPermutations;
                     }
 
                     duration = 0.001 * std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - time_start).count();
-                    m_logger.printOut(LogLevel::DEBUG, __FUNCTION__, "##### elapsed time since start of planning: " + std::to_string(duration) + " seconds\n" );
+                    logger().printOut(LogLevel::DEBUG, __FUNCTION__, "##### elapsed time since start of planning: " + std::to_string(duration) + " seconds\n" );
                     if(m_settings.max_planning_time > 1e-5 && duration > m_settings.max_planning_time)
                         break;
                 }
@@ -454,11 +493,11 @@ std::string MultiOLVPlanner::planAll_exclusive()
             fu.wait();
 
         if (!found_plan){
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Could not find a plan for route of harvester with machine_id " + std::to_string( m_harvesterRoutes.at(i).machine_id ) );
+            logger().printOut(LogLevel::ERROR, __FUNCTION__, "Could not find a plan for route of harvester with machine_id " + std::to_string( m_harvesterRoutes.at(i).machine_id ) );
             return "Could not find a plan for route of harvester with machine_id " + std::to_string( m_harvesterRoutes.at(i).machine_id );
         }
 
-        m_logger.printOut(LogLevel::INFO, __FUNCTION__, "Best plan for route of harvester with machine_id " + std::to_string( m_harvesterRoutes.at(i).machine_id )
+        logger().printOut(LogLevel::INFO, __FUNCTION__, "Best plan for route of harvester with machine_id " + std::to_string( m_harvesterRoutes.at(i).machine_id )
                           + " found with cost " + std::to_string( m_bestPlan.planCosts.at(i) )
                           + " (overall plan cost = " + std::to_string( m_bestPlan.planOverallCost )
                           + ") after checking " + std::to_string(countPermutations)
@@ -483,15 +522,15 @@ std::string MultiOLVPlanner::planAll_exclusive__singleThread()
          *       Second harvester route: <OLV2, OLV4>
          */
     int pos = 0;
-    m_logger.printOut(LogLevel::DEBUG, __FUNCTION__, "Overload machines:");
+    logger().printOut(LogLevel::DEBUG, __FUNCTION__, "Overload machines:");
     for (int i = 0; i < m_olvs.size(); ++i) {
         Machine m = m_olvs.at(i);
         overloadMachines.at(pos).push_back(m);
         if (m.bunker_mass < 1)
-            m_logger.printOut(LogLevel::WARNING, __FUNCTION__, "Overload machine has bunker mass capacity " + std::to_string(m.bunker_mass) );
+            logger().printOut(LogLevel::WARNING, __FUNCTION__, "Overload machine has bunker mass capacity " + std::to_string(m.bunker_mass) );
         pos = (pos + 1) % overloadMachines.size();
 
-        m_logger.printOut(LogLevel::DEBUG, __FUNCTION__, "\t" + m.toString());
+        logger().printOut(LogLevel::DEBUG, __FUNCTION__, "\t" + m.toString());
     }
 
     m_bestPlan.plannedRoutes.clear();
@@ -514,23 +553,25 @@ std::string MultiOLVPlanner::planAll_exclusive__singleThread()
 
 
         if (m_settings.olvOrderStrategy == CHECK_ALL_PERMUTATIONS){
-            m_logger.printOut(LogLevel::DEBUG, __FUNCTION__, "Reordering working group... " );
+            logger().printOut(LogLevel::DEBUG, __FUNCTION__, "Reordering working group... " );
             //start with the permutation that is likely to be the best one (other plans will be discarded faster)
             overloadMachines.at(i) = reorderWorkingGroup(overloadMachines.at(i),
                                                          m_harvesterRoutes.at(i),
                                                          m_machineInitialStates,
                                                          m_settings,
                                                          0,
+                                                         m_settings.numOverloadActivities,
                                                          m_settings.harvestedMassLimit,
-                                                         &m_logger);
+                                                         m_settings.leaveRoutePointBetweenOLActivities,
+                                                         loggerPtr());
         }
 
         if(m_settings.numFixedInitalOlvsInOrder < 0){//estimate the optimal number of fixed OLVs to avoid unnecessary computations of computations likely to NOT be the best one
-            m_logger.printOut(LogLevel::DEBUG, __FUNCTION__, "Estimating optimal OLV order... " );
+            logger().printOut(LogLevel::DEBUG, __FUNCTION__, "Estimating optimal OLV order... " );
             numFixed = estimateNumFixedInitalOlvsInOrder(m_harvesterRoutes.at(i),
                                                          overloadMachines.at(i),
                                                          m_machineInitialStates);
-            m_logger.printOut(LogLevel::DEBUG, __FUNCTION__, std::to_string(numFixed) + " initial fixed olvs estimated automatically");
+            logger().printOut(LogLevel::DEBUG, __FUNCTION__, std::to_string(numFixed) + " initial fixed olvs estimated automatically");
         }
         else
             numFixed = std::max( 0, std::min(m_settings.numFixedInitalOlvsInOrder, (int)overloadMachines.at(i).size() ) );
@@ -542,7 +583,7 @@ std::string MultiOLVPlanner::planAll_exclusive__singleThread()
         size_t countPermutations = 0;
         std::string sBestPermutation;
 
-        m_logger.printOut(LogLevel::DEBUG, __FUNCTION__, "started planning for permutations... " );
+        logger().printOut(LogLevel::DEBUG, __FUNCTION__, "started planning for permutations... " );
         do {
             double oldBestCost = bestPlanCost;
 
@@ -562,7 +603,7 @@ std::string MultiOLVPlanner::planAll_exclusive__singleThread()
                 sPermutation += ( std::to_string(perm.at(j)) + "(" + std::to_string(olvPermutation.back().id) + ") " );
                 permutationSubfolder += ( std::to_string(olvPermutation.back().id) + "-" );
             }
-            m_logger.printOut(LogLevel::DEBUG, __FUNCTION__, "Planning for OLV permutation " + sPermutation);
+            logger().printOut(LogLevel::DEBUG, __FUNCTION__, "Planning for OLV permutation " + sPermutation);
 
             std::string outputFolder;
             if(!m_outputFolder.empty() && !permutationSubfolder.empty()){//update the folder where the planning (search) information the current permutation will be stored
@@ -573,25 +614,25 @@ std::string MultiOLVPlanner::planAll_exclusive__singleThread()
             std::string sError = planSingle_exclusive(i, olvPermutation, m_settings.max_planning_time-duration, outputFolder, false);
             if(sError.empty()){//a plan was computed and is better that the current BEST plan
                 found_plan = true;
-                m_logger.printOut(LogLevel::DEBUG, __FUNCTION__, "Found new best plan with cost: " + std::to_string( bestPlanCost ) );
-                m_logger.printOut(LogLevel::DEBUG, __FUNCTION__, "New best cost: " + std::to_string(oldBestCost) + " --> " + std::to_string( bestPlanCost ) );
+                logger().printOut(LogLevel::DEBUG, __FUNCTION__, "Found new best plan with cost: " + std::to_string( bestPlanCost ) );
+                logger().printOut(LogLevel::DEBUG, __FUNCTION__, "New best cost: " + std::to_string(oldBestCost) + " --> " + std::to_string( bestPlanCost ) );
                 sBestPermutation = sPermutation;
             }
             else //either no plan was computed (e.g. because of an error, or the max planning time was reached), or the computed plan has a higher cost that the curren best plan
-                m_logger.printOut(LogLevel::DEBUG, __FUNCTION__, "Could not find a (-/better) plan: " + sError );
+                logger().printOut(LogLevel::DEBUG, __FUNCTION__, "Could not find a (-/better) plan: " + sError );
 
             duration = 0.001 * std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - time_start).count();
-            m_logger.printOut(LogLevel::DEBUG, __FUNCTION__, "##### elapsed time since start of planning: " + std::to_string(duration) + " seconds\n" );
+            logger().printOut(LogLevel::DEBUG, __FUNCTION__, "##### elapsed time since start of planning: " + std::to_string(duration) + " seconds\n" );
 
         } while (std::next_permutation(begin(perm), end(perm)) //update the next permutation (if there is)
                  && ( m_settings.max_planning_time < 1e-5 || duration < m_settings.max_planning_time) ); //check if the planning time limit was reached
 
         if (!found_plan){
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Could not find a plan for route of harvester with machine_id " + std::to_string( m_harvesterRoutes.at(i).machine_id ) );
+            logger().printOut(LogLevel::ERROR, __FUNCTION__, "Could not find a plan for route of harvester with machine_id " + std::to_string( m_harvesterRoutes.at(i).machine_id ) );
             return "Could not find a plan for route of harvester with machine_id " + std::to_string( m_harvesterRoutes.at(i).machine_id );
         }
 
-        m_logger.printOut(LogLevel::INFO, __FUNCTION__, "Best plan for route of harvester with machine_id " + std::to_string( m_harvesterRoutes.at(i).machine_id )
+        logger().printOut(LogLevel::INFO, __FUNCTION__, "Best plan for route of harvester with machine_id " + std::to_string( m_harvesterRoutes.at(i).machine_id )
                           + " found with cost " + std::to_string( m_bestPlan.planCosts.at(i) )
                           + " (overall plan cost = " + std::to_string( m_bestPlan.planOverallCost )
                           + ") after checking " + std::to_string(countPermutations)
@@ -621,7 +662,7 @@ std::string MultiOLVPlanner::planAll_exclusive_singlePlan(const std::vector<std:
                 numFixed = estimateNumFixedInitalOlvsInOrder(harvRoute,
                                                              overloadMachines,
                                                              m_machineInitialStates);
-                m_logger.printOut(LogLevel::DEBUG, __FUNCTION__, std::to_string(numFixed) + " initial fixed olvs estimated automatically");
+                logger().printOut(LogLevel::DEBUG, __FUNCTION__, std::to_string(numFixed) + " initial fixed olvs estimated automatically");
             }
             else
                 numFixed = std::max( 0, std::min(m_settings.numFixedInitalOlvsInOrder, (int)overloadMachines.size() ) );
@@ -631,8 +672,10 @@ std::string MultiOLVPlanner::planAll_exclusive_singlePlan(const std::vector<std:
                                                    m_machineInitialStates,
                                                    m_settings,
                                                    numFixed,
+                                                   m_settings.numOverloadActivities,
                                                    m_settings.harvestedMassLimit,
-                                                   &m_logger);
+                                                   m_settings.leaveRoutePointBetweenOLActivities,
+                                                   loggerPtr());
         }
 
         std::string outputFolder = m_outputFolder;
@@ -646,7 +689,7 @@ std::string MultiOLVPlanner::planAll_exclusive_singlePlan(const std::vector<std:
 
         std::string sError = planSingle_exclusive(i, overloadMachines, m_settings.max_planning_time, outputFolder, false);
         if(!sError.empty()){
-            m_logger.printOut(LogLevel::DEBUG, __FUNCTION__, "Could not find a plan for route of harvester " + std::to_string(harvRoute.machine_id)
+            logger().printOut(LogLevel::DEBUG, __FUNCTION__, "Could not find a plan for route of harvester " + std::to_string(harvRoute.machine_id)
                               + ": " + sError );
             return "Could not find a plan for route of harvester " + std::to_string(harvRoute.machine_id) + ": " + sError;
         }
@@ -671,7 +714,7 @@ std::string MultiOLVPlanner::planSingle_exclusive(size_t indHarvRoute,
 {
 
     if(olvs.empty()){
-        m_logger.printOut(LogLevel::CRITIC, __FUNCTION__, "No overloading machines assigened to harvester route");
+        logger().printOut(LogLevel::CRITIC, __FUNCTION__, "No overloading machines assigened to harvester route");
         return "No overloading machines assigened to harvester route";
     }
 
@@ -693,13 +736,13 @@ std::string MultiOLVPlanner::planSingle_exclusive(size_t indHarvRoute,
     std::shared_ptr<Machine> harv = nullptr;
     auto it_harv = m_harvesters.find(harvRoute.machine_id);
     if(it_harv == m_harvesters.end())
-        m_logger.printOut(LogLevel::WARNING, __FUNCTION__, 10, "Harvester id ", harvRoute.machine_id, " of route not found in working group");
+        logger().printOut(LogLevel::WARNING, __FUNCTION__, 10, "Harvester id ", harvRoute.machine_id, " of route not found in working group");
     else if(it_harv->second.unload_sides == 0 )
-        m_logger.printOut(LogLevel::WARNING, __FUNCTION__, 10, "Harvester with id ", harvRoute.machine_id, " has no downloading sides. Disregarding harvester information.");
+        logger().printOut(LogLevel::WARNING, __FUNCTION__, 10, "Harvester with id ", harvRoute.machine_id, " has no downloading sides. Disregarding harvester information.");
     else
         harv = std::make_shared<Machine>(it_harv->second);
 
-    m_logger.printOut(LogLevel::DEBUG, __FUNCTION__, "Resource & Access points: ");
+    logger().printOut(LogLevel::DEBUG, __FUNCTION__, "Resource & Access points: ");
 
     //obtain the vertices corresponding to field access points and resource/silo points
     std::vector<DirectedGraph::vertex_t> resource_vertices;
@@ -709,14 +752,14 @@ std::string MultiOLVPlanner::planSingle_exclusive(size_t indHarvRoute,
         const ResourcePoint& resPoint = it1.first;
         if(resPoint.resourceTypes.find(ResourcePoint::ResourceType_UNLOADING) != resPoint.resourceTypes.end()){
             resource_vertices.push_back(it1.second);
-            m_logger.printOut(LogLevel::DEBUG, __FUNCTION__, "\t\t\tAdded vertex for resource point " + std::to_string(resPoint.id) + ": " + resPoint.toString() );
+            logger().printOut(LogLevel::DEBUG, __FUNCTION__, "\t\t\tAdded vertex for resource point " + std::to_string(resPoint.id) + ": " + resPoint.toString() );
         }
     }
 
     for(const auto& it1 : graph.accesspoint_vertex_map()){
         const FieldAccessPoint& fap = it1.first;
         accessPoint_vertices.push_back(it1.second);
-        m_logger.printOut(LogLevel::DEBUG, __FUNCTION__, "\t\t\tAdded vertex for access point " + std::to_string(fap.id) + ": " + fap.toString() );
+        logger().printOut(LogLevel::DEBUG, __FUNCTION__, "\t\t\tAdded vertex for access point " + std::to_string(fap.id) + ": " + fap.toString() );
     }
 
     //get the bunker level of the fisrt OLV in the list
@@ -730,17 +773,22 @@ std::string MultiOLVPlanner::planSingle_exclusive(size_t indHarvRoute,
     for (int i = 0; i < olvs.size(); ++i){
 
         //get current/initial bunker level for the machine
-        double olv_bunker_level = 0;
+        MachineDynamicInfo mdi;
         auto it0 = m_machineInitialStates.find(olvs.at(i).id);
         if (it0 != m_machineInitialStates.end())
-            olv_bunker_level = it0->second.bunkerMass;
+            mdi = it0->second;
+        else{
+            mdi.bunkerMass = 0;
+            mdi.bunkerVolume = 0;
+            mdi.timestamp = 0;
+        }
 
         //update the folder where the planning (search) information of the current OLV will be stored
         std::string folderName_M = folderName;
         if(!folderName_M.empty()){
             folderName_M += ( "M" + std::to_string(olvs.at(i).id) + "/" );
             if (!io::create_directory(folderName_M, true)){
-                m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error creating output folder '" + folderName_M + "'" );
+                logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error creating output folder '" + folderName_M + "'" );
                 folderName_M.clear();
             }
         }
@@ -751,28 +799,46 @@ std::string MultiOLVPlanner::planSingle_exclusive(size_t indHarvRoute,
                                                                    resource_vertices,
                                                                    accessPoint_vertices,
                                                                    m_settings,
-                                                                   olv_bunker_level,
+                                                                   mdi,
                                                                    m_edgeCostCalculator,
                                                                    folderName_M,
-                                                                   m_logger.logLevel())) );
+                                                                   logger().logLevel())) );
         if(it_plan.second){
             if(disableFurtherLogging)//don't print anything in the OLVPlan
                 it_plan.first->second.logger().setLogLevel(LogLevel::NONE);
             else//set the parent of the OLVPlan's logger to be the logger of this MultiOLVPlanner instance
-                it_plan.first->second.logger().setParent(&m_logger);
+                it_plan.first->second.logger().setParent(loggerPtr());
         }
     }
 
-    int numOLActivitiesPerSubplan = m_settings.numOLActivitiesPerSubplan;
-    if(numOLActivitiesPerSubplan <= 0)
-        numOLActivitiesPerSubplan = std::numeric_limits<int>::max();
+    int numOverloadActivities = m_settings.numOverloadActivities;
+    if(numOverloadActivities <= 0)
+        numOverloadActivities = std::numeric_limits<int>::max();
 
     auto overloadActivities = OverloadActivitiesPlanner::computeOverloadActivities(m_settings,
                                                                                    harvRoute,
                                                                                    olvs,
                                                                                    m_machineInitialStates,
+                                                                                   m_settings.numOverloadActivities,
                                                                                    m_settings.harvestedMassLimit,
-                                                                                   &m_logger);
+                                                                                   m_settings.leaveRoutePointBetweenOLActivities,
+                                                                                   loggerPtr());
+
+    //update harv routes and OLActivites if the activities start in the same rp taht the previous activity finished
+    int countAddedRPs = 0;
+    for(size_t i = 1 ; i < overloadActivities.size() ; ++i){
+        auto& act = overloadActivities.at(i);
+        auto& actPrev = overloadActivities.at(i-1);
+        act.start_index += countAddedRPs;
+        act.end_index += countAddedRPs;
+        if(act.start_index == actPrev.end_index){
+            auto rp = harvRoute.route_points.at(act.start_index);
+            harvRoute.route_points.insert( harvRoute.route_points.begin() + act.start_index, rp );
+            ++countAddedRPs;
+            ++act.start_index;
+            ++act.end_index;
+        }
+    }
 
     //check which of the OLVs were assigned an overload window and save their ids
     std::set<MachineId_t> olvsInDutty;
@@ -782,24 +848,23 @@ std::string MultiOLVPlanner::planSingle_exclusive(size_t indHarvRoute,
         olvsInDutty.insert(a.machine.id);
     }
 
-    m_logger.printOut(LogLevel::INFO, __FUNCTION__, "Computed " + std::to_string( overloadActivities.size() ) + " overloadActivities (" + (m_settings.switchOnlyAtTrackEnd?"SWITCH_AT_TRACK_END_ONLY":"SWITCH OVERALL") + ")");
+    logger().printOut(LogLevel::INFO, __FUNCTION__, "Computed " + std::to_string( overloadActivities.size() ) + " overloadActivities (" + (m_settings.switchOnlyAtTrackEnd?"SWITCH_AT_TRACK_END_ONLY":"SWITCH OVERALL") + ")");
 
     std::chrono::steady_clock::time_point time_start = std::chrono::steady_clock::now();
 
     // plan each overload activity/window
     std::vector< std::pair<MachineId_t, double> > overload_info_prev;
 
-    for (auto it = overloadActivities.begin() ; it != overloadActivities.end()  ; ++it) {
-
-        bool result = true;
+    for(size_t ola_ind = 0 ; ola_ind < overloadActivities.size() ; ++ola_ind){
+        auto& ola = overloadActivities.at(ola_ind);
         double delay = 0.0;
-        m_logger.printOut(LogLevel::INFO, __FUNCTION__, "Planning overload for olv " + std::to_string( it->machine.id ) + "..." );
+        logger().printOut(LogLevel::DEBUG, __FUNCTION__, "Planning overload for olv " + std::to_string( ola.machine.id ) + "..." );
 
-        auto &olvplan = olvplan_map.at(it->machine.id);//reference!
+        OLVPlan &olvplan = olvplan_map.at(ola.machine.id);//reference!
 
         double duration = 0.001 * std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - time_start).count();
         if(max_planning_time > 1e-5 && duration > max_planning_time){
-            m_logger.printOut(LogLevel::WARNING, __FUNCTION__, "Planning aborted: maximum planning time reached: " + std::to_string(duration) + "/" + std::to_string(max_planning_time) );
+            logger().printOut(LogLevel::WARNING, __FUNCTION__, "Planning aborted: maximum planning time reached: " + std::to_string(duration) + "/" + std::to_string(max_planning_time) );
             return "Planning aborted: maximum planning time reached";
         }
 
@@ -807,22 +872,30 @@ std::string MultiOLVPlanner::planSingle_exclusive(size_t indHarvRoute,
         if(! olvplan.planOverload( graph,
                                    harvRoute,
                                    harv,
-                                   *it,
+                                   ola,
                                    overload_info_prev,
                                    m_settings.max_waiting_time ) ){
 
-            m_logger.printOut(LogLevel::CRITIC, __FUNCTION__, "Could not find overload plan for olv " + std::to_string( it->machine.id )
+            logger().printOut(LogLevel::CRITIC, __FUNCTION__, "Could not find overload plan for olv " + std::to_string( ola.machine.id )
                               + " with max waiting time " + std::to_string( m_settings.max_waiting_time ) );
-            return "Could not find overload plan for olv " + std::to_string( it->machine.id )
+            return "Could not find overload plan for olv " + std::to_string( ola.machine.id )
                     + " with max waiting time " + std::to_string( m_settings.max_waiting_time );
 
         }
+
+        //update harvester visit periods from the overloading segment (incl. non working segment connecting to next window)
+        if(it_harv != m_harvesters.end() && m_settings.collisionAvoidanceOption != Astar::WITHOUT_COLLISION_AVOIDANCE)//update visit periods
+            updateVisitPeriods(graph,
+                               it_harv->second,
+                               harvRoute.route_points,
+                               ola.start_index,
+                               ( ola_ind+1 < overloadActivities.size() ? overloadActivities.at(ola_ind+1).end_index : ola.end_index));
 
         delay = olvplan.getDelay();
         overallDelay += delay;
         size_t numCrossings_IF, numCrossings_HL;
         size_t numCrossings = olvplan.getNumCrossings(numCrossings_IF, numCrossings_HL);
-        m_logger.printOut(LogLevel::INFO, __FUNCTION__, "Found overload plan for olv " + std::to_string( it->machine.id )
+        logger().printOut(LogLevel::DEBUG, __FUNCTION__, "Found overload plan for olv " + std::to_string( ola.machine.id )
                           + ". Current cost = " + std::to_string( olvplan.getCost() )
                           + ". Current num. crossings = " + std::to_string(numCrossings)
                           + "( " + std::to_string(numCrossings_IF) + "[IF], " + std::to_string(numCrossings_HL) + "[HL] )");
@@ -830,16 +903,16 @@ std::string MultiOLVPlanner::planSingle_exclusive(size_t indHarvRoute,
         if(!updatePlanCost(currentPlan,
                            olvplan_map,
                            overallDelay,
-                           harvRoute.route_points.at( it->start_index ),//assuming the delay happened at the start of the overload activity
+                           harvRoute.route_points.at( ola.start_index ),//assuming the delay happened at the start of the overload activity
                            indHarvRoute,
                            harv)){//update the costs of the current plan (including the last computed route segments) and check if they are still better than the overall costs of the current BEST plan
-            m_logger.printOut(LogLevel::WARNING, __FUNCTION__, "Planning aborted: current plan cost " + std::to_string( planCost ) + " is higher than the limit cost " + std::to_string( bestPlanCost )  );
+            logger().printOut(LogLevel::WARNING, __FUNCTION__, "Planning aborted: current plan cost " + std::to_string( planCost ) + " is higher than the limit cost " + std::to_string( bestPlanCost )  );
             return "Planning aborted: current plan cost " + std::to_string( planCost ) + " is higher than the limit cost " + std::to_string( bestPlanCost );
         }
 
-        if(!overload_info_prev.empty() && overload_info_prev.front().first == it->machine.id)
+        if(!overload_info_prev.empty() && overload_info_prev.front().first == ola.machine.id)
             pop_front(overload_info_prev);
-        overload_info_prev.emplace_back( std::make_pair(it->machine.id, olvplan.getRouteLastTimestamp()) );
+        overload_info_prev.emplace_back( std::make_pair(ola.machine.id, harvRoute.route_points.at(ola.end_index).time_stamp) );
     }
 
     size_t numCrossings_total = 0;
@@ -850,21 +923,23 @@ std::string MultiOLVPlanner::planSingle_exclusive(size_t indHarvRoute,
                 && m_machineInitialStates.find(it.first) == m_machineInitialStates.end() )//machine is not on dutty and its current state is unknown --> do not plan any route
             continue;
 
+        OLVPlan& olvplan = it.second;
+
         //compute the last route segments for this OLV
-        if( !it.second.finishPlan(graph, m_settings.sendLastOlvToResourcePoint, harvRoute, overload_info_prev) ){
-            m_logger.printOut(LogLevel::CRITIC, __FUNCTION__, "Could not finish the plan for olv " + std::to_string( it.first ));
+        if( !olvplan.finishPlan(graph, m_settings.sendLastOlvToResourcePoint, harvRoute, overload_info_prev) ){
+            logger().printOut(LogLevel::CRITIC, __FUNCTION__, "Could not finish the plan for olv " + std::to_string( it.first ));
             return "Could not finish the plan for olv " + std::to_string( it.first );
         }
 
         //retrieve the complete planned route for this OLV
-        plannedRoutes[it.first] = it.second.getRoute(-1);//id will be set when calling getPlannedRoutes
+        plannedRoutes[it.first] = olvplan.getRoute(-1);//id will be set when calling getPlannedRoutes
 
         size_t numCrossings_IF, numCrossings_HL;
-        size_t numCrossings = it.second.getNumCrossings(numCrossings_IF, numCrossings_HL);
+        size_t numCrossings = olvplan.getNumCrossings(numCrossings_IF, numCrossings_HL);
         numCrossings_IF_total += numCrossings_IF;
         numCrossings_HL_total += numCrossings_HL;
         numCrossings_total += numCrossings;
-        m_logger.printOut(LogLevel::INFO, __FUNCTION__, "Successfully finished the plan for olv " + std::to_string( it.first ) + " with cost " + std::to_string(it.second.getCost())
+        logger().printOut(LogLevel::INFO, __FUNCTION__, "Successfully finished the plan for olv " + std::to_string( it.first ) + " with cost " + std::to_string(it.second.getCost())
                           + " and num. crossings = " + std::to_string(numCrossings)
                           + "( " + std::to_string(numCrossings_IF) + "[IF], " + std::to_string(numCrossings_HL) + "[HL] )");
 
@@ -874,12 +949,16 @@ std::string MultiOLVPlanner::planSingle_exclusive(size_t indHarvRoute,
                            Point(),
                            indHarvRoute,
                            harv)){//update the costs of the current plan (including the last computed route segment) and check if they are still better than the overall costs of the current BEST plan
-            m_logger.printOut(LogLevel::WARNING, __FUNCTION__, "Planning aborted: current plan cost " + std::to_string( planCost ) + " is higher than the limit cost " + std::to_string( bestPlanCost )  );
+            logger().printOut(LogLevel::WARNING, __FUNCTION__, "Planning aborted: current plan cost " + std::to_string( planCost ) + " is higher than the limit cost " + std::to_string( bestPlanCost )  );
             return "Planning aborted: current plan cost " + std::to_string( planCost ) + " is higher than the limit cost " + std::to_string( bestPlanCost );
         }
     }
 
-    m_logger.printOut(LogLevel::INFO, __FUNCTION__, "Successfully finished the plan for olvs with a total cost " + std::to_string(planCost)
+    //remove unworked segments of the main route
+    if(!overloadActivities.empty() && overloadActivities.back().end_index+1 < harvRoute.route_points.size())
+        harvRoute.route_points.erase(harvRoute.route_points.begin() + overloadActivities.back().end_index + 1, harvRoute.route_points.end() );
+
+    logger().printOut(LogLevel::INFO, __FUNCTION__, "Successfully finished the plan for olvs with a total cost " + std::to_string(planCost)
                       + ", a total delay of " + std::to_string(overallDelay)
                       + ", and a total of " + std::to_string(numCrossings_total)
                       + " crossings (IF: " + std::to_string(numCrossings_IF_total) + "; HL: " + std::to_string(numCrossings_HL_total) + ")");
@@ -904,7 +983,7 @@ bool MultiOLVPlanner::updatePlanCost(MultiOLVPlanner::PlanData &plan, const std:
         planCost += m_edgeCostCalculator->calcCost(*harv, delayLocation, delayLocation, delay, delay, 0, {});
 
     if(std::isnan(planCost))//for debug, sometimes the cost is nan :/
-        m_logger.printOut(LogLevel::ERROR, "m_plan_cost is NAN!");
+        logger().printOut(LogLevel::ERROR, "m_plan_cost is NAN!");
 
     double bestCost = m_bestPlan.planCosts.at(indHarvRoute);
     if(std::isnan(bestCost))
@@ -996,8 +1075,10 @@ std::vector<Machine> MultiOLVPlanner::reorderWorkingGroup(const std::vector<Mach
                                                           const std::map<MachineId_t, MachineDynamicInfo> &machineCurrentStates,
                                                           const OverloadActivitiesPlanner::PlannerSettings &activitiesPlannerSettings,
                                                           const size_t &numFixedInitalOlvsInOrder,
+                                                          int numOverloadActivities,
                                                           double harvestedMassLimit,
-                                                          Logger *_logger)
+                                                          bool leaveRoutePointBetweenOLActivities,
+                                                          std::shared_ptr<Logger> _logger)
 {
     std::vector<Machine> orderedWorkingGroup;
     std::vector<OLVPlan::OverloadInfo> overloadActivities;
@@ -1038,7 +1119,9 @@ std::vector<Machine> MultiOLVPlanner::reorderWorkingGroup(const std::vector<Mach
                                                                               harvesterRoute,
                                                                               overloadMachinesTmp,
                                                                               machineCurrentStates,
+                                                                              numOverloadActivities,
                                                                               harvestedMassLimit,
+                                                                              leaveRoutePointBetweenOLActivities,
                                                                               _logger);
 
     if(overloadActivities.empty())//there was an error --> return the original list
@@ -1112,7 +1195,9 @@ std::vector<Machine> MultiOLVPlanner::reorderWorkingGroup(const std::vector<Mach
                                                                                   harvesterRoute,
                                                                                   overloadMachinesTmp,
                                                                                   machineCurrentStates,
+                                                                                  numOverloadActivities,
                                                                                   harvestedMassLimit,
+                                                                                  leaveRoutePointBetweenOLActivities,
                                                                                   _logger);
 
         //check if the OL activities planner disregarded the last-added machine to the ordered workinggroup

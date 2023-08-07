@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,8 +15,8 @@
 */
  
 #include "arolib/planning/roundtripplanner.hpp"
-#include "arolib/planning/graphhelper.hpp"
-#include "arolib/planning/astar.hpp"
+#include "arolib/planning/path_search/graphhelper.hpp"
+#include "arolib/planning/path_search/astar.hpp"
 
 namespace arolib{
 
@@ -41,7 +41,7 @@ RoundtripPlanner::RoundtripPlanner(const Machine &machine,
     m_outputFolder(outputFolder)
 {
     if(std::isnan(m_state.plan_cost))
-        m_logger.printOut(LogLevel::ERROR, "m_state.plan_cost is NAN!");
+        logger().printOut(LogLevel::ERROR, "m_state.plan_cost is NAN!");
 
     if(!m_outputFolder.empty() && m_outputFolder.back() != '/')
         m_outputFolder += "/";
@@ -53,16 +53,13 @@ bool RoundtripPlanner::planTrip(const DirectedGraph::Graph &graph,
                                 size_t rp_index,
                                 size_t rp_ret_index,
                                 const std::vector<DirectedGraph::vertex_t> &destinationVertices,
-                                const std::set<DirectedGraph::vertex_t> &excludeVts_toDest,
-                                const std::set<DirectedGraph::vertex_t> &excludeVts_toRoute,
-                                double maxVisitTime_toDest,
-                                double maxVisitTime_toRoute,
-                                const std::set<MachineId_t> &restrictedMachineIds,
+                                std::vector<std::shared_ptr<const Astar::ISuccesorChecker> > successorCheckers_toDest,
+                                std::vector<std::shared_ptr<const Astar::ISuccesorChecker> > successorCheckers_toRoute,
                                 bool allowReverseDriving,
-                                RoutePoint functAtDest(const RoutePoint &) ) // para ver como cambia el route point una vez esta en el destino. tambien se podria incluir aca el tiempo que gasta ahi
+                                std::function<RoutePoint (const RoutePoint &, const DirectedGraph::vertex_t &)> functAtDest)
 {
     if(!m_edgeCostCalculator){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Invalid edgeCostCalculator." );
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Invalid edgeCostCalculator." );
         return false;
     }
 
@@ -73,17 +70,17 @@ bool RoundtripPlanner::planTrip(const DirectedGraph::Graph &graph,
     }
 
     if(routeBase.route_points.empty()){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Harvester route is empty");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Base route is empty");
         return false;
     }
 
     if(rp_index >= routeBase.route_points.size()){
-        m_logger.printOut(LogLevel::ERROR, "Invalid route-point index");
+        logger().printOut(LogLevel::ERROR, "Invalid route-point index");
         return false;
     }
 
     if(destinationVertices.empty()){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "There are no destination vertices");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "There are no destination vertices");
         return false;
     }
 
@@ -92,11 +89,9 @@ bool RoundtripPlanner::planTrip(const DirectedGraph::Graph &graph,
     std::chrono::steady_clock::time_point time_start = std::chrono::steady_clock::now();
     if( !planPathToDestination(planToDestination,
                                destinationVertices,
-                               maxVisitTime_toDest,
-                               restrictedMachineIds,
-                               excludeVts_toDest,
+                               successorCheckers_toDest,
                                allowReverseDriving) ){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error calling planPathToDestination");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error calling planPathToDestination");
         return false;
     }
     m_state.planningDuration_toDest = 1e-6 * std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - time_start).count();
@@ -108,12 +103,12 @@ bool RoundtripPlanner::planTrip(const DirectedGraph::Graph &graph,
     m_state.numCrossings_HL += planToDestination.numCrossings_HL;
 
     if(std::isnan(m_state.plan_cost))
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "plan_cost is NAN (planPathToDestination)!");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "plan_cost is NAN (planPathToDestination)!");
 
 
     if(!m_state.subRoutes.empty() && !m_state.subRoutes.back().route_points.empty()){//add info 'at (intermediate) destination'
         auto rpLast = m_state.subRoutes.back().route_points.back();
-        auto rpAtDest = functAtDest(rpLast);
+        auto rpAtDest = functAtDest(rpLast, m_state.destVt);
         m_state.subRoutes.back().route_points.emplace_back(rpAtDest);
         m_state.planCost_atDest += m_edgeCostCalculator->calcCost(m_machine,
                                                                   rpAtDest,
@@ -128,8 +123,8 @@ bool RoundtripPlanner::planTrip(const DirectedGraph::Graph &graph,
     if(rp_ret_index < routeBase.route_points.size()){//the process is not over, go back to the route point
         AstarPlan planToRoute;
         time_start = std::chrono::steady_clock::now();
-        if( !planPathToRoutePoint(planToRoute, maxVisitTime_toRoute, restrictedMachineIds, excludeVts_toRoute) ){
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error calling planPathToRoutePoint");
+        if( !planPathToRoutePoint(planToRoute, successorCheckers_toRoute) ){
+            logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error calling planPathToRoutePoint");
             return false;
         }
         m_state.planningDuration_toRoute = 1e-6 * std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - time_start).count();
@@ -141,7 +136,7 @@ bool RoundtripPlanner::planTrip(const DirectedGraph::Graph &graph,
         m_state.numCrossings_HL += planToRoute.numCrossings_HL;
 
         if(std::isnan(m_state.plan_cost))
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "plan_cost is NAN (planPathToRoutePoint)!");
+            logger().printOut(LogLevel::ERROR, __FUNCTION__, "plan_cost is NAN (planPathToRoutePoint)!");
 
     }
     else if (!m_state.subRoutes.empty() && !m_state.subRoutes.back().route_points.empty()){
@@ -155,12 +150,12 @@ bool RoundtripPlanner::planTrip(const DirectedGraph::Graph &graph,
 
     m_found_plan = true;
 
-    m_logger.printOut(LogLevel::DEBUG, __FUNCTION__, 10, "Planning duration = ",
+    logger().printOut(LogLevel::DEBUG, __FUNCTION__, 10, "Planning duration = ",
                       m_state.planningDuration_toDest, "[Route->RP]",
                       " + ", m_state.planningDuration_toRoute, "[RP->Route]",
                       " = ", m_state.planningDuration_toDest + m_state.planningDuration_toRoute, " seconds" );
 
-    m_logger.printOut(LogLevel::DEBUG, __FUNCTION__, 10, "Planning cost = ",
+    logger().printOut(LogLevel::DEBUG, __FUNCTION__, 10, "Planning cost = ",
                       m_state.planCost_toDest,  "[Route->RP]",
                       " + ", m_state.planCost_atDest, "[atRP]",
                       " + ", m_state.planCost_toRoute, "[RP->Route]",
@@ -168,7 +163,6 @@ bool RoundtripPlanner::planTrip(const DirectedGraph::Graph &graph,
 
 
     return true;
-
 
 }
 
@@ -185,7 +179,7 @@ const Route &RoundtripPlanner::getPlannedRoute() const
 bool RoundtripPlanner::getPlannedRouteIndexRanges(size_t &indStart_toDest, size_t &indEnd_toDest, size_t &indStart_toRoute, size_t &indEnd_toRoute) const
 {
     if(m_state.subRoutes.empty() || m_state.subRoutes.front().route_points.empty()){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "No planned routes");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "No planned routes");
         return false;
     }
     indStart_toDest = m_state.rp_index + 1;
@@ -270,63 +264,108 @@ bool RoundtripPlanner::initState(const DirectedGraph::Graph& graph, const Route&
 
 }
 
-bool RoundtripPlanner::planPathToDestination(AstarPlan &plan,
-                                             const std::vector<DirectedGraph::vertex_t> &destinationVertices,
-                                             double maxVisitTime,
-                                             const std::set<MachineId_t> &restrictedMachineIds,
-                                             const std::set<DirectedGraph::vertex_t> &excludeVts,
-                                             bool allowReverseDriving)
+bool RoundtripPlanner::planPathToDestination(AstarPlan &plan, const std::vector<DirectedGraph::vertex_t> &destinationVertices, std::vector<std::shared_ptr<const Astar::ISuccesorChecker> > successorCheckers, bool allowReverseDriving)
 {
-
     double min_cost = std::numeric_limits<double>::max();
     bool found_plan = false;
 
     Astar::PlanParameters astarParams;
     astarParams.start_vt = m_state.routePtVt;
     astarParams.start_time = m_state.routePt.time_stamp;
-    astarParams.max_time_visit = maxVisitTime;
-    astarParams.max_time_goal = std::numeric_limits<double>::max();
     astarParams.machine = m_machine;
     astarParams.machine_speed = m_machine.calcSpeed(m_state.routePt.bunker_mass);
     astarParams.initial_bunker_mass = m_state.routePt.bunker_mass;
-    astarParams.overload = false;
     astarParams.includeWaitInCost = true;
-    astarParams.restrictedMachineIds = restrictedMachineIds;
-    astarParams.restrictedMachineIds_futureVisits = {};//@todo check
+    astarParams.successorCheckers = successorCheckers;
 
     DirectedGraph::vertex_t destination_vt;
 
-    astarParams.exclude = excludeVts;
-    updateExcludeSet_toRP(astarParams.exclude, allowReverseDriving);
+    std::set<DirectedGraph::vertex_t> exclude;
+    updateExcludeSet_toDest(exclude, allowReverseDriving);
 
-    //plan to each of the destination vertices and select the plan with lowest costs
-    for (auto &dest_vt_tmp : destinationVertices) {
-        astarParams.goal_vt = dest_vt_tmp;
+    //additional successor checkers
+    astarParams.successorCheckers.emplace_back( std::make_shared<AstarSuccessorChecker_VertexExcludeSet_Exceptions1>(exclude) );
+    size_t indSCEdgeExcludeSet = astarParams.successorCheckers.size();
+    astarParams.successorCheckers.emplace_back( nullptr );
+    //@todo check if a FutureVisits checker is needed
 
-        Astar aStar(astarParams,
-                    m_settings,
-                    RoutePoint::TRANSIT,
-                    getOutputFolder("to_dest"),
-                    &m_logger);
 
-        if( !aStar.plan(m_state.graph, m_edgeCostCalculator) ){
-            m_logger.printOut(LogLevel::DEBUG, __FUNCTION__, "Error calling aStar for destination vertex " + std::to_string(dest_vt_tmp));
-            continue;  // no plan found => try next destination point
+    std::map<DirectedGraph::vertex_t, DirectedGraph::edge_t> successorVts;
+    std::set<DirectedGraph::edge_t> successorEdges;
+    for(auto out_edges = boost::out_edges(m_state.routePtVt, m_state.graph); out_edges.first != out_edges.second; out_edges.first++){
+        successorVts[ target(*out_edges.first, m_state.graph) ] = *out_edges.first;
+        successorEdges.insert(*out_edges.first);
+    }
+
+    for(size_t i = 0 ; i < 2 ; ++i){
+        std::set<DirectedGraph::edge_t> allowedEdges;
+
+        if(i == 0){//try first leaving via a vertex that is in "front" if the start_rp is an IF track_end
+            if( allowReverseDriving
+                    || m_state.routePt.type != RoutePoint::TRACK_END
+                    || !Track::isInfieldTrack(m_state.routePt.track_id) )
+                continue;
+
+
+            int indPrev = geometry::getPrevNonRepeatedPointIndex(m_state.routeBase.route_points, m_state.rp_index, -1, -1);
+            if(indPrev < 0)
+                continue;
+            RoutePoint routePt_prev = m_state.routeBase.route_points.at(indPrev);
+
+            for(auto& edge_it : successorVts){
+                auto successor_vt = edge_it.first;
+                DirectedGraph::vertex_property successor_prop = m_state.graph[successor_vt];
+
+                auto angle = geometry::get_angle(routePt_prev, m_state.routePt, successor_prop.route_point, true);//in deg!
+                if( std::fabs(angle) > 115 )
+                    allowedEdges.insert( edge_it.second );
+            }
+
         }
 
-
-        if (aStar.getPlan().plan_cost_total > min_cost)
+        if(!allowedEdges.empty())
+            astarParams.successorCheckers.at(indSCEdgeExcludeSet) = std::make_shared<AstarSuccessorChecker_EdgeExcludeSet>(successorEdges,
+                                                                                                                           [&allowedEdges](const Astar::ISuccesorChecker::IsSuccessorValidParams& params)->bool{
+                                                                                                                                return allowedEdges.find( params.edge ) != allowedEdges.end();
+                                                                                                                           });
+        else if(i < 1)
             continue;
+        else
+            astarParams.successorCheckers.at(indSCEdgeExcludeSet) = nullptr;
 
-        plan = aStar.getPlan();
+        //plan to each of the destination vertices and select the plan with lowest costs
+        for (auto &dest_vt_tmp : destinationVertices) {
+            astarParams.goal_vt = dest_vt_tmp;
 
-        destination_vt = dest_vt_tmp;
-        min_cost = plan.plan_cost_total;
+            Astar aStar(astarParams,
+                        m_settings,
+                        RoutePoint::TRANSIT,
+                        getOutputFolder("to_dest"),
+                        loggerPtr());
 
-        found_plan = true;
+            if( !aStar.plan(m_state.graph, m_edgeCostCalculator) ){
+                logger().printOut(LogLevel::DEBUG, __FUNCTION__, "Error calling aStar for destination vertex " + std::to_string(dest_vt_tmp));
+                continue;  // no plan found => try next destination point
+            }
+
+
+            if (aStar.getPlan().plan_cost_total > min_cost)
+                continue;
+
+            plan = aStar.getPlan();
+
+            destination_vt = dest_vt_tmp;
+            min_cost = plan.plan_cost_total;
+
+            found_plan = true;
+        }
+
+        if(found_plan)
+            break;
     }
+
     if(!found_plan){
-        m_logger.printOut(LogLevel::DEBUG, __FUNCTION__, "No plan to any of the destination points was found");
+        logger().printOut(LogLevel::DEBUG, __FUNCTION__, "No plan to any of the destination points was found");
         return false;
     }
 
@@ -349,15 +388,12 @@ bool RoundtripPlanner::planPathToDestination(AstarPlan &plan,
 
 }
 
-bool RoundtripPlanner::planPathToRoutePoint(AstarPlan &plan,
-                                            double maxVisitTime,
-                                            const std::set<MachineId_t> &restrictedMachineIds,
-                                            const std::set<DirectedGraph::vertex_t> &excludeVts)
+bool RoundtripPlanner::planPathToRoutePoint(AstarPlan &plan, std::vector<std::shared_ptr<const Astar::ISuccesorChecker> > successorCheckers)
 {
     bool found_plan = false;
 
     if(m_state.subRoutes.empty() || m_state.subRoutes.back().route_points.empty()){
-        m_logger.printOut(LogLevel::DEBUG, __FUNCTION__, "No planned route points to the destination point");
+        logger().printOut(LogLevel::DEBUG, __FUNCTION__, "No planned route points to the destination point");
         return false;
     }
 
@@ -365,83 +401,113 @@ bool RoundtripPlanner::planPathToRoutePoint(AstarPlan &plan,
 
     Astar::PlanParameters astarParams;
     astarParams.start_vt = m_state.destVt;
+    astarParams.goal_vt = m_state.routePtVt_ret;
     astarParams.start_time = prevRoute.route_points.back().time_stamp;
-    astarParams.max_time_visit = maxVisitTime;
-    astarParams.max_time_goal = std::numeric_limits<double>::max();
     astarParams.machine = m_machine;
     astarParams.machine_speed = m_machine.calcSpeed(m_state.routePt.bunker_mass);
     astarParams.initial_bunker_mass = prevRoute.route_points.back().bunker_mass;
-    astarParams.overload = false;
     astarParams.includeWaitInCost = true;
-    astarParams.restrictedMachineIds = restrictedMachineIds;
-    astarParams.restrictedMachineIds_futureVisits = {};//@todo check
+    astarParams.successorCheckers = successorCheckers;
 
-    astarParams.exclude = excludeVts;
-    astarParams.exclude.insert(m_state.routePtVt_ret);
 
-    DirectedGraph::vertex_t routeVt = -1;
-    RoutePoint routePt_prev;
-
-    if(m_state.rp_ret_index > 0){//check for vertex of previous route point (at the moment, only harvesting points are checked)
-        routePt_prev = m_state.routeBase.route_points.at(m_state.rp_ret_index-1);
-        auto it_vt = m_state.graph.routepoint_vertex_map().find(routePt_prev);
+    std::set<DirectedGraph::vertex_t> exclude;
+    if(m_state.rp_ret_index+1 < m_state.routeBase.route_points.size()){//exclude the vertex corresponding to the next working route point to avoid reaching the return route point in this direction
+        const auto& routePt_next = m_state.routeBase.route_points.at(m_state.rp_ret_index+1);
+        auto it_vt = m_state.graph.routepoint_vertex_map().find(routePt_next);
         if(it_vt != m_state.graph.routepoint_vertex_map().end())
-            routeVt = it_vt->second;
+            exclude.insert(it_vt->second);
     }
-    if(routeVt != -1){//try planning to the previous route point
 
-        astarParams.goal_vt = routeVt;
+    //additional successor checkers
+    astarParams.successorCheckers.emplace_back( std::make_shared<AstarSuccessorChecker_VertexExcludeSet_Exceptions1>(exclude) );
+    size_t indSCEdgeExcludeSet = astarParams.successorCheckers.size();
+    astarParams.successorCheckers.emplace_back( nullptr );
 
-        Astar aStar(astarParams,
-                    m_settings,
-                    RoutePoint::TRANSIT,
-                    getOutputFolder("to_route"),
-                    &m_logger);
+    std::map<DirectedGraph::vertex_t, DirectedGraph::edge_t> predecessorVts;
+    std::set<DirectedGraph::edge_t> predecessorEdges;
+    for(auto in_edges = boost::in_edges(m_state.routePtVt_ret, m_state.graph); in_edges.first != in_edges.second; in_edges.first++){
+        predecessorVts[ source(*in_edges.first, m_state.graph) ] = *in_edges.first;
+        predecessorEdges.insert(*in_edges.first);
+    }
 
-        if( !aStar.plan(m_state.graph, m_edgeCostCalculator) )
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error calling aStar for previous route point vertex " + std::to_string(routeVt));
+    for(size_t i = 0 ; i < 3 ; ++i){
+        std::set<DirectedGraph::edge_t> allowedEdges;
+        if(i == 0){//try planning via the previous route point
+            if(m_state.rp_ret_index > 0){//check for vertex of previous route point (at the moment, only harvesting points are checked)
+                int indPrev = geometry::getPrevNonRepeatedPointIndex(m_state.routeBase.route_points, m_state.rp_ret_index, -1, -1);
+                if(indPrev < 0)
+                    continue;
+                RoutePoint routePt_prev = m_state.routeBase.route_points.at(indPrev);
+                auto it_vt = m_state.graph.routepoint_vertex_map().find(routePt_prev);
+                if(it_vt == m_state.graph.routepoint_vertex_map().end())
+                    continue;
 
-        else{
-            plan = aStar.getPlan();
+                auto edge_it = predecessorVts.find(it_vt->second);
+                if(edge_it == predecessorVts.end())
+                    continue;
+                allowedEdges.insert( edge_it->second );
+            }
+        }
+        else if(i == 1){//try planning via vertices that are "back"
+            int indNext = geometry::getNextNonRepeatedPointIndex(m_state.routeBase.route_points, m_state.rp_ret_index, -1, -1);
+            if(indNext < 0)
+                continue;
+            RoutePoint routePt_next = m_state.routeBase.route_points.at(indNext);
 
-            auto p = m_state.routePt;
-            p.type = RoutePoint::TRANSIT;
-            if(!plan.route_points_.empty()){
-                double deltaTime = m_state.routePt.time_stamp - routePt_prev.time_stamp;
-                double speed = m_machine.calcSpeed(0);
-                if(speed > 0)
-                    deltaTime = arolib::geometry::calc_dist( m_state.routePt, routePt_prev ) / speed;
-                p.time_stamp = plan.route_points_.back().time_stamp + deltaTime;
-                p.bunker_mass = 0;
-                p.bunker_volume = 0;
+            for(auto& edge_it : predecessorVts){
+                auto predecessor_vt = edge_it.first;
+                DirectedGraph::vertex_property predecessor_prop = m_state.graph[predecessor_vt];
+
+                auto angle = geometry::get_angle(routePt_next, m_state.routePt_ret, predecessor_prop.route_point, true);//in deg!
+                if( std::fabs(angle) > 115 )
+                    allowedEdges.insert( edge_it.second );
             }
 
-            plan.route_points_.emplace_back(p);
-
-            found_plan = true;
         }
-    }
 
-    if(!found_plan){
-        m_logger.printOut(LogLevel::INFO, __FUNCTION__, "Planning directly to given route point");
+        if(!allowedEdges.empty())
+            astarParams.successorCheckers.at(indSCEdgeExcludeSet) = std::make_shared<AstarSuccessorChecker_EdgeExcludeSet>(predecessorEdges,
+                                                                                                                           [&allowedEdges](const Astar::ISuccesorChecker::IsSuccessorValidParams& params)->bool{
+                                                                                                                                return allowedEdges.find( params.edge ) != allowedEdges.end();
+                                                                                                                           });
+        else if(i < 2)
+            continue;
+        else
+            astarParams.successorCheckers.at(indSCEdgeExcludeSet) = nullptr;
+
+        if(i == 0)
+            logger().printOut(LogLevel::INFO, __FUNCTION__, "Planning via previous route point...");
+        else if (i == 1)
+            logger().printOut(LogLevel::INFO, __FUNCTION__, "Planning via back-vertices...");
+        else
+            logger().printOut(LogLevel::INFO, __FUNCTION__, "Planning directly to given route point");
+
+        logger().printOut(LogLevel::INFO, __FUNCTION__, "Planning directly to given route point");
 
         astarParams.goal_vt = m_state.routePtVt_ret;
-        astarParams.exclude.erase(m_state.routePtVt_ret);
+        exclude.erase(m_state.routePtVt_ret);
 
         Astar aStar(astarParams,
                     m_settings,
                     RoutePoint::TRANSIT,
                     getOutputFolder("to_route"),
-                    &m_logger);
+                    loggerPtr());
 
         if( !aStar.plan(m_state.graph, m_edgeCostCalculator) ){
-            m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Error calling aStar for route point vertex " + std::to_string(routeVt));
-            return false;
+            logger().printOut(LogLevel::ERROR, __FUNCTION__, "...Error calling aStar.");
+            continue;
         }
 
         plan = aStar.getPlan();
 
         found_plan = true;
+        break;
+
+    }
+
+    if(!found_plan){
+        logger().printOut(LogLevel::DEBUG, __FUNCTION__, "No plan was found");
+        return false;
     }
 
     plan.adjustAccessPoints(false);
@@ -459,7 +525,7 @@ bool RoundtripPlanner::planPathToRoutePoint(AstarPlan &plan,
 bool RoundtripPlanner::updateRoute()
 {
     if( m_state.subRoutes.size() != 2 ){
-        m_logger.printOut(LogLevel::ERROR, __FUNCTION__, "Planned subroutes count different than 2");
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Planned subroutes count different than 2");
         return false;
     }
 
@@ -476,17 +542,19 @@ bool RoundtripPlanner::updateRoute()
     m_state.rp_ret_index_new = routePointsUpdated.size();
     routePointsUpdated.insert( routePointsUpdated.end(), routePointsBase.begin()+m_state.rp_ret_index/*+1*/, routePointsBase.end() );
 
+    double deltaTime = m_state.travel_time + m_state.routePt.time_stamp - m_state.routePt_ret.time_stamp;
     for(size_t i = m_state.rp_ret_index_new ; i < routePointsUpdated.size() ; ++i){
         auto & rp = routePointsUpdated.at(i);
-        double deltaTime = m_state.travel_time + m_state.routePt.time_stamp - m_state.routePt_ret.time_stamp;
         rp.time_stamp += deltaTime;
 
-        auto it_vt = m_state.graph.routepoint_vertex_map().find(rp);
-        if(it_vt != m_state.graph.routepoint_vertex_map().end()){//update the vertex (harvesting) timestamp
-            DirectedGraph::vertex_property &v_prop = m_state.graph[it_vt->second];
-            v_prop.route_point.time_stamp = rp.time_stamp;//important: set the timestamp of the route-point of harvester route (instead of adding the delay to the vertex timestamp), in case the vertex timestamp is outdated
-        }
+//        auto it_vt = m_state.graph.routepoint_vertex_map().find(rp);
+//        if(it_vt != m_state.graph.routepoint_vertex_map().end()){//update the vertex (harvesting) timestamp
+//            DirectedGraph::vertex_property &v_prop = m_state.graph[it_vt->second];
+//            if(v_prop.route_point.time_stamp >= m_state.routePt_ret.time_stamp)
+//                v_prop.route_point.time_stamp = rp.time_stamp;//important: set the timestamp of the route-point of harvester route (instead of adding the delay to the vertex timestamp), in case the vertex timestamp is outdated
+//        }
     }
+    updateTimestampsFromBaseRoute(m_state.graph, m_state.routeUpdated, 0.0, m_state.rp_ret_index_new, -1, m_state.routePt_ret.time_stamp);
 
     restoreVisitPeriods();
 
@@ -494,15 +562,18 @@ bool RoundtripPlanner::updateRoute()
 
 }
 
-void RoundtripPlanner::updateExcludeSet_toRP(std::set<DirectedGraph::vertex_t> &exclude,
+void RoundtripPlanner::updateExcludeSet_toDest(std::set<DirectedGraph::vertex_t> &exclude,
                                              bool allowReverseDriving) const
 {
     if(!allowReverseDriving){//don't drive in reverse
-        if(m_state.rp_index > 0 && m_state.rp_index < m_state.routeBase.route_points.size()){
-            const auto& prevRP = m_state.routeBase.route_points.at(m_state.rp_index-1);
-            auto it_vt = m_state.graph.routepoint_vertex_map().find(prevRP);
-            if(it_vt != m_state.graph.routepoint_vertex_map().end())
-                exclude.insert(it_vt->second);
+        if(m_state.rp_index > 0){
+            int indPrev = geometry::getPrevNonRepeatedPointIndex(m_state.routeBase.route_points, m_state.rp_index, -1, -1);
+            if(indPrev >= 0){
+                const auto& prevRP = m_state.routeBase.route_points.at(indPrev);
+                auto it_vt = m_state.graph.routepoint_vertex_map().find(prevRP);
+                if(it_vt != m_state.graph.routepoint_vertex_map().end())
+                    exclude.insert(it_vt->second);
+            }
         }
     }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,11 +23,11 @@
 #include <chrono>
 #include <sys/stat.h>
 
-#include "directedgraph.hpp"
 #include "arolib/types/route.hpp"
 #include "arolib/types/machine.hpp"
 #include "arolib/planning/olvPlan.hpp"
 #include "arolib/planning/overloadactivitiesplanner.h"
+#include "arolib/planning/path_search/directedgraph.hpp"
 #include "arolib/misc/loggingcomponent.h"
 #include "arolib/misc/logger.h"
 #include "arolib/misc/filesystem_helper.h"
@@ -62,7 +62,7 @@ public:
      * @brief Strategy to assign OLVs to the harvester routes
      */
     enum OlvAssignmentStrategy{
-        HARVESTER_EXCLUSIVE, /**< A group of OLVs is selected for each harvester route exclusivelly (each OLV will overload only from a harverset) */
+        EXCLUSIVE, /**< A group of OLVs is selected for each harvester route exclusivelly (each OLV will overload only from a harverset) */
         SHARED_OLVS /**< (Not implemented yet) The OLVs can overload from different harvesters */
     };
     /**
@@ -135,12 +135,13 @@ public:
         double max_waiting_time = 10000; /**< The maximum amount of time [s] that the harvester may wait for the next olv (overload activity). */
         bool sendLastOlvToResourcePoint = true;  /**< Should the last olv overloading a harvester route be sent to the rosource point to download even if it is not full? */
         double harvestedMassLimit = 0; /**< if an overload activity surpaces this value, no more overload activities will be processed (i.e. partial plans will be generated, for only a part of the harvester route). Disregarded if <= 0 (warning: in the OverloadPlanner, if < 0, an optimal value will be calculated) */
-        int numOLActivitiesPerSubplan = -1; /**< (not implemented) Subplans will be planned every numOLActivitiesPerSubplan, instead of a single plan with all overload activities. disregarded if <= 0 */
+        int numOverloadActivities = -1; /**< Amount of overload activities per base route that will be planned. If if <= 0, all activities will be planned */
         OlvOrderStrategy olvOrderStrategy = OlvOrderStrategy::CHECK_ALL_PERMUTATIONS;/**< Strategy to order the OLVS to compute the overloading activities */
-        double max_planning_time = 20;/**< planning timeout [s]. Current plan been executed will be calcelled and no more plans (for other olv-order permulations) will be executed. The best plan until this moment (if any) will be set as result */
+        double max_planning_time = 60;/**< planning timeout [s]. Current plan been executed will be calcelled and no more plans (for other olv-order permulations) will be executed. The best plan until this moment (if any) will be set as result */
         int numFixedInitalOlvsInOrder = 0;/**< The order of the first n olvs in the assigned working group will be kept fixed (no permutations will be tested in these machines), whereas the rest will be either calculated to be optimal or permuted to get the best plan. If < 0, the optimal number of fixed OLVs will be estimated and used. */
-        OlvAssignmentStrategy olvAssignmentStrategy = OlvAssignmentStrategy::HARVESTER_EXCLUSIVE; /**< Strategy to assign OLVs to the harvester routes (at the moment, only HARVESTER_EXCLUSIVE is supported) */
+        OlvAssignmentStrategy olvAssignmentStrategy = OlvAssignmentStrategy::EXCLUSIVE; /**< Strategy to assign OLVs to the harvester routes (at the moment, only HARVESTER_EXCLUSIVE is supported) */
         ThreadsOption threadsOption = ThreadsOption::MULTIPLE_THREADS;/**< Option regarding the number of threads used in planning */
+        bool leaveRoutePointBetweenOLActivities = true; /**< If true, the overload activity will start at least one route point after the last route point of the previous activity */
 
         /**
          * @brief Parse the parameters from a string map, starting from a default PlannerSettings
@@ -161,8 +162,9 @@ public:
 
     /**
      * @brief Constructor.
+     *
      * @param graph (Initial) graph
-     * @param harv_routes (processed) harvester routes
+     * @param base_routes (processed) base routes for the main machines (must have increasingly monotonic timestamps)
      * @param machines Machines (the order might important, depending on 'settings')
      * @param machineCurrentStates Map containing the current states of the machines (inc. current location, bunker mass, etc.)
      * @param settings Planner parameters/settings
@@ -172,7 +174,7 @@ public:
      * @param logLevel Log level
      */
     explicit MultiOLVPlanner(const DirectedGraph::Graph &graph,
-                             const std::vector<Route> &harv_routes,
+                             const std::vector<Route> &base_routes,
                              const std::vector<Machine> &machines,
                              const std::map<MachineId_t, MachineDynamicInfo> &machineCurrentStates,
                              const PlannerSettings& settings,
@@ -289,8 +291,10 @@ private:
                                                     const std::map<MachineId_t, MachineDynamicInfo> &machineCurrentStates,
                                                     const OverloadActivitiesPlanner::PlannerSettings &activitiesPlannerSettings,
                                                     const size_t &numFixedInitalOlvsInOrder = 0,
+                                                    int numOverloadActivities = -1,
                                                     double harvestedMassLimit = -1,
-                                                    Logger *_logger = nullptr);
+                                                    bool leaveRoutePointBetweenOLActivities = true,
+                                                    std::shared_ptr<Logger> _logger = nullptr);
 
     /**
      * @brief Estimate how many of the first OLVs in irder should be kept in that position for the calculation of OLVs.
@@ -321,6 +325,7 @@ protected:
     std::map<MachineId_t, Machine> m_harvesters; /**< Harvesters */
     std::map<MachineId_t, MachineDynamicInfo> m_machineInitialStates; /**< Map containing the current states of the machines (inc. current location, bunker mass, etc.) */
     PlannerSettings m_settings; /**< Planner parameters/settings */
+    OverloadActivitiesPlanner::PlannerSettings m_oap_settings;
     std::shared_ptr<IEdgeCostCalculator> m_edgeCostCalculator = nullptr; /**< Edge cost calculator */
 
     mutable std::mutex m_mutex_bestPlan; /**< Mutex used in updates of the best plan */

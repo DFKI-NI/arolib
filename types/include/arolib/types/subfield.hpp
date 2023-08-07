@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -46,6 +46,18 @@ public:
     double working_direction; /**< Working direction in A+working_direction modus [rad] */
 
 };
+
+inline bool operator==(const Subfield& lhs, const Subfield& rhs) {
+return (lhs.boundary_outer == rhs.boundary_outer) &&\
+        (lhs.boundary_inner == rhs.boundary_inner) &&\
+        (lhs.headlands == rhs.headlands) &&\
+        (lhs.obstacles == rhs.obstacles) &&\
+        (lhs.tracks == rhs.tracks) &&\
+        (lhs.resource_points == rhs.resource_points) &&\
+        (lhs.access_points == rhs.access_points) &&\
+        (lhs.reference_lines == rhs.reference_lines) &&\
+        (lhs.working_direction == rhs.working_direction);
+}
 
 }
 

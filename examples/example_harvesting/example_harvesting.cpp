@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,12 +23,13 @@ Harvesting process with one capacitaded harvester OR one non-capacitated harvest
 
 
 #include "arolib/components/machinedb.h"
-#include "arolib/components/headlandplanner.h"
-#include "arolib/components/baseroutesinfieldplanner.h"
-#include "arolib/components/tracksgenerator.h"
-#include "arolib/components/baseroutesprocessor.h"
-#include "arolib/components/fieldprocessplanner.h"
+#include "arolib/components/fieldgeometryprocessor.h"
+#include "arolib/components/baseroutesplanner.h"
 #include "arolib/components/graphprocessor.h"
+#include "arolib/components/fieldprocessplanner.h"
+#include "arolib/planning/track_sequencing/tracksequencerclosestnext.hpp"
+#include "arolib/planning/track_connectors/infieldtracksconnectordubinsorgraphbased.hpp"
+#include "arolib/planning/edge_calculators/edgeCostCalculatorSoil.hpp"
 #include <fstream>
 
 using namespace arolib;
@@ -44,17 +45,17 @@ struct WorkSpace{
     OutFieldInfo outFieldInfo; //Information related to operations done outside of the field (incl. travel)
     std::map<MachineId_t, MachineDynamicInfo> machineInitialStates; //initial states of the machines
     std::shared_ptr< gridmap::GridCellsInfoManager > cellsInfoManager = std::make_shared<gridmap::GridCellsInfoManager>(gLogLevel);//cells manager used by several components to make computations in gridmaps
-    std::shared_ptr<IEdgeSpeedCalculator> speedCalculator = std::make_shared<EdgeSpeedCalculatorDef>(gLogLevel);//calculator used to compute the harvester spped while harvesting
+    std::shared_ptr<IEdgeSpeedCalculator> speedCalculator = std::make_shared<EdgeWorkingSpeedCalculatorDef>(gLogLevel);//calculator used to compute the harvester speed while harvesting
+    std::shared_ptr<IEdgeSpeedCalculator> speedCalculatorTransit = std::make_shared<EdgeTransitSpeedCalculatorDef>(gLogLevel);//calculator used to compute the machine speed during transit
     std::shared_ptr<IEdgeMassCalculator> massCalculator = nullptr;//calculator used to compute the amount of mass to be extracted from the field
     std::shared_ptr<IEdgeCostCalculator> costCalculator = nullptr;//calculator used to compute the edge costs during path planning
     std::shared_ptr< ArolibGrid_t > massMap = nullptr;//gridmap holding the (bio)mass distribution in the field (t/ha)
     std::shared_ptr< ArolibGrid_t > massFactorMap = nullptr;//gridmap used by the mass calculator to factor the amount of mass in a specific region
     std::shared_ptr< ArolibGrid_t > soilMap = nullptr;//gridmap holding the soil-cost values in the field
     DirectedGraph::Graph graph;//graph used in path planning
-    std::vector<HeadlandRoute> baseRoutes_headland;//base-routes for the headland
-    std::vector<Route> baseRoutes_innerField;//base-routes for the inner-field
     std::vector<Route> baseRoutes;//base-routes
     std::vector<Route> plannedRoutes;//final planned routes
+    double workingWidth; //working width
 };
 
 
@@ -62,18 +63,16 @@ bool initTestField( WorkSpace & workSpace );
 bool initGridmaps( WorkSpace & workSpace );
 bool initMassCalculator( WorkSpace & workSpace );
 bool initCostCalculator( WorkSpace & workSpace, size_t operationType );
-bool updateMassFactorMap( WorkSpace & workSpace, const Polygon & boundary );
 bool initWorkingGroup_cHarv( WorkSpace & workSpace );
 bool initWorkingGroup_harvTV( WorkSpace & workSpace );
 bool initMachineStates( WorkSpace & workSpace );
 bool initOutFieldInfo( WorkSpace & workSpace );
-bool planHeadland( WorkSpace & workSpace );
-bool generateInnerFieldTracks( WorkSpace & workSpace );
-bool planInnerFieldBaseRoutes( WorkSpace & workSpace );
-bool preProcessBaseRoutes( WorkSpace & workSpace );
+bool processFieldGeometries( WorkSpace & workSpace, size_t headlandType );
 bool generateGraph( WorkSpace & workSpace );
-bool planOperation( WorkSpace & workSpace );
-bool savePlan( WorkSpace & workSpace, size_t operationType );
+bool planBaseRoutes( WorkSpace & workSpace );
+bool updateGraph( WorkSpace & workSpace );
+bool planOperation( WorkSpace & workSpace, size_t operationType );
+bool savePlan(WorkSpace & workSpace, size_t operationType , size_t headlandType);
 
 
 int main()
@@ -94,8 +93,6 @@ int main()
 
     for(size_t operationType = 0 ; operationType < 2 ; ++operationType){
 
-        std::cout << std::endl << "----- PLANNING OPERATION TYPE " << operationType << " -----" << std::endl << std::endl;
-
         // Initialize the cost calculator based on the operation type
         if( !initCostCalculator( workSpace, operationType ) )
             return 40 + operationType;
@@ -110,57 +107,58 @@ int main()
                 return 50 + operationType;
         }
 
-        std::cout << std::endl << "-- Working group --" << std::endl;
-        for(size_t i = 0 ; i < workSpace.workingGroup.size() ; ++i){
-            const auto& machine = workSpace.workingGroup.at(i);
-            std::cout << "   Machine # " << ( i+1 ) << std::endl
-                      << "      id = " << machine.id << std::endl
-                      << "      type = " << Machine::machineTypeToShortString3c(machine.machinetype) << std::endl
-                      << "      manufacturer = " << machine.manufacturer << std::endl
-                      << "      model = " << machine.model << std::endl
-                      << "      width [m] = " << machine.width << std::endl
-                      << "      working width [m] = " << machine.working_width << std::endl
-                      << "      mass [kg] = " << machine.weight << std::endl;
+        for(size_t headlandType = 0 ; headlandType < 2 ; ++headlandType){
+            std::cout << std::endl << "----- OPERATION TYPE " << operationType << "  :  HEADLAND TYPE " << headlandType << " -----" << std::endl << std::endl;
+
+            std::cout << std::endl << "-- Working group --" << std::endl;
+            for(size_t i = 0 ; i < workSpace.workingGroup.size() ; ++i){
+                const auto& machine = workSpace.workingGroup.at(i);
+                std::cout << "   Machine # " << ( i+1 ) << std::endl
+                          << "      id = " << machine.id << std::endl
+                          << "      type = " << Machine::machineTypeToShortString3c(machine.machinetype) << std::endl
+                          << "      manufacturer = " << machine.manufacturer << std::endl
+                          << "      model = " << machine.model << std::endl
+                          << "      width [m] = " << machine.width << std::endl
+                          << "      working width [m] = " << machine.working_width << std::endl
+                          << "      mass [kg] = " << machine.weight << std::endl;
+            }
+            std::cout << std::endl << "-- Working group --" << std::endl << std::endl;
+
+            // Initialize the initial states of the machines
+            if( !initMachineStates( workSpace ) )
+                return 60 + operationType + 2*headlandType;
+
+            // Initialize the out-of-field information based on the working group, access points, resource points, etc.
+            if( !initOutFieldInfo( workSpace ) )
+                return 70 + operationType + 2*headlandType;
+
+            // Generate the field geometries
+            if( !processFieldGeometries( workSpace, headlandType ) )
+                return 80 + operationType + 2*headlandType;
+
+            //generate the graph
+            if( !generateGraph( workSpace ) )
+                return 90 + operationType + 2*headlandType;
+
+            // Generate the headland base routes
+            if( !planBaseRoutes( workSpace ) )
+                return 100 + operationType + 2*headlandType;
+
+            //generate the graph
+            if( !updateGraph( workSpace ) )
+                return 110 + operationType + 2*headlandType;
+
+            //plan the routes for all machines
+            if( !planOperation( workSpace, operationType ) )
+                return 120 + operationType + 2*headlandType;
+
+            //save plan (processed field geometries, routes and some planning parameters)
+            savePlan( workSpace, operationType, headlandType );
+
+
+            std::cout << std::endl << "----- FINISHED PLANNING OPERATION TYPE " << operationType << "  :  HEADLAND TYPE " << headlandType << " -----" << std::endl << std::endl;
+
         }
-        std::cout << std::endl << "-- Working group --" << std::endl << std::endl;
-
-        // Initialize the initial states of the machines
-        if( !initMachineStates( workSpace ) )
-            return 60 + operationType;
-
-        // Initialize the out-of-field information based on the working group, access points, resource points, etc.
-        if( !initOutFieldInfo( workSpace ) )
-            return 70 + operationType;
-
-        // Generate the headland geometries and headland base-routes
-        if( !planHeadland( workSpace ) )
-            return 80 + operationType;
-
-        // Generate the inner-field tracks
-        if( !generateInnerFieldTracks( workSpace ) )
-            return 90 + operationType;
-
-        // Generate the inner-field base routes
-        if( !planInnerFieldBaseRoutes( workSpace ) )
-            return 100 + operationType;
-
-        // Connect the headland and inner-field base routes
-        if( !preProcessBaseRoutes( workSpace ) )
-            return 110 + operationType;
-
-        //generate the graph
-        if( !generateGraph( workSpace ) )
-            return 120 + operationType;
-
-        //plan the routes for all machines
-        if( !planOperation( workSpace ) )
-            return 130 + operationType;
-
-        //save plan (processed field geometries, routes and some planning parameters)
-        savePlan( workSpace, operationType );
-
-
-        std::cout << std::endl << "----- FINISHED PLANNING OPERATION TYPE " << operationType << " -----" << std::endl << std::endl;
 
     }
 
@@ -330,35 +328,6 @@ bool initCostCalculator( WorkSpace & workSpace, size_t operationType ){
 }
 
 /*
- * This function updates the mass-factor gridmap used by the mass calculator.
- * The cells inside the boundary will have a hactor value of 1.0, whereas the cells outside will have bo value
- * */
-bool updateMassFactorMap( WorkSpace & workSpace, const Polygon & boundary ){
-
-    if( boundary.points.empty() ){//remove the factor map
-        //set all values to 1.0
-        if( !workSpace.massFactorMap->setAllValues( 1.0 ) ){
-            std::cerr << "-- Error setting all factor map values to 1.0 --" << std::endl;
-            return false;
-        }
-    }
-    else{
-        //set all values to 'no value'
-        if( !workSpace.massFactorMap->setAllValues( nullptr ) ){
-            std::cerr << "-- Error setting all factor map values to 'no value' --" << std::endl;
-            return false;
-        }
-
-        //set all values inside the polygon to 1.0
-        if( !workSpace.massFactorMap->updatePolygonProportionally(boundary, 1.0, false) ){
-            std::cerr << "-- Error setting the factor map values inside the boundary --" << std::endl;
-            return false;
-        }
-    }
-    return true;
-}
-
-/*
  * This function initializes the working group of machines with:.
  * - One capacitated harvester
  * */
@@ -371,7 +340,7 @@ bool initWorkingGroup_cHarv( WorkSpace & workSpace ){
     harv.machinetype = Machine::HARVESTER;
     harv.width = 5; // m
     harv.length = 15; // m
-    harv.working_width = 5; // m
+    harv.working_width = 4; // m
     harv.weight = 35000; // kg
     harv.bunker_mass = 30000; // kg
     harv.turning_radius = 7; // m
@@ -564,141 +533,58 @@ bool initOutFieldInfo( WorkSpace & workSpace ){
 }
 
 /*
- * This function generates the headland geometries (headland track, and inner-field boundary) and the base-routes of the harvester
+ * This function generates the field geometries (headland boundaries, headland track, and inner-field boundary, inner-field tracks)
  * */
-bool planHeadland( WorkSpace & workSpace ){
+bool processFieldGeometries( WorkSpace & workSpace, size_t headlandType ){
 
-    std::cout << std::endl << "-- Planning the headland..... --" << std::endl;
+    std::cout << std::endl << "-- Processing field geometries..... --" << std::endl;
 
-    //update the factor map with all values in 1.0
-    if(!updateMassFactorMap(workSpace, Polygon())){
-        std::cerr << "-- Error updating mass factor map --" << std::endl;
-        return false;
-    }
-
-    HeadlandPlanner::PlannerParameters plannerParameters;
-    plannerParameters.clockwise = true;
-    plannerParameters.avgMassPerArea = 40;
-    plannerParameters.headlandWidth = 20;//minimum headland width (the real width will be a multiple of the harvester's working width)
-    plannerParameters.sampleResolution = 5;
-
-    HeadlandPlanner headlandPlanner(gLogLevel);
-    auto aroResp = headlandPlanner.planHeadlandSubfield(workSpace.field.subfields.front(),
-                                                        workSpace.workingGroup,
-                                                        workSpace.outFieldInfo,
-                                                        plannerParameters,
-                                                        ArolibGrid_t(),
-                                                        workSpace.massCalculator,
-                                                        workSpace.speedCalculator,
-                                                        workSpace.baseRoutes_headland);
-    if(aroResp.isError()){
-        std::cerr << "-- Error planning the headland: " << aroResp.msg << " --" << std::endl;
-        return false;
-    }
-
-    std::cout << std::endl << "-- Finished planning the headland --" << std::endl;
-    return true;
-}
-
-/*
- * This function generates the tracks of the inner-field
- * */
-bool generateInnerFieldTracks( WorkSpace & workSpace ){
-
-    std::cout << std::endl << "-- Generating the inner-field tracks..... --" << std::endl;
-
-    TracksGenerator::TracksGeneratorParameters TGParams;
-    TGParams.sampleResolution = 5;
-    TGParams.checkForRemainingTracks = true;
-    TGParams.onlyUntilBoundaryIntersection = false;
-    TGParams.shiftingStrategy = TracksGenerator::TRANSLATE_TRACKS;
-    TGParams.direction = Point(0, 0);//obtain the translation direction automatically
-    TGParams.trackSamplingStrategy = TracksGenerator::DEFAULT_SAMPLING;
-    TGParams.trackDistance = -1;
+    workSpace.workingWidth = -1;
     for(auto& machine : workSpace.workingGroup){
         if( Machine::isOfWorkingType( machine.machinetype ) )
-            TGParams.trackDistance = std::max(TGParams.trackDistance, machine.working_width);
+            workSpace.workingWidth = std::max(workSpace.workingWidth, machine.working_width);
     }
 
-    TracksGenerator tracksGenerator(gLogLevel);
-    auto aroResp = tracksGenerator.generateTracks(workSpace.field.subfields.front(),
-                                                  TGParams);
-    if(aroResp.isError()){
-        std::cerr << "-- Error generating the inner-field tracks: " << aroResp.msg << " --" << std::endl;
-        return false;
+    FieldGeometryProcessor::HeadlandParameters paramsHL;
+    paramsHL.headlandWidth = 18;//minimum headland width (the real width will be a multiple of the trackWidth/workingWidth)
+    paramsHL.trackWidth = workSpace.workingWidth;
+    paramsHL.numTracks = 0;//will be computed automatically based on headlandWidth and trackWidth
+    paramsHL.sampleResolution = 5;
+    paramsHL.headlandConnectionTrackWidth = -1; //for partial/side headlands
+
+    FieldGeometryProcessor::InfieldParameters paramsIF;
+    paramsIF.sampleResolution = 5;
+    paramsIF.checkForRemainingTracks = true;
+    paramsIF.onlyUntilBoundaryIntersection = false;
+    paramsIF.shiftingStrategy = geometry::TracksGenerator::TRANSLATE_TRACKS;
+    paramsIF.direction = Point(0, 0);//obtain the translation direction automatically
+    paramsIF.trackSamplingStrategy = geometry::TracksGenerator::DEFAULT_SAMPLING;
+    paramsIF.trackDistance = workSpace.workingWidth;
+
+    FieldGeometryProcessor fgp(gLogLevel);
+    if(headlandType == 0){ //surrounding/complete headland
+        auto aroResp = fgp.processSubfieldWithSurroundingHeadland(workSpace.field.subfields.front(),
+                                                                  paramsHL,
+                                                                  paramsIF,
+                                                                  0,
+                                                                  nullptr);
+        if(aroResp.isError()){
+            std::cerr << "-- Error generating geometries for field with complete/surrounding headland: " << aroResp.msg << " --" << std::endl;
+            return false;
+        }
+    }
+    else{ //side/partial headlands
+        auto aroResp = fgp.processSubfieldWithSideHeadlands(workSpace.field.subfields.front(),
+                                                            paramsHL,
+                                                            paramsIF,
+                                                            0);
+        if(aroResp.isError()){
+            std::cerr << "-- Error generating geometries for field with partial/side headlands: " << aroResp.msg << " --" << std::endl;
+            return false;
+        }
     }
 
-    std::cout << std::endl << "-- Finished generating the inner-field tracks --" << std::endl;
-    return true;
-}
-
-/*
- * This function generates the base-routes of the harvester for the inner-field
- * */
-bool planInnerFieldBaseRoutes( WorkSpace & workSpace ){
-
-    std::cout << std::endl << "-- Planning inner-field base-routes for the harvester..... --" << std::endl;
-
-    //set the reference pose (used by the planner to select where to start planning the base routes in the innner field) to the last pose of the headland base_route.
-    std::vector<Pose2D> refPose;
-    if(!workSpace.baseRoutes_headland.empty() && workSpace.baseRoutes_headland.front().route_points.size() > 1){
-        refPose.push_back( Pose2D(workSpace.baseRoutes_headland.front().route_points.back(),
-                                  arolib::geometry::get_angle( r_at(workSpace.baseRoutes_headland.front().route_points, 1),
-                                                               workSpace.baseRoutes_headland.front().route_points.back() ) ) );
-    }
-
-    //update the factor map to remove already harvested areas in the headland
-    if(!updateMassFactorMap(workSpace, workSpace.field.subfields.front().boundary_inner)){
-        std::cerr << "-- Error updating mass factor map with inner boundary --" << std::endl;
-        return false;
-    }
-
-    BaseRoutesInfieldPlanner::PlannerParameters plannerParameters;
-    plannerParameters.avgMassPerArea = 40;
-    plannerParameters.sequenceStrategy = SimpleTrackSequencer::MEANDER;//simple sequencing
-
-    BaseRoutesInfieldPlanner infieldPlanner(gLogLevel);
-    auto aroResp = infieldPlanner.plan(workSpace.field.subfields.front(),
-                                       workSpace.workingGroup,
-                                       plannerParameters,
-                                       ArolibGrid_t(),
-                                       workSpace.machineInitialStates,
-                                       *workSpace.massCalculator,
-                                       *workSpace.speedCalculator,
-                                       workSpace.baseRoutes_innerField,
-                                       refPose);
-    if(aroResp.isError()){
-        std::cerr << "-- Error generating the inner-field base routes: " << aroResp.msg << " --" << std::endl;
-        return false;
-    }
-
-    std::cout << std::endl << "-- Finished planning inner-field base-routes for the harvester --" << std::endl;
-    return true;
-}
-
-/*
- * This function connects the base-routes of the headland and inner-field and adjust the route point properties accordingly
- * */
-bool preProcessBaseRoutes( WorkSpace & workSpace ){
-
-    std::cout << std::endl << "-- Connecting base-routes..... --" << std::endl;
-
-    BaseRoutesProcessor::Settings brpSettings;
-
-    BaseRoutesProcessor brp(gLogLevel);
-    auto aroResp = brp.processRoutes(workSpace.field.subfields.front(),
-                                     workSpace.baseRoutes_headland,
-                                     workSpace.baseRoutes_innerField,
-                                     workSpace.workingGroup,
-                                     brpSettings,
-                                     workSpace.baseRoutes);
-    if(aroResp.isError()){
-        std::cerr << "-- Error connecting the base routes: " << aroResp.msg << " --" << std::endl;
-        return false;
-    }
-
-    std::cout << std::endl << "-- Finished connecting base-routes --" << std::endl;
-
+    std::cout << std::endl << "-- Finished generating field geometries --" << std::endl;
     return true;
 }
 
@@ -710,17 +596,13 @@ bool generateGraph( WorkSpace & workSpace ){
     std::cout << std::endl << "-- Creating the graph..... --" << std::endl;
 
     GraphProcessor::Settings gpSettings;
-    gpSettings.incVisitPeriods = true;
-    gpSettings.workingWidth = -1;
-    for(auto& machine : workSpace.workingGroup){
-        if( Machine::isOfWorkingType( machine.machinetype ) )
-            gpSettings.workingWidth = std::max(gpSettings.workingWidth, machine.working_width);
-    }
-    gpSettings.workingWidthHL = gpSettings.workingWidth;
+    gpSettings.incVisitPeriods = false;
+    gpSettings.workingWidthHL = workSpace.workingWidth;
+    gpSettings.workingWidth = workSpace.workingWidth;
 
     GraphProcessor graphProcessor(gLogLevel);
     auto aroResp = graphProcessor.createGraph(workSpace.field.subfields.front(),
-                                              workSpace.baseRoutes,
+                                              {},
                                               workSpace.workingGroup,
                                               gpSettings,
                                               workSpace.outFieldInfo,
@@ -737,24 +619,110 @@ bool generateGraph( WorkSpace & workSpace ){
 
 }
 
+
+
+/*
+ * This function generates the base-routes of the harvester for the headland
+ * */
+bool planBaseRoutes( WorkSpace & workSpace ){
+
+    std::cout << std::endl << "-- Planning base-routes for the harvester..... --" << std::endl;
+
+    BaseRoutesPlanner::PlannerParameters plannerParameters;
+    plannerParameters.workHeadlandFirst = true;
+    plannerParameters.workedAreaTransitRestriction = HeadlandBaseRoutesPlanner::WorkedAreaTransitRestriction::TRANSIT_ONLY_OVER_WORKED_AREA;
+    plannerParameters.startHeadlandFromOutermostTrack = true;
+    plannerParameters.finishHeadlandWithOutermostTrack = false; //for partial/side headlands
+    plannerParameters.headlandClockwise = true; //for complete/surrounding headland
+    plannerParameters.restrictToBoundary = true; //the mass calculation in the headland will check the intersection with the field outer boundary
+    plannerParameters.monitorPlannedAreasInHeadland = false; //do not monitor which areas have been planned to be harvested in previously planned tracks
+    plannerParameters.headlandSpeedMultiplier = 0.8;//the speed of the harvester when working the headland will be scaled by 0.8
+
+
+    BaseRoutesPlanner brp(gLogLevel);
+
+    brp.setGridCellsInfoManager(workSpace.cellsInfoManager);
+    brp.setInfieldTrackSequencer( std::make_shared<TrackSequencerClosestNext>(gLogLevel) );
+
+    if(workSpace.field.subfields.front().headlands.partial.size() > 0){//for side/partial headlands, use a headland2infield connector that also uses the built graph, instead of the default one
+
+        std::shared_ptr<InfieldTracksConnectorDubinsOrGraphBased> tracksConnector_hl2if = std::make_shared<InfieldTracksConnectorDubinsOrGraphBased>();
+        tracksConnector_hl2if->logger().setLogLevel(gLogLevel);
+        tracksConnector_hl2if->setGraph(workSpace.graph);
+        brp.setTrackConnector_headland2infield(tracksConnector_hl2if);
+
+    }
+
+    auto aroResp = brp.plan(workSpace.field.subfields.front(),
+                            workSpace.workingGroup,
+                            plannerParameters,
+                            workSpace.massCalculator,
+                            workSpace.speedCalculator,
+                            workSpace.speedCalculator,
+                            workSpace.speedCalculatorTransit,
+                            workSpace.baseRoutes,
+                            nullptr,//the massFactorMap was already applied in the edgeMassCalculator
+                            &workSpace.machineInitialStates,
+                            nullptr,
+                            &workSpace.outFieldInfo,
+                            nullptr);
+    if(aroResp.isError()){
+        std::cerr << "-- Error generating the base routes: " << aroResp.msg << " --" << std::endl;
+        return false;
+    }
+
+    std::cout << std::endl << "-- Finished planning base-routes for the harvester --" << std::endl;
+    return true;
+}
+
+/*
+ * This function updates the graph based on the base routes
+ * */
+bool updateGraph( WorkSpace & workSpace ){
+
+    std::cout << std::endl << "-- Updating the graph with base-routes information..... --" << std::endl;
+
+    GraphProcessor graphProcessor(gLogLevel);
+    auto aroResp = graphProcessor.addBaseRouteInformationToGraph(workSpace.graph,
+                                                                 workSpace.workingGroup,
+                                                                 workSpace.baseRoutes,
+                                                                 false);
+    if(aroResp.isError()){
+        std::cerr << "-- Error updating the graph: " << aroResp.msg << " --" << std::endl;
+        return false;
+    }
+
+    std::cout << std::endl << "-- Finished updating the graph --" << std::endl;
+
+    return true;
+
+}
+
 /*
  * This function generates the operation routes for all machines
  * */
-bool planOperation( WorkSpace & workSpace ){
+bool planOperation( WorkSpace & workSpace, size_t operationType ){
 
     std::cout << std::endl << "-- Planning operation routes..... --" << std::endl;
 
     FieldProcessPlanner::PlannerParameters plannerParameters;
-    plannerParameters.threadsOption = MultiOLVPlanner::MULTIPLE_THREADS; //plan using multiple threads (one per permutation)
     plannerParameters.clearanceTime = 10; // time [s] a machine has to wait for a vertex to be free
     plannerParameters.collisionAvoidanceOption = Astar::COLLISION_AVOIDANCE__OVERALL; //with collition avoidance
-    plannerParameters.finishAtResourcePoint = true; //transport vehicles will finish at the unloading facility
-    plannerParameters.includeCostOfOverload = true;
+    plannerParameters.finishAtResourcePoint = plannerParameters.sendLastOlvToResourcePoint = true; //capacitated vehicles will finish at the unloading facility
     plannerParameters.includeWaitInCost = true;
     plannerParameters.maxPlanningTime = plannerParameters.max_planning_time = 0; //do not limit the planning time
-    plannerParameters.max_waiting_time = 1800;// do not wait more that x seconds for a vertex to be free
-    plannerParameters.olvOrderStrategy = MultiOLVPlanner::CHECK_ALL_PERMUTATIONS; //check all permutations (options) to order the transport vehicles (starting with the estimated best order)
-    plannerParameters.numFixedInitalOlvsInOrder = 0; //check permutations starting from the first overload window (i.e. do not assign by force any of the trnsport vehicles to any of the initial working windows)
+
+    if(operationType == 0){ //capacitated harvester
+        plannerParameters.switchOnlyAtTrackEnd = plannerParameters.switchOnlyAtTrackEndHL = true; //switch between working windows only at track-ends
+    }
+    else{ //non-capacitated harvester + transport vehicles
+        plannerParameters.switchOnlyAtTrackEnd = plannerParameters.switchOnlyAtTrackEndHL = false; //switch between working windows anywhere in the field when the capacity limits are reached
+        plannerParameters.olvOrderStrategy = MultiOLVPlanner::CHECK_ALL_PERMUTATIONS; //check all permutations (options) to order the transport vehicles (starting with the estimated best order)
+        plannerParameters.numFixedInitalOlvsInOrder = 0; //check permutations starting from the first overload window (i.e. do not assign by force any of the trnsport vehicles to any of the initial working windows)
+        plannerParameters.threadsOption = MultiOLVPlanner::MULTIPLE_THREADS; //plan using multiple threads (one per permutation)
+        plannerParameters.includeCostOfOverload = true;
+        plannerParameters.max_waiting_time = 1800;// do not wait more that x seconds for a vertex to be free
+    }
 
 
     PlanGeneralInfo planInfo;
@@ -785,9 +753,9 @@ bool planOperation( WorkSpace & workSpace ){
 /*
  * This function saves the processed field and planned routes in '/tmp' (if possible)
  * */
-bool savePlan( WorkSpace & workSpace, size_t operationType ){
+bool savePlan( WorkSpace & workSpace, size_t operationType, size_t headlandType ){
     const std::string baseDir = "/tmp";
-    const std::string outDir = baseDir + "/example_harvesting/operationType_" + std::to_string(operationType) + "/";
+    const std::string outDir = baseDir + "/example_harvesting/operationType_" + std::to_string(operationType) + "__headlandType_" + std::to_string(headlandType) + "/";
 
     std::cout << std::endl << "-- Saving field and plan in " << outDir << "'..... --" << std::endl;
 

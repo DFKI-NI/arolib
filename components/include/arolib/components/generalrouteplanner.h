@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,11 +30,12 @@
 #include "arolib/geometry/geometry_helper.hpp"
 #include "arolib/geometry/field_geometry_processing.hpp"
 
-#include "arolib/planning/directedgraph.hpp"
+#include "arolib/planning/path_search/directedgraph.hpp"
 #include "arolib/planning/planningworkspace.h"
 #include "arolib/planning/planinfo.h"
-#include "arolib/planning/edgeCostCalculator.hpp"
-#include "arolib/planning/astar.hpp"
+#include "arolib/planning/edge_calculators/edgeCostCalculator.hpp"
+#include "arolib/planning/path_search/astar.hpp"
+#include "arolib/planning/path_search/astar_successor_checkers.hpp"
 
 #include "arolib/misc/loggingcomponent.h"
 #include "arolib/misc/logger.h"

@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,6 +35,7 @@
 #include "arolib/types/coordtransformer.hpp"
 #include "arolib/types/units.hpp"
 #include "arolib/misc/basicconversions.hpp"
+#include "arolib/misc/container_helper.h"
 
 namespace arolib{
 
@@ -78,6 +79,7 @@ double calc_dist(const Point& p0, const Point& p1);
  **/
 double calc_manhattan_dist(const Point& p0, const Point& p1, bool includeZ = false);
 
+
 /**
  * @brief Computes the length of the given geometry by
  *        summing up the lengths of all segments.If a start and end index
@@ -108,6 +110,27 @@ double calc_area(const Point& p0, const Point& p1, double width);
  * @return Area of a polygon
  */
 double calc_area(const Polygon& poly);
+
+/**
+ * @brief Get the area of a polygon
+ * @param poly Polygon
+ * @return Area of a polygon
+ */
+double calc_area(const PolygonWithHoles& poly);
+
+/**
+ * @brief Get the sum of the areas of a set of polygons
+ * @param polys Polygons
+ * @return Area of a polygons
+ */
+double calc_area(const std::vector<Polygon>& polys);
+
+/**
+ * @brief Get the sum of the areas of a set of polygons
+ * @param polys Polygons
+ * @return Area of a polygons
+ */
+double calc_area(const std::vector<PolygonWithHoles>& polys);
 
 /**
  * @brief Corrects the angle to be between (-pi,pi] or [0,2pi)
@@ -359,33 +382,60 @@ double getGeometryResolution(const std::vector<T>& geom);
 PolygonValidity isPolygonValid(const Polygon &poly);
 
 /**
+ * @brief Get the validity-state of the polygon/ring
+ * @param ring Input ring (polygon points)
+ * @param defaultOnInvalid Value returned in case the polygon is invalid
+ * @return Validity
+ */
+PolygonValidity isPolygonValid(const std::vector<Point> &ring);
+
+/**
  * @brief Check if a validity-state corresponds to a closed polygon
  * @param polyValidty Validty-state
+ * @param defaultOnInvalid Value returned in case the polygon is invalid
  * @return True if the polygon is closed
  */
-bool isPolygonClosed(const PolygonValidity& polyValidty);
+bool isPolygonClosed(const PolygonValidity& polyValidty, bool defaultOnInvalid = false);
 
 /**
  * @brief Check if a polygon is closed
  * @param poly Input polygon
+ * @param defaultOnInvalid Value returned in case the polygon is invalid
  * @return True if the polygon is closed
  */
-bool isPolygonClosed(const Polygon &poly);
+bool isPolygonClosed(const Polygon &poly, bool defaultOnInvalid = false);
+
+/**
+ * @brief Check if a polygon is closed
+ * @param ring Input ring (polygon points)
+ * @param defaultOnInvalid Value returned in case the polygon is invalid
+ * @return True if the polygon is closed
+ */
+bool isPolygonClosed(const std::vector<Point> &ring, bool defaultOnInvalid = false);
 
 /**
  * @brief Check if a validity-state corresponds to a clockwise polygon
  * @param polyValidty Validty-state
- * @param polyValidty Polygon validty
+ * @param defaultOnInvalid Value returned in case the polygon is invalid
  * @return True if the polygon is clockwise
  */
-bool isPolygonClockwise(const PolygonValidity& polyValidty);
+bool isPolygonClockwise(const PolygonValidity& polyValidty, bool defaultOnInvalid = false);
 
 /**
  * @brief Check if a polygon is clockwise
  * @param poly Input polygon
+ * @param defaultOnInvalid Value returned in case the polygon is invalid
  * @return True if the polygon is clockwise
  */
-bool isPolygonClockwise(const Polygon &poly);
+bool isPolygonClockwise(const Polygon &poly, bool defaultOnInvalid = false);
+
+/**
+ * @brief Check if a polygon is clockwise
+ * @param ring Input ring (polygon points)
+ * @param defaultOnInvalid Value returned in case the polygon is invalid
+ * @return True if the polygon is clockwise
+ */
+bool isPolygonClockwise(const std::vector<Point> &ring, bool defaultOnInvalid = false);
 
 /**
  * @brief Corrects the polygone (for boost)
@@ -454,6 +504,39 @@ T rotate(const Point &pivot, const T &p, double angle, bool inDeg = false);
 template< typename T,
           typename = typename std::enable_if< std::is_base_of<Point, T>::value, void >::type >
 std::vector<T> rotate(const Point &pivot, const std::vector<T> &points, double angle, bool inDeg = false);
+
+
+/**
+ * @brief Rotate a Polygon
+ * @param pivot
+ * @param poly Geometry to rotate w.r.t. the pivot
+ * @param angle Rotation angle
+ * @param inDeg Is the angle in degrees?
+ * @return Rotated geometry
+ */
+Polygon rotate(const Point &pivot, const Polygon &poly, double angle, bool inDeg = false);
+
+
+/**
+ * @brief Rotate a Polygon
+ * @param pivot
+ * @param poly Geometry to rotate w.r.t. the pivot
+ * @param angle Rotation angle
+ * @param inDeg Is the angle in degrees?
+ * @return Rotated geometry
+ */
+PolygonWithHoles rotate(const Point &pivot, const PolygonWithHoles &poly, double angle, bool inDeg = false);
+
+
+/**
+ * @brief Rotate a Linestring
+ * @param pivot
+ * @param ls Geometry to rotate w.r.t. the pivot
+ * @param angle Rotation angle
+ * @param inDeg Is the angle in degrees?
+ * @return Rotated geometry
+ */
+Linestring rotate(const Point &pivot, const Linestring &ls, double angle, bool inDeg = false);
 
 /**
  * @brief Moves a point to a specific distance from a line (based on the norm vector formed between the line and the point)
@@ -551,6 +634,23 @@ bool offsetLinestring(const std::vector<Point> &points_in,
                       int points_per_circle = 18);
 
 /**
+ Offset a linestring to create a polygon with holes from it
+ * @param points_in Input linestring.
+ * @param poly_out [out] Output polygon.
+ * @param offset1 Offset distance (left).
+ * @param offset2 Offset distance (right).
+ * @param endFlat If false, the first and last points in the linestring will also be offset; otherwise, the sides of the output polygon coresponding to those points will be flat.
+ * @param points_per_circle Number of points per circle for smooth corners in the offset linestring.
+ * @return True on success
+ **/
+bool offsetLinestring(const std::vector<Point> &points_in,
+                      PolygonWithHoles &poly_out,
+                      double offset1,//left
+                      double offset2,//right
+                      bool endFlat,
+                      int points_per_circle = 18);
+
+/**
  Offset a linestring (using boost)
  * @param points_in Input linestring.
  * @param points_out [out] Output (offset) linestring.
@@ -560,9 +660,9 @@ bool offsetLinestring(const std::vector<Point> &points_in,
  * @return True on success
  **/
 bool offsetLinestring_boost(const std::vector<Point> &points_in,
-                           std::vector<Point> &points_out,
-                           double offset,
-                           bool keepSamples = false,
+                            std::vector<Point> &points_out,
+                            double offset,
+                            bool keepSamples = false,
                             int points_per_circle = 18);
 
 /**
@@ -576,7 +676,24 @@ bool offsetLinestring_boost(const std::vector<Point> &points_in,
  * @return True on success
  **/
 bool offsetLinestring_boost(const std::vector<Point> &points_in,
-                            Polygon &boundary_out,
+                            Polygon &poly_out,
+                            double offset1,
+                            double offset2,
+                            bool endFlat,
+                            int points_per_circle = 18);
+
+/**
+ Offset a linestring to create a polygon with holes from it (using boost)
+ * @param points_in Input linestring.
+ * @param poly_out [out] Output polygon.
+ * @param offset1 Offset distance (left).
+ * @param offset2 Offset distance (right).
+ * @param endFlat If false, the first and last points in the linestring will also be offset; otherwise, the sides of the output polygon coresponding to those points will be flat.
+ * @param points_per_circle Number of points per circle for smooth corners in the offset linestring.
+ * @return True on success
+ **/
+bool offsetLinestring_boost(const std::vector<Point> &points_in,
+                            PolygonWithHoles &poly_out,
                             double offset1,
                             double offset2,
                             bool endFlat,
@@ -880,11 +997,12 @@ bool checkLineSegmentInPolygon(const Polygon& poly,
  * @param resolution Resolution (distance between consecutive samples)
  * @param minDist Minimum acceptable distance between consecutive samples. If < 0, a default value will be taken
  * @param reverse If true, the sampling process will start from the last point
+ * @param bisectSegment If the distance between 2 points is less than 2xresolutiontrue, if true, it will add the point in the middle; otherwise it will add the point at a distance "resolution" from the reference point.
  * @return Sampled geometry
  */
 template< typename T,
           typename = typename std::enable_if< std::is_base_of<Point, T>::value, void >::type >
-std::vector<Point> sample_geometry(const std::vector<T>& geometry_in, double resolution, double minDist = -1, bool reverse = false);
+std::vector<Point> sample_geometry(const std::vector<T>& geometry_in, double resolution, double minDist = -1, bool reverse = false, bool bisectSegment = false);
 
 /**
  * @brief Sample a geometry segment with a given resolution
@@ -944,6 +1062,14 @@ template< typename T,
           typename = typename std::enable_if< std::is_base_of<Point, T>::value, void >::type >
 bool unsample_linestring(std::vector<T>& points, double tolerance = 0.001, double angTolerance = 0.0004);
 
+template< typename T,
+          typename = typename std::enable_if< std::is_base_of<Point, T>::value, void >::type >
+bool unsample_linestring1(std::vector<T>& points, double tolerance = 0.001, double angTolerance = 0.0004);
+
+template< typename T,
+          typename = typename std::enable_if< std::is_base_of<Point, T>::value, void >::type >
+bool unsample_linestring2(std::vector<T>& points, double tolerance = 0.001, double angTolerance = 0.0004);
+
 /**
  * @brief Delete all points of a linestring that are not vertices
  * @param points [in/out] Linestring points to be processed. The points will be edited internally.
@@ -952,7 +1078,7 @@ bool unsample_linestring(std::vector<T>& points, double tolerance = 0.001, doubl
  */
 template< typename T,
           typename = typename std::enable_if< std::is_base_of<Point, T>::value, void >::type >
-bool unsample_linestring2(std::vector<T>& points, double tolerance = 0.001);
+bool unsample_linestring3(std::vector<T>& points, double tolerance = 0.001);
 
 /**
  * @brief (old implementation) Delete all points of a linestring that are not vertices
@@ -1102,9 +1228,19 @@ size_t getPointIndInMinDist(const std::vector<T> points, const Point &p);
 Point getPointInLineAtDist(const Point& p0, const Point &p1, double dist);
 
 /**
- * @brief Get 1) the point at a given relative distance (relative to the geometry length) from the first point of a line; and 2) the index of the sample before the point
+ * @brief Get 1) the point at a given distance strating from the first (d>=0) or last (d<0) point of a geometry; and 2) the index of the sample before (d>=0) or after (d<0) the point
  * @param geom geometry
  * @param d relative distance [0, 1]
+ * @return Point and index
+ */
+template< typename T,
+         typename = typename std::enable_if< std::is_base_of<Point, T>::value, void >::type >
+std::pair<Point, int> getPointAtDist(const std::vector<T> &geom, double d);
+
+/**
+ * @brief Get 1) the point at a given relative distance (relative to the geometry length) from the first point of a line; and 2) the index of the sample before the point
+ * @param geom geometry
+ * @param d distance. Id < 0, the search will start from the last point
  * @return Point and index
  */
 template< typename T,
@@ -1163,7 +1299,7 @@ size_t getGeomIndex(const std::vector<T>& geom, const Point &p, bool distToLine 
  */
 template< typename T,
           typename = typename std::enable_if< std::is_base_of<Point, T>::value, void >::type >
-size_t getIndexFromContinuousGeometry(const std::vector<T>& geom, int ind, Point *p_out = nullptr);
+size_t getIndexFromContinuousGeometry(const std::vector<T>& geom, int ind, T *p_out = nullptr);
 
 /**
  * @brief Returns the point corresponding to a given pseudo-index for a continuous geometry geom, where geom[i] := geom[i+size]
@@ -1174,7 +1310,18 @@ size_t getIndexFromContinuousGeometry(const std::vector<T>& geom, int ind, Point
  */
 template< typename T,
           typename = typename std::enable_if< std::is_base_of<Point, T>::value, void >::type >
-T getPointFromContinuousGeometry(const std::vector<T>& geom, int ind, size_t* indReal = nullptr);
+T& getPointFromContinuousGeometry(std::vector<T>& geom, int ind, size_t* indReal = nullptr);
+
+/**
+ * @brief Returns the point corresponding to a given pseudo-index for a continuous geometry geom, where geom[i] := geom[i+size]
+ * @param geom Continuous geometry
+ * @param ind Pseudo index. Can be <0 or >geom.size
+ * @param [out] indReal Real index
+ * @return point
+ */
+template< typename T,
+          typename = typename std::enable_if< std::is_base_of<Point, T>::value, void >::type >
+const T& getPointFromContinuousGeometry(const std::vector<T>& geom, int ind, size_t* indReal = nullptr);
 
 /**
  * @brief Gets the location of a point in a line. It assumes that the point is part of the line!!!
@@ -1189,17 +1336,34 @@ int getLocationInLine(const Point &p0, const Point &p1, const Point &p, double t
 //-------------------------------------------------------------------------------------
 
 /**
- * @brief Get the part/segment of the given geometry that
- * connects the given indices. The function assumes that the geometry is
- * closed if start_index is greater than end_index.
+ * @brief Get the part/segment of the given geometry that connects the given indices.
+ *
+ * The function assumes that the geometry is closed if start_index is greater than end_index.
+ * The resulting path will keep the order of the original geometry, where the first point corresponds to the start_index (unless reverse is set)
+ * @warining: if start_index == end_index
  * @param start_index Start index
  * @param end_index End index
+ * @param reverse Reverse the resulting points?
+ * @param cycleOnEqualIndexes If start_index = int end_index, return the complete cycle of points instead of the single point corresponding to start_index/start_end?
  * @return Segment of the given geometry that connects start_index and end_index
  */
 template< typename T,
           typename = typename std::enable_if< std::is_base_of<Point, T>::value, void >::type >
-std::vector<Point> getGeometryPart(const std::vector<T>& geom,
-                                   int start_index, int end_index);
+std::vector<T> getGeometryPart(const std::vector<T>& geom,
+                               int start_index, int end_index,
+                               bool reverse,
+                               bool cycleOnEqualIndexes);
+
+/**
+ * @brief Get the shortest part/segment of a CLOSED geometry that connects the given points corresponding to the given indexes.
+ * @param ind1 Index 1
+ * @param ind2 Index 2
+ * @return Segment the given geometry
+ */
+template< typename T,
+          typename = typename std::enable_if< std::is_base_of<Point, T>::value, void >::type >
+std::vector<T> getShortestGeometryPart(const std::vector<T>& geom,
+                                           size_t ind1, size_t ind2);
 
 /**
  * @brief Get the shortest part/segment of a CLOSED geometry that
@@ -1207,8 +1371,8 @@ std::vector<Point> getGeometryPart(const std::vector<T>& geom,
  * geometry.
  * @param p1 start point of the part
  * @param p2 end point of the part
- * @param [out] the found start index
- * @param [out] the found end index
+ * @param [out] start the found start index
+ * @param [out] end the found end index
   * @param distToLine If true, the index will be searched based on the distance from p to the segments of the geometry; if set to false, the index will be searched based on the distance from p to the points of the geometry
  * @return Segment the given geometry that connects p1 and p2
  */
@@ -1233,6 +1397,18 @@ template< typename T,
 std::vector<T> getShortestGeometryPart(const std::vector<T>& geom,
                                        const Point &p1, const Point &p2,
                                        bool distToLine = false);
+
+/**
+ * @brief Get the longest part/segment of a CLOSED geometry that connects the given points corresponding to the given indexes.
+ * @param ind1 Index 1
+ * @param ind2 Index 2
+ * @return Segment the given geometry
+ */
+template< typename T,
+          typename = typename std::enable_if< std::is_base_of<Point, T>::value, void >::type >
+std::vector<T> getLongestGeometryPart(const std::vector<T>& geom,
+                                      size_t ind1, size_t ind2);
+
 
 /**
  * @brief Get the longest part/segment of a CLOSED geometry that
@@ -1502,9 +1678,26 @@ std::vector<Point> get_intersection(const std::vector<T> &geom,
  * @brief Get the intersection(s) between 2 polygons
  * @param poly1 Polygon 1
  * @param poly2 Polygon 2
+ * @param tolerance Used to check faulty intersection calculations
  * @return Vector of intersection polygons
  */
-std::vector<Polygon> get_intersection(const Polygon& poly1, const Polygon& poly2);
+std::vector<Polygon> get_intersection(const Polygon& poly1, const Polygon& poly2, double tolerance = 0.001);
+
+/**
+ * @brief Get the intersection(s) between 2 polygons
+ * @param poly1 Polygon 1
+ * @param poly2 Polygon 2
+ * @return Vector of intersection polygons
+ */
+std::vector<PolygonWithHoles> get_intersection(const Polygon& poly1, const PolygonWithHoles& poly2);
+
+/**
+ * @brief Get the intersection(s) between 2 polygons
+ * @param poly1 Polygon 1
+ * @param poly2 Polygon 2
+ * @return Vector of intersection polygons
+ */
+std::vector<PolygonWithHoles> get_intersection(const PolygonWithHoles& poly1, const PolygonWithHoles& poly2);
 
 /**
  * @brief Get the intersection(s) between 2 polygons, where an intersection is expected. If no intersection found, poly2 will be offset and the intersections will be recalculated
@@ -1757,6 +1950,30 @@ Point getLowermostPointInPolygon(const Polygon& poly);
  * @return upper-most point
  */
 Point getUppermostPointInPolygon(const Polygon& poly);
+
+/**
+ * @brief Get the index of the next point different from the given point
+ * @param points Points
+ * @param indFrom Index of the reference point
+ * @param indTo Last index to check (if < 0 -> last point of points)
+ * @param eps Compare distance (if < 0 -> 0)
+ * @return Resulting index (<0 if not found or error)
+ */
+template< typename T,
+          typename = typename std::enable_if< std::is_base_of<Point, T>::value, void >::type >
+int getNextNonRepeatedPointIndex(const std::vector<T>& points, size_t indFrom, int indTo = -1, double eps = -1);
+
+/**
+ * @brief Get the index of the previous point different from the given point
+ * @param points Points
+ * @param indFrom Index of the reference point
+ * @param indTo Last index to check (if < 0 -> first point of points)
+ * @param eps Compare distance (if < 0 -> 0)
+ * @return Resulting index (<0 if not found or error)
+ */
+template< typename T,
+          typename = typename std::enable_if< std::is_base_of<Point, T>::value, void >::type >
+int getPrevNonRepeatedPointIndex(const std::vector<T>& points, size_t indFrom, int indTo = -1, double eps = -1);
 
 }
 

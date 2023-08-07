@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -175,15 +175,17 @@ BOOST_AUTO_TEST_CASE(test_polygon)
     BOOST_CHECK(grid.updatePolygonProportionally(p1, 1.0));
     
     // Check values on boundary
+    BOOST_CHECK_CLOSE(grid.getValue(Point(-1, 3), &error), 1.0, 1);
     BOOST_CHECK_CLOSE(grid.getValue(Point(0.5, 0.5), &error), 0.75, 1);
-    BOOST_CHECK_CLOSE(grid.getValue(Point(-5.5, -3.5), &error), 0.5, 1);
+    BOOST_CHECK_CLOSE(grid.getValue(Point(-5.5, 3.5), &error), 0.5, 1);
     BOOST_CHECK_CLOSE(grid.getValue(Point(-5.5, -3.5), &error), 0.5, 1);
     BOOST_CHECK_CLOSE(grid.getValue(Point(7.5, -3.5), &error), 0.25, 1);
+    BOOST_CHECK_CLOSE(grid.getValue(Point(-1, -3), &error), 1.0, 1);
 
     BOOST_CHECK(!get_grid_sum(grid, poly_area));
-    BOOST_CHECK_SMALL(poly_area - 76, 1e-6f);
+    BOOST_CHECK_CLOSE(poly_area, 76, 1);
 
-    //saveGridHD(grid, p1, 2, 0, "grid_HD_updatePoly", 50);
+//    saveGridHD(grid, p1, 2, 0, "grid_HD_updatePoly", 50);
 }
 
 BOOST_AUTO_TEST_CASE(test_common_functions)

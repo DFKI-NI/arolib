@@ -10,18 +10,17 @@ project (AroLib VERSION 0.1.0 LANGUAGES CXX)
 message(STATUS "CMAKE_C_COMPILER = ${CMAKE_C_COMPILER}")
 message(STATUS "CMAKE_CXX_COMPILER = ${CMAKE_CXX_COMPILER}")
 
-include(CheckCXXCompilerFlag)
-CHECK_CXX_COMPILER_FLAG("-std=c++11" COMPILER_SUPPORTS_CXX11)
-CHECK_CXX_COMPILER_FLAG("-std=c++0x" COMPILER_SUPPORTS_CXX0X)
-if(COMPILER_SUPPORTS_CXX11)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
-elseif(COMPILER_SUPPORTS_CXX0X)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++0x")
-else()
-    message(STATUS "The compiler ${CMAKE_CXX_COMPILER} has no C++11 support. Please use a different C++ compiler.")
-endif()
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED on)
+
+message(STATUS "CMAKE_CXX_STANDARD = ${CMAKE_CXX_STANDARD}")
+message(STATUS "CMAKE_CXX_STANDARD_REQUIRED = ${CMAKE_CXX_STANDARD_REQUIRED}")
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror=return-type  -pthread") # -pthread option for DEBUG
+
+message(STATUS "CMAKE_CXX_FLAGS = ${CMAKE_CXX_FLAGS}")
+
+set(CMAKE_DEBUG_POSTFIX "_d")
 
 # Appends the cmake/modules path inside the MAKE_MODULE_PATH variable which stores the
 # directories of additional CMake modules (eg MacroOutOfSourceBuild.cmake):
@@ -59,8 +58,9 @@ message(STATUS "Boost_INCLUDE_DIRS = ${Boost_INCLUDE_DIRS}")
 include_directories(3rdparty/HighFive/include)
 find_package(HDF5 REQUIRED COMPONENTS C CXX HL)
 include_directories(${HDF5_INCLUDE_DIRS})
-link_directories(${HDF5_LIBRARIES} ${HDF5_HL_LIBRARIES})
+#link_directories(${HDF5_LIBRARIES} ${HDF5_HL_LIBRARIES})
 message(STATUS "HDF5_FOUND = ${HDF5_FOUND}")
+message(STATUS "HDF5_INCLUDE_DIRS = ${HDF5_INCLUDE_DIRS}")
 
 # -------------- GDAL -------------- #
 set(GDAL_CONFIG GDAL_CONFIG-NOTFOUND)
@@ -125,10 +125,11 @@ set(AROLIB_LIB_NAMES
     ${AROLIB_LIB_COMPONENTS}
     ${AROLIB_LIB_GEOMETRY}
     ${AROLIB_LIB_IO}
-    ${AROLIB_LIB_MISC}
     ${AROLIB_LIB_PLANNING}
     ${AROLIB_LIB_PROCESSING}
-    ${AROLIB_LIB_TYPES})
+    ${AROLIB_LIB_MISC}
+    ${AROLIB_LIB_TYPES}
+    )
 MESSAGE(STATUS "AROLIB_LIB_NAMES = ${AROLIB_LIB_NAMES}")
 
 # Include module with fuction 'write_basic_package_version_file'

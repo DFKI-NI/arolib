@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -55,7 +55,7 @@ FieldAccessPoint::FieldAccessPoint(const Point &point):
 
 FieldAccessPoint::FieldAccessPoint(const Point &point,
                                    const FieldAccessPointId_t &_id,
-                                   const FieldAccessPoint::AccessPointType &_accessPointType):
+                                   AccessPointType _accessPointType):
     Point( point ),
     id(_id),
     accessType(_accessPointType)

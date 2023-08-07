@@ -1,5 +1,5 @@
 /*
- * Copyright 2021  DFKI GmbH
+ * Copyright 2023  DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,26 +36,218 @@ OverloadActivitiesPlanner::OverloadActivitiesPlanner(LogLevel logLevel):
 
 }
 
-std::vector<OLVPlan::OverloadInfo> OverloadActivitiesPlanner::computeOverloadActivities(PlannerSettings settings, const Route &harvester_route, const std::vector<Machine> &overloadMachines, const std::map<MachineId_t, MachineDynamicInfo> &machineCurrentStates, double harvestedMassLimit, Logger *_logger)
+std::vector<OLVPlan::OverloadInfo> OverloadActivitiesPlanner::computeOverloadActivities(PlannerSettings settings, const Route &harvester_route, const std::vector<Machine> &overloadMachines, const std::map<MachineId_t, MachineDynamicInfo> &machineCurrentStates, int numOverloadActivities, double workedMassLimit, bool leaveRoutePointBetweenOLActivities, std::shared_ptr<Logger> _logger)
 {
-    if(settings.switchOnlyAtTrackEnd)
-        return computeTracksEndsOverloadPoints(harvester_route, overloadMachines, machineCurrentStates, harvestedMassLimit, _logger);
 
-    return computeFieldOverloadPoints(harvester_route, overloadMachines, machineCurrentStates, harvestedMassLimit, _logger);
+//    if(settings.switchOnlyAtTrackEnd)
+//        return computeTracksEndsOverloadPoints(harvester_route, overloadMachines, machineCurrentStates, numOverloadActivities, workedMassLimit, _logger);
+
+//    return computeFieldOverloadPoints(harvester_route, overloadMachines, machineCurrentStates, numOverloadActivities, workedMassLimit, leaveRoutePointBetweenOLActivities, _logger);
+
+
+    Logger logger(LogLevel::CRITIC, __FUNCTION__);
+    logger.setParent(_logger);
+    std::vector<OLVPlan::OverloadInfo> ret;
+
+    // we need the first routepoint that is on the track to get the initial worked_mass
+    // this is required in case of replanning
+    int first_working_index = 0;
+    RoutePoint first_rp = harvester_route.route_points.at(first_working_index);
+    while (first_rp.type == RoutePoint::RoutePointType::HEADLAND ||
+           first_rp.type == RoutePoint::RoutePointType::TRANSIT ||
+           first_rp.time_stamp < -0.0001) {
+        first_working_index++;
+        if(first_working_index >= harvester_route.route_points.size())
+            return ret;
+        first_rp = harvester_route.route_points.at(first_working_index);
+    }
+
+    int last_working_index = harvester_route.route_points.size()-1;
+    RoutePoint last_rp = harvester_route.route_points.at(last_working_index);
+    while (last_rp.type == RoutePoint::RoutePointType::HEADLAND ||
+           last_rp.type == RoutePoint::RoutePointType::TRANSIT ||
+           last_rp.time_stamp < -0.0001) {
+        last_working_index++;
+        if(last_working_index <= first_working_index)
+            return ret;
+        last_rp = harvester_route.route_points.at(last_working_index);
+    }
+
+    RoutePoint second_rp = first_rp;
+    if(first_working_index+1 <= last_working_index)
+        second_rp = harvester_route.route_points.at(first_working_index+1);
+    double distDisregardInitialLimit = arolib::geometry::calc_dist(first_rp, second_rp) ;
+    distDisregardInitialLimit = std::max( 25.0, std::min(50.0, distDisregardInitialLimit*5) );
+
+    std::vector<double> olvCurrentBunkerLevels( overloadMachines.size() );
+    for(size_t i = 0 ; i < overloadMachines.size() ; ++i){
+        auto it_m = machineCurrentStates.find(overloadMachines.at(i).id);
+        if(it_m != machineCurrentStates.end()){
+            double dist = arolib::geometry::calc_dist(it_m->second.position, first_rp);
+            bool disregardInitialLimit = (i == 0 && dist < distDisregardInitialLimit);
+            if(disregardInitialLimit
+                    || it_m->second.bunkerMass < overloadMachines.at(i).bunker_mass * InitialOlvMaxCapacityMultiplier)
+                olvCurrentBunkerLevels.at(i) = it_m->second.bunkerMass;
+            else
+                olvCurrentBunkerLevels.at(i) = overloadMachines.at(i).bunker_mass * 2;//make them go tho a resource point first
+        }
+        else
+            olvCurrentBunkerLevels.at(i) = 0;
+    }
+
+    int olv_index = 0;
+    Machine current_olv = overloadMachines.at(olv_index);
+    double current_harvester_mass = first_rp.worked_mass;
+    double max_worked_mass = current_harvester_mass + current_olv.bunker_mass * OLVPlan::OlvMaxCapacityMultiplier - olvCurrentBunkerLevels.at(olv_index);  /// harvester_mass when the next olv will be full
+    int overload_start_index = first_working_index;
+    int overload_end_index = first_working_index;
+
+    bool toResourcePointFirst = false;
+    bool olvCurrentBunkerLevel_prev;
+    bool updateCurrentMass = true;
+    bool updateLastIndex = true;
+
+    for (int i = first_working_index; i+1 <= last_working_index; ++i) {
+        RoutePoint next_rp = harvester_route.route_points.at(i+1);
+
+//        if(overload_start_index >= i &&
+//                ( next_rp.type == RoutePoint::RoutePointType::HEADLAND
+//                  || next_rp.type == RoutePoint::RoutePointType::TRACK_END
+//                  || next_rp.type == RoutePoint::RoutePointType::TRACK_START ) ){
+//            ++overload_start_index;
+//            //updateLastIndex = false;
+//            continue;
+//        }
+
+        if (!next_rp.isOfType({RoutePoint::HEADLAND, RoutePoint::TRACK_START, RoutePoint::TRANSIT})) {
+            double next_harvester_mass = next_rp.worked_mass;
+
+            if (next_harvester_mass > max_worked_mass) {
+
+                if(overload_start_index < overload_end_index){
+
+                    if( (settings.switchOnlyAtTrackEndHL && Track::isHeadlandTrack(harvester_route.route_points.at(overload_end_index).track_id)) ||
+                            (settings.switchOnlyAtTrackEnd && Track::isInfieldTrack(harvester_route.route_points.at(overload_end_index).track_id))){
+                        auto indTmp = overload_end_index;
+                        while(indTmp > overload_start_index && harvester_route.route_points.at(indTmp).type != RoutePoint::TRACK_END)
+                            --indTmp;
+                        if(indTmp > overload_start_index){
+                            overload_end_index = indTmp;
+                            i = overload_end_index;
+                            next_rp = harvester_route.route_points.at(i+1);
+                            next_harvester_mass = next_rp.worked_mass;
+                        }
+                    }
+
+
+                    OLVPlan::OverloadInfo olvinfo;
+                    olvinfo.start_index = overload_start_index;
+                    olvinfo.end_index = overload_end_index;
+                    olvinfo.machine = current_olv;
+                    olvinfo.toResourcePointFirst = toResourcePointFirst;
+                    toResourcePointFirst = false;
+
+                    for(; olvinfo.end_index > overload_start_index+1 && olvinfo.end_index >= 1 ; --olvinfo.end_index){//in case there are repeated points corresponding to turning times
+                        if( harvester_route.route_points.at(olvinfo.end_index).point() != harvester_route.route_points.at(olvinfo.end_index-1).point() )
+                            break;
+                    }
+
+                    ret.push_back(olvinfo);
+
+                    if(workedMassLimit > 1e-6
+                            && harvester_route.route_points.at(olvinfo.end_index).worked_mass > workedMassLimit)
+                        return ret;
+
+                    if(numOverloadActivities > 0 && ret.size() >= numOverloadActivities)
+                        return ret;
+
+                    if(next_rp.type == RoutePoint::RoutePointType::TRACK_END && leaveRoutePointBetweenOLActivities){
+                        overload_start_index = i+1;
+                    }
+                    else{
+                        if(updateLastIndex)
+                            overload_start_index = i + leaveRoutePointBetweenOLActivities;
+                        else
+                            overload_start_index = i;
+                    }
+
+                    while( overload_start_index <= last_working_index
+                            && !harvester_route.route_points.at(overload_start_index).isOfTypeWorking(true, true) )
+                        ++overload_start_index;
+                    i = overload_start_index - 1;
+
+                    olvCurrentBunkerLevel_prev = olvCurrentBunkerLevels.at(olv_index);
+                    olvCurrentBunkerLevels.at(olv_index) = 0;
+
+                    // next olv machine:
+                    olv_index = (olv_index + 1) % overloadMachines.size();
+                    current_olv = overloadMachines.at(olv_index);
+                }
+                else if(!toResourcePointFirst){
+                    toResourcePointFirst = true;
+                    olvCurrentBunkerLevels.at(olv_index) = 0;
+                    i--;
+                    updateCurrentMass = false;
+                }
+                else{
+                    toResourcePointFirst = false;
+                    olvCurrentBunkerLevels.at(olv_index) = olvCurrentBunkerLevel_prev;
+
+                    // next olv machine:
+                    olv_index = (olv_index + 1) % overloadMachines.size();
+                    current_olv = overloadMachines.at(olv_index);
+                }
+
+
+                /// next maximum
+                max_worked_mass = current_harvester_mass + current_olv.bunker_mass * OLVPlan::OlvMaxCapacityMultiplier - olvCurrentBunkerLevels.at(olv_index);
+
+            }
+            else /*if(updateLastIndex)*/
+                overload_end_index = i+1;
+
+            // update variables for next iteration
+            if(updateCurrentMass)
+                current_harvester_mass = next_harvester_mass;
+            else
+                updateCurrentMass = true;
+
+            updateLastIndex = true;
+        }
+        else
+            updateLastIndex = false;
+    }
+
+
+    /// add last overloading activity
+    OLVPlan::OverloadInfo olvinfo;
+    olvinfo.start_index = overload_start_index;
+    olvinfo.end_index = last_working_index;
+    olvinfo.machine = current_olv;
+    olvinfo.toResourcePointFirst = toResourcePointFirst;
+    if(olvinfo.start_index < olvinfo.end_index){
+        ret.push_back(olvinfo);
+
+    }
+
+    return ret;
+
 }
 
 std::vector<OLVPlan::OverloadInfo> OverloadActivitiesPlanner::computeFieldOverloadPoints(const Route &harvester_route,
                                                                                          const std::vector<Machine> &_overloadMachines,
                                                                                          const std::map<MachineId_t, MachineDynamicInfo> &machineCurrentStates,
-                                                                                         double harvestedMassLimit,
-                                                                                         Logger *_logger)
+                                                                                         int numOverloadActivities,
+                                                                                         double workedMassLimit,
+                                                                                         bool leaveRoutePointBetweenOLActivities,
+                                                                                         std::shared_ptr<Logger> _logger)
 {
     Logger logger(LogLevel::CRITIC, __FUNCTION__);
     logger.setParent(_logger);
     std::vector<OLVPlan::OverloadInfo> ret;
 
     std::vector<Machine> overloadMachines = _overloadMachines;
-    // we need the first routepoint that is on the track to get the initial harvested_mass
+    // we need the first routepoint that is on the track to get the initial worked_mass
     // this is required in case of replanning
     int first_non_headland_index = 0;
     RoutePoint first_rp = harvester_route.route_points.at(first_non_headland_index);
@@ -92,8 +284,8 @@ std::vector<OLVPlan::OverloadInfo> OverloadActivitiesPlanner::computeFieldOverlo
 
     int olv_index = 0;
     Machine current_olv = overloadMachines.at(olv_index);
-    double current_harvester_mass = first_rp.harvested_mass;
-    double max_harvested_mass = current_harvester_mass + current_olv.bunker_mass * OLVPlan::OlvMaxCapacityMultiplier - olvCurrentBunkerLevels.at(olv_index);  /// harvester_mass when the next olv will be full
+    double current_harvester_mass = first_rp.worked_mass;
+    double max_worked_mass = current_harvester_mass + current_olv.bunker_mass * OLVPlan::OlvMaxCapacityMultiplier - olvCurrentBunkerLevels.at(olv_index);  /// harvester_mass when the next olv will be full
     int overload_start_index = first_non_headland_index;
     int overload_end_index = first_non_headland_index;
 
@@ -115,9 +307,9 @@ std::vector<OLVPlan::OverloadInfo> OverloadActivitiesPlanner::computeFieldOverlo
 //        }
 
         if (!next_rp.isOfType({RoutePoint::HEADLAND, RoutePoint::TRACK_START, RoutePoint::TRANSIT})) {
-            double next_harvester_mass = next_rp.harvested_mass;
+            double next_harvester_mass = next_rp.worked_mass;
 
-            if (next_harvester_mass > max_harvested_mass) {
+            if (next_harvester_mass > max_worked_mass) {
 
                 if(overload_start_index < overload_end_index){
                     OLVPlan::OverloadInfo olvinfo;
@@ -126,13 +318,22 @@ std::vector<OLVPlan::OverloadInfo> OverloadActivitiesPlanner::computeFieldOverlo
                     olvinfo.machine = current_olv;
                     olvinfo.toResourcePointFirst = toResourcePointFirst;
                     toResourcePointFirst = false;
+
+                    for(; olvinfo.end_index > overload_start_index+1 && olvinfo.end_index >= 1 ; --olvinfo.end_index){//in case there are repeated points corresponding to turning times
+                        if( harvester_route.route_points.at(olvinfo.end_index).point() != harvester_route.route_points.at(olvinfo.end_index-1).point() )
+                            break;
+                    }
+
                     ret.push_back(olvinfo);
 
-                    if(harvestedMassLimit > 1e-6
-                            && harvester_route.route_points.at(olvinfo.end_index).harvested_mass > harvestedMassLimit)
+                    if(workedMassLimit > 1e-6
+                            && harvester_route.route_points.at(olvinfo.end_index).worked_mass > workedMassLimit)
                         return ret;
 
-                    if(next_rp.type == RoutePoint::RoutePointType::TRACK_END){//is this necesary?
+                    if(numOverloadActivities > 0 && ret.size() >= numOverloadActivities)
+                        return ret;
+
+                    if(next_rp.type == RoutePoint::RoutePointType::TRACK_END && leaveRoutePointBetweenOLActivities){
                         overload_start_index = i+1;
                         while(overload_start_index < harvester_route.route_points.size()
                               && harvester_route.route_points.at(overload_start_index).type != RoutePoint::RoutePointType::TRACK_START)
@@ -140,7 +341,7 @@ std::vector<OLVPlan::OverloadInfo> OverloadActivitiesPlanner::computeFieldOverlo
                     }
                     else{
                         if(updateLastIndex)
-                            overload_start_index = i+1;
+                            overload_start_index = i + leaveRoutePointBetweenOLActivities;
                         else
                             overload_start_index = i;
                     }
@@ -169,7 +370,7 @@ std::vector<OLVPlan::OverloadInfo> OverloadActivitiesPlanner::computeFieldOverlo
 
 
                 /// next maximum
-                max_harvested_mass = current_harvester_mass + current_olv.bunker_mass * OLVPlan::OlvMaxCapacityMultiplier - olvCurrentBunkerLevels.at(olv_index);
+                max_worked_mass = current_harvester_mass + current_olv.bunker_mass * OLVPlan::OlvMaxCapacityMultiplier - olvCurrentBunkerLevels.at(olv_index);
 
             }
             else /*if(updateLastIndex)*/
@@ -205,8 +406,9 @@ std::vector<OLVPlan::OverloadInfo> OverloadActivitiesPlanner::computeFieldOverlo
 
 std::vector<OLVPlan::OverloadInfo> OverloadActivitiesPlanner::computeTracksEndsOverloadPoints(const Route &harvester_route, std::vector<Machine> overloadMachines,
                                                                                               const std::map<MachineId_t, MachineDynamicInfo> &machineCurrentStates,
-                                                                                              double harvestedMassLimit,
-                                                                                              Logger *_logger)
+                                                                                              int numOverloadActivities,
+                                                                                              double workedMassLimit,
+                                                                                              std::shared_ptr<Logger> _logger)
 {
     Logger logger(LogLevel::CRITIC, __FUNCTION__);
     logger.setParent(_logger);
@@ -248,20 +450,29 @@ std::vector<OLVPlan::OverloadInfo> OverloadActivitiesPlanner::computeTracksEndsO
             olvCurrentBunkerLevels.at(i) = 0;
     }
 
-    double max_harvested_mass = first_rp.harvested_mass + overloadMachines.at(olv_index).bunker_mass * OLVPlan::OlvMaxCapacityMultiplier - olvCurrentBunkerLevels.at(olv_index);  /// harvester_mass when the next olv will be full
-    while (old_index < harvester_route.route_points.size()-1) {
+    double max_worked_mass = first_rp.worked_mass + overloadMachines.at(olv_index).bunker_mass * OLVPlan::OlvMaxCapacityMultiplier - olvCurrentBunkerLevels.at(olv_index);  /// harvester_mass when the next olv will be full
+    while (old_index+1 < harvester_route.route_points.size()) {
         int next_end_id = run_to_next_type(harvester_route, old_index+1, RoutePoint::RoutePointType::TRACK_END);
         RoutePoint next_end_rp = harvester_route.route_points.at(old_index);
-        double next_end_harvester_mass = next_end_rp.harvested_mass;
-        if (next_end_harvester_mass > max_harvested_mass) {
+        double next_end_harvester_mass = next_end_rp.worked_mass;
+        if (next_end_harvester_mass > max_worked_mass) {
             OLVPlan::OverloadInfo olvinfo;
             olvinfo.start_index = overload_start_index;
             olvinfo.end_index = old_index;
-            olvinfo.machine = overloadMachines.at(olv_index);
+            olvinfo.machine = overloadMachines.at(olv_index);            
+
+            for(; olvinfo.end_index > overload_start_index+1 && olvinfo.end_index >= 1 ; --olvinfo.end_index){//in case there are repeated points corresponding to turning times
+                if( harvester_route.route_points.at(olvinfo.end_index).point() != harvester_route.route_points.at(olvinfo.end_index-1).point() )
+                    break;
+            }
+
             ret.push_back(olvinfo);
 
-            if(harvestedMassLimit > 1e-6
-                    && harvester_route.route_points.at(olvinfo.end_index).harvested_mass > harvestedMassLimit)
+            if(workedMassLimit > 1e-6
+                    && harvester_route.route_points.at(olvinfo.end_index).worked_mass > workedMassLimit)
+                return ret;
+
+            if(numOverloadActivities > 0 && ret.size() >= numOverloadActivities)
                 return ret;
 
             /// next start:
@@ -273,9 +484,9 @@ std::vector<OLVPlan::OverloadInfo> OverloadActivitiesPlanner::computeTracksEndsO
 
             /// next olv machine:
             olv_index = (olv_index + 1) % overloadMachines.size();
-            max_harvested_mass = start_rp.harvested_mass + overloadMachines.at(olv_index).bunker_mass * OLVPlan::OlvMaxCapacityMultiplier - olvCurrentBunkerLevels.at(olv_index); /// TODO should not be completely filled (maybe 90%)
+            max_worked_mass = start_rp.worked_mass + overloadMachines.at(olv_index).bunker_mass * OLVPlan::OlvMaxCapacityMultiplier - olvCurrentBunkerLevels.at(olv_index); /// TODO should not be completely filled (maybe 90%)
 
-            logger.printOut(LogLevel::DEBUG, __FUNCTION__, "Found next overload switching point: next_bunker_sum: " + std::to_string(max_harvested_mass));
+            logger.printOut(LogLevel::DEBUG, __FUNCTION__, "Found next overload switching point: next_bunker_sum: " + std::to_string(max_worked_mass));
         }
         old_index = next_end_id;
     }
@@ -287,7 +498,6 @@ std::vector<OLVPlan::OverloadInfo> OverloadActivitiesPlanner::computeTracksEndsO
     olvinfo.machine = overloadMachines.at(olv_index);
     ret.push_back(olvinfo);
     return ret;
-
 }
 
 int OverloadActivitiesPlanner::run_to_next_type(const Route &route, int start, RoutePoint::RoutePointType type) {
