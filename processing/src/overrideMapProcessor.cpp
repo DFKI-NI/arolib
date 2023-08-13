@@ -295,6 +295,23 @@ AroResp OverrideMapProcessor::createMaps(const Polygon &boundary,
 
     }
 
+    if(refMap && refMap->isAllocated()){
+
+        ArolibGrid_t factorMap(refMap->getLayout());
+        factorMap.setPolygon(boundary, 1.0);
+        for(size_t x = 0 ; x < factorMap.getSizeX() ; x++){
+            for(size_t y = 0 ; y < factorMap.getSizeY() ; y++){
+                bool inPoly = factorMap.hasValue(x, y) && factorMap.getValue(x,y) > 1e-3;
+                if(overrideCountMap && overrideCountMap->isAllocated() && !inPoly)
+                    overrideCountMap->setNoValue(x, y);
+                if(overrideMassMap && overrideMassMap->isAllocated() && !inPoly)
+                    overrideMassMap->setNoValue(x, y);
+                if(overrideMassPerTimeMap && overrideMassPerTimeMap->isAllocated() && !inPoly)
+                    overrideMassPerTimeMap->setNoValue(x, y);
+            }
+        }
+    }
+
 
     return resp;
 }

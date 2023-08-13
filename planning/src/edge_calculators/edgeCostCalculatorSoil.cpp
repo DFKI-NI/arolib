@@ -380,7 +380,6 @@ double ECC_soilOptimization1::calc_cost(const Machine& machine, const std::strin
         k_overall = m_costCoefficients.K_outside;
     }
     else{
-        double weight_sum = 0.0;
         for (auto &o : overruns)
             weight_sum += o.weight;
         weight_sum *= m_costCoefficients.K_prevWeights;  // influence of previous overruns is reduced
