@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,21 @@
  
 
 #include "arolib/planning/track_connectors/infieldtracksconnectordubins.hpp"
+
+
+#include <ctime>
+
+#include "arolib/geometry/geometry_helper.hpp"
+#include "arolib/geometry/curves_helper.hpp"
+
+namespace {
+
+inline void printDebugMessageConnection(arolib::Logger& logger, const std::string& function, const std::string& msg)
+{
+    //logger.printOut(LogLevel::DEBUG, function, msg);
+}
+
+}
 
 namespace arolib{
 
@@ -76,23 +91,23 @@ std::vector<Point> InfieldTracksConnectorDubins::getConnection(const Machine &ma
 
     if(turningRad > 1e-9){
         //try connecting directly using dubins path
-        logger().printOut(LogLevel::DEBUG, __FUNCTION__, "Trying to connect directly using dubins path...");
+        printDebugMessageConnection(logger(), __FUNCTION__, "Trying to connect directly using dubins path...");
         ret = getDubinsPathConnection(pose_start, pose_end, turningRad, {&limitBoundary}, infieldBoundary, maxConnectionLength, false, nullptr);
         if(!ret.empty()){
-            logger().printOut(LogLevel::DEBUG, __FUNCTION__, "Connected directly using dubins path..");
+            printDebugMessageConnection(logger(), __FUNCTION__, "Connected directly using dubins path..");
             return ret;
         }
         if(!m_onlyShortest){
             ret = getDubinsPathConnection(pose_start, pose_end, turningRad, {&limitBoundary}, infieldBoundary, maxConnectionLength, true, nullptr);
             if(!ret.empty()){
-                logger().printOut(LogLevel::DEBUG, __FUNCTION__, "Connected directly using dubins path (2)..");
+                printDebugMessageConnection(logger(), __FUNCTION__, "Connected directly using dubins path (2)..");
                 return ret;
             }
         }
     }
     else{
         //try connecting directly
-        logger().printOut(LogLevel::DEBUG, __FUNCTION__, "Trying to connect directly...");
+        printDebugMessageConnection(logger(), __FUNCTION__, "Trying to connect directly...");
         if( isPathValid({pose_start.point(), pose_end.point()}, limitBoundary, infieldBoundary, maxConnectionLength) ){
             ret.emplace_back(pose_start.point());
             ret.emplace_back(pose_end.point());

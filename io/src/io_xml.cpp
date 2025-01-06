@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,18 +15,8 @@
 */
  
 #include "arolib/io/io_xml.hpp"
-#include "arolib/io/io_common.hpp"
 
-#include <sstream>
-#include <iterator>
-#include <stdlib.h>
-
-#include "arolib/types/coordtransformer.hpp"
-
-#include <boost/property_tree/xml_parser.hpp>
-#include <boost/property_tree/ptree.hpp>
-#include <boost/foreach.hpp>
-#include <boost/optional/optional.hpp>
+#include "arolib/planning/path_search/directedgraph.hpp"
 
 namespace arolib {
 namespace io {
@@ -158,6 +148,7 @@ bool writePlanParametersXML(const std::string &filename,
                             const std::map<std::string, std::map<std::string, std::string> >& configParameters,
                             const OutFieldInfo &outFieldInfo,
                             const std::map<MachineId_t, MachineDynamicInfo> &machinesDynamicInfo,
+                            const std::map<ResourcePointId_t, ResourcePointState> &resourcePointStates,
                             const std::map<std::string, const ArolibGrid_t *> gridmaps,
                             Point::ProjectionType coordinatesType_in,
                             Point::ProjectionType coordinatesType_out)
@@ -171,6 +162,7 @@ bool writePlanParametersXML(const std::string &filename,
                                                configParameters,
                                                outFieldInfo,
                                                machinesDynamicInfo,
+                                               resourcePointStates,
                                                gridmaps,
                                                coordinatesType_in,
                                                coordinatesType_out)) {
@@ -186,6 +178,7 @@ bool writePlanParametersXML(const std::string &filename,
                             const std::map<std::string, std::map<std::string, std::string> >& configParameters,
                             const OutFieldInfo &outFieldInfo,
                             const std::map<MachineId_t, MachineDynamicInfo> &machinesDynamicInfo,
+                            const std::map<ResourcePointId_t, ResourcePointState> &resourcePointStates,
                             const std::map<std::string, const ArolibGrid_t *> gridmaps,
                             Point::ProjectionType coordinatesType_in,
                             Point::ProjectionType coordinatesType_out)
@@ -198,6 +191,7 @@ bool writePlanParametersXML(const std::string &filename,
                                                configParameters,
                                                outFieldInfo,
                                                machinesDynamicInfo,
+                                               resourcePointStates,
                                                gridmaps,
                                                coordinatesType_in,
                                                coordinatesType_out)) {
@@ -208,42 +202,12 @@ bool writePlanParametersXML(const std::string &filename,
 
 }
 
-bool writePlanParametersXML(const std::string &filename,
-                            const std::vector<Machine> &workingGroup,
-                            const std::map<std::string, std::map<std::string, std::string> > &configParameters,
-                            const OutFieldInfo &outFieldInfo,
-                            const std::map<MachineId_t, MachineDynamicInfo> &machinesDynamicInfo,
-                            const std::string &yieldmap_tifBase64,
-                            const std::string &drynessmap_tifBase64,
-                            const std::string &soilmap_tifBase64,
-                            const std::string &remainingAreaMap_tifBase64,
-                            Point::ProjectionType coordinatesType_in,
-                            Point::ProjectionType coordinatesType_out)
-{
-    Logger logger(defLogLevel);
-
-
-    if (!AroXMLOutDocument::savePlanParameters(filename,
-                                workingGroup,
-                                configParameters,
-                                outFieldInfo,
-                                machinesDynamicInfo,
-                                yieldmap_tifBase64,
-                                drynessmap_tifBase64,
-                                soilmap_tifBase64,
-                                remainingAreaMap_tifBase64, coordinatesType_in, coordinatesType_out)) {
-        logger.printError( __FUNCTION__, "Error saving plan parameters");
-        return false;
-    }
-    return true;
-}
-
 bool readPlanParametersXML(const std::string& filename,
                            Field& field,
                            std::vector<Machine>& workingGroup,
                            std::map<std::string, std::map<std::string, std::string> > &configParameters,
                            OutFieldInfo &outFieldInfo,
-                           std::map<MachineId_t, MachineDynamicInfo>& machinesDynamicInfo,
+                           std::map<MachineId_t, MachineDynamicInfo>& machinesDynamicInfo, std::map<ResourcePointId_t, ResourcePointState> &resourcePointStates,
                            std::map<std::string, ArolibGrid_t> &gridmaps,
                            Point::ProjectionType coordinatesType_out)
 {
@@ -256,6 +220,7 @@ bool readPlanParametersXML(const std::string& filename,
                                               configParameters,
                                               outFieldInfo,
                                               machinesDynamicInfo,
+                                              resourcePointStates,
                                               gridmaps,
                                               coordinatesType_out)) {
         logger.printError( __FUNCTION__, "Error reading plan parameters");
@@ -270,6 +235,7 @@ bool readPlanParametersXML(const std::string& filename,
                            std::map<std::string, std::map<std::string, std::string> > &configParameters,
                            OutFieldInfo &outFieldInfo,
                            std::map<MachineId_t, MachineDynamicInfo>& machinesDynamicInfo,
+                           std::map<ResourcePointId_t, ResourcePointState> &resourcePointStates,
                            std::map<std::string, ArolibGrid_t> &gridmaps,
                            Point::ProjectionType coordinatesType_out)
 {
@@ -281,6 +247,7 @@ bool readPlanParametersXML(const std::string& filename,
                                               configParameters,
                                               outFieldInfo,
                                               machinesDynamicInfo,
+                                              resourcePointStates,
                                               gridmaps,
                                               coordinatesType_out)) {
         logger.printError( __FUNCTION__, "Error reading plan parameters");
@@ -288,67 +255,6 @@ bool readPlanParametersXML(const std::string& filename,
     }
     return true;
 
-}
-
-bool readPlanParametersXML(const std::string &filename,
-                           Field &field,
-                           std::vector<Machine> &workingGroup,
-                           std::map<std::string, std::map<std::string, std::string> > &configParameters,
-                           OutFieldInfo &outFieldInfo,
-                           std::map<MachineId_t, MachineDynamicInfo> &machinesDynamicInfo,
-                           std::string &yieldmap_tifBase64,
-                           std::string &drynessmap_tifBase64,
-                           std::string &soilmap_tifBase64,
-                           std::string &remainingAreaMap_tifBase64, Point::ProjectionType coordinatesType_out)
-{
-    Logger logger(defLogLevel);
-
-
-    if (!AroXMLInDocument::readPlanParameters(filename,
-                                field,
-                                workingGroup,
-                                configParameters,
-                                outFieldInfo,
-                                machinesDynamicInfo,
-                                yieldmap_tifBase64,
-                                drynessmap_tifBase64,
-                                soilmap_tifBase64,
-                                remainingAreaMap_tifBase64,
-                                           coordinatesType_out)) {
-        logger.printError( __FUNCTION__, "Error reading plan parameters");
-        return false;
-    }
-    return true;
-
-}
-
-bool readPlanParametersXML(const std::string &filename,
-                           std::vector<Machine> &workingGroup,
-                           std::map<std::string, std::map<std::string, std::string> > &configParameters,
-                           OutFieldInfo &outFieldInfo,
-                           std::map<MachineId_t, MachineDynamicInfo> &machinesDynamicInfo,
-                           std::string &yieldmap_tifBase64,
-                           std::string &drynessmap_tifBase64,
-                           std::string &soilmap_tifBase64,
-                           std::string &remainingAreaMap_tifBase64, Point::ProjectionType coordinatesType_out)
-{
-    Logger logger(defLogLevel);
-
-
-    if (!AroXMLInDocument::readPlanParameters(filename,
-                                workingGroup,
-                                configParameters,
-                                outFieldInfo,
-                                machinesDynamicInfo,
-                                yieldmap_tifBase64,
-                                drynessmap_tifBase64,
-                                soilmap_tifBase64,
-                                remainingAreaMap_tifBase64,
-                                           coordinatesType_out)) {
-        logger.printError( __FUNCTION__, "Error reading plan parameters");
-        return false;
-    }
-    return true;
 }
 
 bool writePlanXML(const std::string &filename,
@@ -474,29 +380,6 @@ bool readPlanXML(const std::string &filename,
     return true;
 }
 
-bool readPlanXML(const std::string &filename, Field &field, std::vector<Machine> &workingGroup, std::map<int, std::vector<Route> > &routes, std::string &yieldmap_tifBase64, std::string &drynessmap_tifBase64, std::string &soilmap_tifBase64, std::string &remainingAreaMap_tifBase64, bool syncRoutes, Point::ProjectionType coordinatesType_out)
-{
-    Logger logger(defLogLevel);
-
-
-    if (!AroXMLInDocument::readPlan(filename,
-                      field,
-                      workingGroup,
-                      routes,
-                      yieldmap_tifBase64,
-                      drynessmap_tifBase64,
-                      soilmap_tifBase64,
-                      remainingAreaMap_tifBase64,
-                      syncRoutes,
-                                 coordinatesType_out,
-                      {},
-                      defLogLevel)) {
-        logger.printError( __FUNCTION__, "Error reading plan");
-        return false;
-    }
-    return true;
-
-}
 
 bool readPlanXML(const std::string &filename, Field &field, std::vector<Machine> &workingGroup, std::map<int, std::vector<Route> > &routes, std::map<std::string, ArolibGrid_t> &gridmaps, bool syncRoutes, Point::ProjectionType coordinatesType_out)
 {

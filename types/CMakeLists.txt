@@ -24,6 +24,7 @@ add_library(${AROLIB_LIB_NAME} SHARED
   include/arolib/types/point.hpp
   include/arolib/types/pose2D.hpp
   include/arolib/types/resourcepoint.hpp
+  include/arolib/types/resourcepointstate.hpp
   include/arolib/types/fieldaccesspoint.hpp
   include/arolib/types/polygon.hpp
   include/arolib/types/subfield.hpp

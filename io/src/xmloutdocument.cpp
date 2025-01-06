@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
 */
  
 #include "arolib/io/xmloutdocument.hpp"
+
 
 namespace arolib {
 namespace io {
@@ -110,6 +111,18 @@ bool XMLOutDocument::add(const std::map<std::string, std::map<std::string, std::
     if(!tag.empty())
         closeTag();
     return ok;
+}
+
+bool XMLOutDocument::addCommentLine(const std::string &comment)
+{
+    if(!isReadyToWrite())
+        return false;
+//    if(comment.empty())
+//        return true;
+    tabs();
+    *m_os << "<!-- " << comment << " -->\n";
+    return true;
+
 }
 
 bool XMLOutDocument::openDoc()

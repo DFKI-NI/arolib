@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,20 @@
  
 
 #include "arolib/planning/track_connectors/infieldtracksconnectordef.hpp"
+
+
+#include "arolib/geometry/geometry_helper.hpp"
+#include "arolib/geometry/pathsmoother.hpp"
+#include "arolib/planning/track_connectors/infieldtracksconnectordubins.hpp"
+
+namespace {
+
+inline void printDebugMessageConnection(arolib::Logger& logger, const std::string& function, const std::string& msg)
+{
+    //logger.printOut(LogLevel::DEBUG, function, msg);
+}
+
+}
 
 namespace arolib{
 
@@ -69,21 +83,21 @@ std::vector<Point> InfieldTracksConnectorDef::getConnection(const Machine &machi
 
     if(turningRad > 1e-9){
         //try connecting directly using dubins path
-        logger().printOut(LogLevel::DEBUG, __FUNCTION__, "Trying to connect directly using dubins path...");
+        printDebugMessageConnection(logger(), __FUNCTION__, "Trying to connect directly using dubins path...");
         ret = InfieldTracksConnectorDubins::getDubinsPathConnection(pose_start, pose_end, turningRad, {&limitBoundary}, infieldBoundary, maxConnectionLength, false, nullptr);
         if(!ret.empty()){
-            logger().printOut(LogLevel::DEBUG, __FUNCTION__, "Connected directly using dubins path..");
+            printDebugMessageConnection(logger(), __FUNCTION__, "Connected directly using dubins path..");
             return ret;
         }
 //        ret = InfieldTracksConnectorDubins::getDubinsPathConnection(pose_start, pose_end, turningRad, {&limitBoundary}, infieldBoundary, maxConnectionLength, true, nullptr);
 //        if(!ret.empty()){
-//            logger().printOut(LogLevel::DEBUG, __FUNCTION__, "Connected directly using dubins path (2)..");
+//            printDebugMessageConnection(logger(), __FUNCTION__, "Connected directly using dubins path (2)..");
 //            return ret;
 //        }
     }
     else{
         //try connecting directly
-        logger().printOut(LogLevel::DEBUG, __FUNCTION__, "Trying to connect directly...");
+        printDebugMessageConnection(logger(), __FUNCTION__, "Trying to connect directly...");
         if( isPathValid({pose_start.point(), pose_end.point()}, limitBoundary, infieldBoundary, maxConnectionLength) ){
             ret.emplace_back(pose_start.point());
             ret.emplace_back(pose_end.point());
@@ -92,7 +106,7 @@ std::vector<Point> InfieldTracksConnectorDef::getConnection(const Machine &machi
     }
 
     if(!headlands.complete.tracks.empty() || !headlands.complete.middle_track.points.empty()){//try connecting over complete/surrounding headland
-        logger().printOut(LogLevel::DEBUG, __FUNCTION__, "Trying to connect over complete/surrounding headland...");
+        printDebugMessageConnection(logger(), __FUNCTION__, "Trying to connect over complete/surrounding headland...");
         ret = getConnectionOverHeadland(headlands.complete,
                                         pose_start,
                                         pose_end,
@@ -102,13 +116,13 @@ std::vector<Point> InfieldTracksConnectorDef::getConnection(const Machine &machi
                                         maxConnectionLength);
 
         if(!ret.empty()){
-            logger().printOut(LogLevel::DEBUG, __FUNCTION__, "Connected over complete/surrounding headland");
+            printDebugMessageConnection(logger(), __FUNCTION__, "Connected over complete/surrounding headland");
             return ret;
         }
     }
 
     if(!headlands.partial.empty()){//try connecting over partial headlands
-        logger().printOut(LogLevel::DEBUG, __FUNCTION__, "Trying to connect over partial headlands...");
+        printDebugMessageConnection(logger(), __FUNCTION__, "Trying to connect over partial headlands...");
         ret = getConnectionOverHeadland(headlands.partial,
                                         pose_start,
                                         pose_end,
@@ -119,14 +133,14 @@ std::vector<Point> InfieldTracksConnectorDef::getConnection(const Machine &machi
                                         maxConnectionLength);
 
         if(!ret.empty()){
-            logger().printOut(LogLevel::DEBUG, __FUNCTION__, "Connected over partial headlands");
+            printDebugMessageConnection(logger(), __FUNCTION__, "Connected over partial headlands");
             return ret;
         }
     }
 
 
     //try connecting outside the IF boundary
-    logger().printOut(LogLevel::DEBUG, __FUNCTION__, "Trying to connect outside the IF boundary...");
+    printDebugMessageConnection(logger(), __FUNCTION__, "Trying to connect outside the IF boundary...");
     ret = getConnectionOutsideBoundary(infieldBoundary,
                                        pose_start,
                                        pose_end,
@@ -136,7 +150,7 @@ std::vector<Point> InfieldTracksConnectorDef::getConnection(const Machine &machi
                                        maxConnectionLength);
 
     if(!ret.empty()){
-        logger().printOut(LogLevel::DEBUG, __FUNCTION__, "Connected outside the IF boundary");
+        printDebugMessageConnection(logger(), __FUNCTION__, "Connected outside the IF boundary");
         return ret;
     }
 

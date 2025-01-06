@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,15 +17,11 @@
 #ifndef _AROLIB_TRACKSEQUENCER_HPP
 #define _AROLIB_TRACKSEQUENCER_HPP
 
-#include <map>
 #include <unordered_map>
 #include <mutex>
 
-#include "arolib/misc/loggingcomponent.h"
 #include "arolib/misc/basic_responses.h"
-#include "arolib/types/field.hpp"
-#include "arolib/types/machine.hpp"
-#include "arolib/types/pose2D.hpp"
+#include "arolib/geometry/pathsmapmanager.hpp"
 #include "arolib/planning/track_connectors/infieldtracksconnector.hpp"
 
 namespace arolib {
@@ -36,14 +32,12 @@ namespace arolib {
   class ITrackSequencer : public LoggingComponent
   {
   public:
-      //using PathsMap_t = std::unordered_map< Pose2D, std::unordered_map< Pose2D, PointVec, Pose2D::KeyHash >, Pose2D::KeyHash >;
-      using PathsMap_t = std::map< Pose2D, std::map< Pose2D, std::map< int, PointVec >  > >;
-      using PathsMapPtr_t = std::shared_ptr< PathsMap_t >;
-      using PathsMapConstPtr_t = std::shared_ptr< const PathsMap_t >;
 
       struct TrackSequencerSettings{
           bool limitStartToExtremaTracks = true; /**< Is the selection of the starting track limited to a track located at an extrema? */
           bool useMachineTurningRad = true; /**< Should the machine turning radius be used in the computations? */
+          bool considerFieldExit = true; /**< Should the transit to exit the field be considered? */
+          double maxSequencePlanningTime = -1; /**< Maximum planning time [s] (disregarded if <= 0) */
 
           /**
            * @brief Default constructor
@@ -97,6 +91,7 @@ namespace arolib {
           TrackInfo(size_t ind, TrackPointsDirection dir);
 
       };
+      using Sequences_t = std::map<MachineId_t, std::vector<ITrackSequencer::TrackInfo>>;
 
       /**
        * @brief Compute the sequences
@@ -110,8 +105,8 @@ namespace arolib {
       virtual AroResp computeSequences(const Subfield &subfield,
                                        const std::vector<Machine>& machines,
                                        const TrackSequencerSettings& settings,
-                                       std::map<MachineId_t, std::vector<ITrackSequencer::TrackInfo>>& sequences,
-                                       const Pose2D* initRefPose = nullptr,
+                                       Sequences_t& sequences,
+                                       const std::map<MachineId_t, Pose2D>& initRefPoses = {},
                                        const std::set<size_t>& excludeTrackIndexes = {}) = 0;
 
 
@@ -122,31 +117,57 @@ namespace arolib {
       virtual void setInfieldTrackConnector(std::shared_ptr<IInfieldTracksConnector> connector);
 
       /**
-       * @brief Set the map containing the computed paths' between two poses and a specific turning radius.
-       * @return Paths' map
+       * @brief Set the paths map manager to save and reuse the computed paths' between two poses and a specific turning radius.
+       * @param pmm Paths map manager. If nullptr -> it will set a brand new manager
        */
-      virtual PathsMapConstPtr_t getPathsMap() const;
+      virtual void setPathsMapManager(geometry::PathsMapManagerPtr_t pmm);
 
       /**
-       * @brief Get a computed path between two poses and a specific turning radius from the given paths' map.
-       * @param map Paths' map.
-       * @param pose1 Start pose.
-       * @param pose2 End pose.
-       * @param turningRad Turning radius.
-       * @param checkBidirectional If true, it will also search for paths from pose2 to pose1 if no path from pose1 to pose2 was found.
-       * @return Path (empty if not found)
+       * @brief Get the paths map manager used to save and reuse the computed paths' between two poses and a specific turning radius.
+       * @return Paths map manager (!= nullptr)
        */
-      static PointVec getPathFromMap(PathsMapConstPtr_t map, const Pose2D& pose1, const Pose2D& pose2, double turningRad, bool checkBidirectional = true);
+      virtual geometry::PathsMapManagerPtr_t getPathsMapManager();
 
       /**
-       * @brief Get a computed path between two poses and a specific turning radius from the local paths' map.
-       * @param pose1 Start pose.
-       * @param pose2 End pose.
-       * @param turningRad Turning radius.
-       * @param checkBidirectional If true, it will also search for paths from pose2 to pose1 if no path from pose1 to pose2 was found.
-       * @return Path (empty if not found)
+       * @brief Get the paths map manager used to save and reuse the computed paths' between two poses and a specific turning radius.
+       * @return Paths map manager (!= nullptr)
        */
-      PointVec getPathFromMap(const Pose2D& pose1, const Pose2D& pose2, double turningRad, bool checkBidirectional = true);
+      virtual geometry::PathsMapManagerConstPtr_t getPathsMapManager() const;
+
+      /**
+       * @brief Set the flag stating if all computed paths must be saved in paths map (if applicable)
+       * @param saveThem True/false
+       */
+      virtual void setSaveAllComputedPaths(bool saveThem);
+
+      /**
+       * @brief Get the flag stating if all computed paths must be saved in paths map (if applicable)
+       * @return True/false
+       */
+      virtual bool getSaveAllComputedPaths() const;
+
+      /**
+       * @brief Set the flag stating if the connecting paths must be saved in paths map (if applicable)
+       * @param saveThem True/false
+       */
+      virtual void setSaveConnectingPaths(bool saveThem);
+
+      /**
+       * @brief Get the flag stating if the connecting paths must be saved in paths map (if applicable)
+       * @return True/false
+       */
+      virtual bool getSaveConnectingPaths() const;
+
+      /**
+       * @brief Remove selected tracks from sequences
+       * @param sequences Original sequences
+       * @param trackInds Track indexes to be removed/kept
+       * @param removeGivenTracks If true, the trackInds will correspond to tracks to be removed; otherwise, to tracks to be kept.
+       * @return Updated sequences
+       */
+      static Sequences_t removeTracksFromSequence(const Sequences_t& sequences,
+                                                  const std::set<size_t>& trackInds,
+                                                  bool removeGivenTracks);
 
   protected:
       /**
@@ -154,21 +175,13 @@ namespace arolib {
        * @param childName Child class
        * @param logLevel Log level
        */
-      explicit ITrackSequencer(const std::string childName, const LogLevel &logLevel = LogLevel::INFO);
-
-      /**
-       * @brief Add a computed path between two poses and a specific turning radius to the local paths' map.
-       * @param pose1 Start pose.
-       * @param pose2 End pose.
-       * @param turningRad Turning radius.
-       * @param Path
-       */
-      void addPathToMap(const Pose2D& pose1, const Pose2D& pose2, double turningRad, const PointVec &path);
+      explicit ITrackSequencer(const std::string &childName, const LogLevel &logLevel = LogLevel::INFO);
 
   protected:
       std::shared_ptr<IInfieldTracksConnector> m_tracksConnector = nullptr; /**< Infield tracks' connector */
-      const PathsMapPtr_t m_pathsMap = std::make_shared<PathsMap_t>(); /**< holds internally generated and saved paths (managed by the childlen): <pose < pose, path > > */
-      std::mutex m_mutex_pathsMap; /**< Mutex for operations in the local paths' map */
+      geometry::PathsMapManagerPtr_t m_pathsMapManager = std::make_shared<geometry::PathsMapManager>(); /**< holds internally generated and saved paths */
+      bool m_saveAllComputedPaths = false; /**< Flag stating if all computed paths must be saved in m_pathsMap */
+      bool m_saveConnectingPaths = true; /**< Flag stating if the connecting paths must be saved in m_pathsMap */
   };
 
 }

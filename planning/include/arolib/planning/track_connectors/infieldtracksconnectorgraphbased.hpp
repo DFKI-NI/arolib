@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,20 +17,12 @@
 #ifndef ARO_INFIELDTRACKSCONNECTORGRAPHBASED_HPP
 #define ARO_INFIELDTRACKSCONNECTORGRAPHBASED_HPP
 
-#include <ctime>
 #include <future>
 #include <mutex>
 
-#include "arolib/misc/loggingcomponent.h"
-#include "arolib/types/pose2D.hpp"
-#include "arolib/types/subfield.hpp"
-#include "arolib/types/machine.hpp"
-#include "arolib/geometry/geometry_helper.hpp"
 #include "arolib/planning/track_connectors/infieldtracksconnector.hpp"
 #include "arolib/planning/edge_calculators/edgeCostCalculator.hpp"
-#include "arolib/planning/path_search/graphhelper.hpp"
 #include "arolib/planning/path_search/astar.hpp"
-#include "arolib/planning/path_search/astar_successor_checkers.hpp"
 
 namespace arolib{
 
@@ -140,7 +132,7 @@ public:
     void setExcludeFunctions(const ExcludeVertexFunc& vtFunc, const ExcludeEdgeFunc& edgeFunc);
 
     /**
-     * @brief Set the functions that will allow vertices and edges to be used that otherwise would be excluded (e.g. vertices(edges inside the inner-field).
+     * @brief Set the functions that will allow vertices and edges to be used that otherwise would be excluded (e.g. vertices/edges inside the inner-field).
      * @param func function
      */
     void setAllowFunctions(const AllowVertexFunc& vtFunc, const AllowEdgeFunc& edgeFunc);
@@ -156,6 +148,12 @@ public:
      * @param val Maximum amount of vertices to be used in the search to obtain the best vertices corresponding to start and end poses (if < 0 -> default; if == 0 -> no limit)
      */
     void setMaxCountCloseVts(int val);
+
+    /**
+     * @brief Enable/disable the limit boundary check for transit inside the inner field
+     * @param enable Enable/disable
+     */
+    void enableLimitBoundaryCheck(bool enabled);
 
     /**
      * @brief Set the folder where the planning (search) information will be stored (if empty-string, no data will be saved)
@@ -395,7 +393,7 @@ protected:
          * @brief Generates internal parameters from the graph, e.g. edge parameters to be used in the cost calculation
          * @sa generateInternalParameters::calcCost
          */
-        virtual void generateInternalParameters(DirectedGraph::Graph& graph) override;
+        virtual void generateInternalParameters(DirectedGraph::Graph& graph, const std::vector<Machine>& machines) override;
 
         /**
          * @brief Compute the edge cost for a default edge based on its start/end points' locations.
@@ -429,6 +427,30 @@ protected:
         virtual double calcHeuristic(const Machine& machine,
                                      const DirectedGraph::vertex_property &v_prop_current,
                                      const DirectedGraph::vertex_property &v_prop_goal) override;
+
+        /**
+         * @brief Check if the cost depend on the machine (only for inside the field).
+         * @return True if the cost depend on the machine (only for inside the field).
+         */
+        virtual bool dependsOnMachine() const override { return m_baseCostCalculator->dependsOnMachine(); }
+
+        /**
+         * @brief Check if the cost depend on the load (only for inside the field).
+         * @return True if the cost depend on the load (only for inside the field).
+         */
+        virtual bool dependsOnLoad() const override { return m_baseCostCalculator->dependsOnLoad(); }
+
+        /**
+         * @brief Check if the cost depend on time (only for inside the field).
+         * @return True if the cost depend on time (only for inside the field).
+         */
+        virtual bool dependsOnTime() const override { return m_baseCostCalculator->dependsOnTime(); }
+
+        /**
+         * @brief Check if the cost depend on distance (only for inside the field).
+         * @return True if the cost depend on distance (only for inside the field).
+         */
+        virtual bool dependsOnDistance() const override { return m_baseCostCalculator->dependsOnDistance(); }
     protected:
 
 
@@ -460,6 +482,7 @@ protected:
     ExcludeEdgeFunc m_allowEdgeFunc;  /**< function that will allow edges to be used that otherwise would be excluded */
     size_t m_viaMaxEdges = 2;  /**< Maximum amount of edges used to search for via vertices */
     size_t m_maxCountCloseVts = 2;  /**< Maximum amount of vertices to be used in the search to obtain the best vertices corresponding to start and end poses */
+    bool m_withLimitBoundaryCheck = false;  /**< Flag stating if a geometric limit boundary check will be done (if false, transit inside the boundary will be allowed) */
     std::string m_outputFolder = "";  /**< Folder where the planning (search) information will be stored (if empty-string, no data will be saved) */
 
 };

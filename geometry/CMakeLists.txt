@@ -7,6 +7,7 @@ add_library(${AROLIB_LIB_NAME} SHARED
   src/tracksgenerator.cpp
   src/curves_helper.cpp
   src/pathsmoother.cpp
+  src/pathsmapmanager.cpp
   src//3rdParty/dubins/dubins.cpp
   src//3rdParty/clipper/clipper.cpp
   include/arolib/geometry/geometry.hpp
@@ -17,6 +18,7 @@ add_library(${AROLIB_LIB_NAME} SHARED
   include/arolib/geometry/tracksgenerator.h
   include/arolib/geometry/curves_helper.hpp
   include/arolib/geometry/pathsmoother.hpp
+  include/arolib/geometry/pathsmapmanager.hpp
   include/arolib/geometry/3rdParty/dubins/dubins.h
   include/arolib/geometry/3rdParty/bezier/bezier.h
   include/arolib/geometry/3rdParty/clipper/clipper.hpp

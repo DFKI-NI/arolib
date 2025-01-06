@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,7 @@
  
 #include "arolib/planning/track_sequencing/tracksequencerspiral.hpp"
 
-#include <stdexcept>
-#include <algorithm>
+#include "arolib/geometry/geometry_helper.hpp"
 
 namespace arolib{
 
@@ -35,13 +34,15 @@ TrackSequencerSpiral::SequenceStrategy TrackSequencerSpiral::intToSequenceStrate
 TrackSequencerSpiral::TrackSequencerSpiral(LogLevel logLevel) :
     ITrackSequencer(__FUNCTION__, logLevel)
 {
+    m_saveAllComputedPaths = false;
+    m_saveConnectingPaths = false;
 }
 
 AroResp TrackSequencerSpiral::computeSequences(const Subfield &subfield,
                                                const std::vector<Machine> &machines,
                                                const TrackSequencerSettings& settings,
-                                               std::map<MachineId_t, std::vector<TrackInfo> > &sequences,
-                                               const Pose2D* initRefPose,
+                                               Sequences_t &sequences,
+                                               const std::map<MachineId_t, Pose2D> &initRefPoses,
                                                const std::set<size_t> &excludeTrackIndexes)
 {
     sequences.clear();
@@ -57,6 +58,16 @@ AroResp TrackSequencerSpiral::computeSequences(const Subfield &subfield,
             return AroResp(1, "One or more tracks have no points");
     }
 
+    //workarround until several ref poses are supported
+    const Pose2D* initRefPose = nullptr;
+    for(auto& m : machines){
+        auto it_m = initRefPoses.find(m.id);
+        if(it_m != initRefPoses.end() && it_m->second.isValid()){
+            initRefPose = &( it_m->second );
+            break;
+        }
+    }
+
     int start_track = 0;
 
     std::vector<size_t> trackInds;
@@ -68,9 +79,6 @@ AroResp TrackSequencerSpiral::computeSequences(const Subfield &subfield,
         return AroResp(1, "No tracks left after excludeding given tracks");
 
     int nr_tracks_per_bed = m_tracks_per_machine * machines.size();
-
-    bool tracksInReverse, trackPointsInReverse;
-    areTracksInReverse(subfield, initRefPose, tracksInReverse, trackPointsInReverse);
 
     std::vector<Bed> beds;
 
@@ -93,8 +101,9 @@ AroResp TrackSequencerSpiral::computeSequences(const Subfield &subfield,
                       + "\t num_remaining_tracks = " + std::to_string(num_remaining_tracks) + "\n"
                       + "\t start_track = " + std::to_string(start_track) );
 
-    if(num_remaining_tracks % machines.size() == 0 ||
-       num_remaining_tracks / machines.size() > 0) {// there is more than one track per machine left --> compute another bed with adjusted tracks_per_machine parameter
+    if( num_remaining_tracks > 0 &&
+            ( num_remaining_tracks % machines.size() == 0 ||
+              num_remaining_tracks / machines.size() > 0 ) ) {// there is more than one track per machine left --> compute another bed with adjusted tracks_per_machine parameter
         int tracks_per_machine = num_remaining_tracks / machines.size();
 
 //          if(start_track < 0)
@@ -117,6 +126,10 @@ AroResp TrackSequencerSpiral::computeSequences(const Subfield &subfield,
         first_harvester.push_back(machines.at(0));
         addBed(start_track,first_harvester, num_remaining_tracks, num_remaining_tracks, trackInds, beds);
     }
+
+
+    bool tracksInReverse, trackPointsInReverse;
+    areTracksInReverse(subfield, initRefPose, tracksInReverse, trackPointsInReverse);
 
     if(tracksInReverse) {
         logger().printOut(LogLevel::ERROR,__FUNCTION__, "Inverting tracks order...");
@@ -223,9 +236,7 @@ void TrackSequencerSpiral::areTracksInReverse(const Subfield &subfield, const Po
 {
     tracksInReverse = false;
     trackPointsInReverse = false;
-    if(!initRefPoint)
-        return;
-    if(!initRefPoint->isValid())
+    if(!initRefPoint || !initRefPoint->isValid())
         return;
 
     double dist0_0 = geometry::calc_dist(subfield.tracks.front().points.front(), *initRefPoint);
@@ -263,10 +274,10 @@ void TrackSequencerSpiral::addBed(int start_track,
 
 
 void TrackSequencerSpiral::computeBed(Bed &bed,
-                                const std::vector<Machine>& machines,
-                                int nr_tracks_per_bed,
-                                int tracks_per_machine,
-                                const std::vector<size_t> &trackInds)
+                                      const std::vector<Machine>& machines,
+                                      int nr_tracks_per_bed,
+                                      int tracks_per_machine,
+                                      const std::vector<size_t> &trackInds)
 {
     //@TODO: In this moment, the beds and their (sub)sequences are computed in order to minimize the distances traveled by the harvesters between beds.
     //       This, however, doesn't take into accout whether the harvester can only download at one of it sides.
@@ -279,7 +290,7 @@ void TrackSequencerSpiral::computeBed(Bed &bed,
     int bed_start;//holds the (delta) index of the first track to be harvested in the bed (w.r.t. the bed's first track). If bed_start = 0 --> the first track to be harvested is the bed's first track
     int dir = 1; //used so that the last track of the bed is the closest to the next bed in IN_TO_OUT strategy, or that the first track of the bed is the closest to the previous bed in OUT_TO_IN strategy
 
-    if(nr_tracks_per_bed < 1e-6) {//compute the nr_tracks_per_bed based on the working group and the number of tracks per machine per bed
+    if(nr_tracks_per_bed <= 0) {//compute the nr_tracks_per_bed based on the working group and the number of tracks per machine per bed
         nr_tracks_per_bed = tracks_per_machine * machines.size();
     }
 
@@ -331,7 +342,7 @@ void TrackSequencerSpiral::computeBed(Bed &bed,
 //              if (nr_tracks >= nr_tracks_per_bed)
 //                  break;
         }
-        v++;
+        ++v;
     }
 
 }

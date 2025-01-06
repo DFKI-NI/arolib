@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,14 +17,7 @@
 #ifndef _AROLIB_TRACKSEQUENCERCLOSESTNEXT_HPP
 #define _AROLIB_TRACKSEQUENCERCLOSESTNEXT_HPP
 
-#include <map>
-#include <future>
-#include <mutex>
-
-#include "arolib/planning/track_connectors/infieldtracksconnectordef.hpp"
 #include "arolib/planning/track_sequencing/tracksequencer.hpp"
-#include "arolib/geometry/geometry_helper.hpp"
-#include "arolib/geometry/field_geometry_processing.hpp"
 
 namespace arolib {
 
@@ -36,9 +29,17 @@ namespace arolib {
   public:
       /**
        * @brief Constructor
+       * @param useConnOverBoundaryAsReference Flag stating if the subfield boundary is to be used as a reference connection boundary
        * @param logLevel Log level
        */
-      explicit TrackSequencerClosestNext(LogLevel logLevel = LogLevel::INFO);
+      explicit TrackSequencerClosestNext(bool useConnOverBoundaryAsReference = true, LogLevel logLevel = LogLevel::INFO);
+
+      /**
+       * @brief Constructor
+       * @param logLevel Log level
+       * @param useConnOverBoundaryAsReference Flag stating if the subfield boundary is to be used as a reference connection boundary
+       */
+      explicit TrackSequencerClosestNext(LogLevel logLevel, bool useConnOverBoundaryAsReference = true);
 
 
       /**
@@ -53,13 +54,16 @@ namespace arolib {
       virtual AroResp computeSequences(const Subfield &subfield,
                                        const std::vector<Machine>& machines,
                                        const TrackSequencerSettings& settings,
-                                       std::map<MachineId_t, std::vector<ITrackSequencer::TrackInfo>>& sequences,
-                                       const Pose2D* initRefPose = nullptr,
+                                       Sequences_t& sequences,
+                                       const std::map<MachineId_t, Pose2D>& initRefPoses = {},
                                        const std::set<size_t>& excludeTrackIndexes = {}) override;
 
 
       /**
        * @brief Set the option to use the subfield boundary as a reference connection boundary
+       *
+       * If useConnOverBoundaryAsReference = true, the selection might not correspond to the actual shortest connection
+       *
        * @param useConnOverBoundaryAsReference Flag stating if the subfield boundary is to be used as a reference connection boundary
        */
       void setUseConnOverBoundaryAsReference(bool useConnOverBoundaryAsReference);
@@ -184,7 +188,7 @@ namespace arolib {
       std::shared_ptr<IInfieldTracksConnector> getDefTracksConnector() const;
 
   protected:
-     bool m_useConnOverBoundaryAsReference = true; /**< Flag stating if the subfield boundary is to be used as a reference connection boundary */
+     bool m_useConnOverBoundaryAsReference = true; /**< Flag stating if the subfield boundary is to be used as a reference connection boundary (if true, the selection might not correspond to the actual shortest connection) */
   };
 
 }

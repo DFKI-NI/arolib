@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,12 @@
 */
  
 #include "arolib/planning/multiolvplanner.h"
+
+#include <future>
+#include <chrono>
+
+#include "arolib/planning/path_search/graphhelper.hpp"
+#include "arolib/misc/filesystem_helper.h"
 
 namespace arolib{
 
@@ -955,7 +961,7 @@ std::string MultiOLVPlanner::planSingle_exclusive(size_t indHarvRoute,
     }
 
     //remove unworked segments of the main route
-    if(!overloadActivities.empty() && overloadActivities.back().end_index+1 < harvRoute.route_points.size())
+    if(!overloadActivities.empty() && overloadActivities.back().end_index+2 < harvRoute.route_points.size()) //None: if only one point was left, do not remove, hence the +2
         harvRoute.route_points.erase(harvRoute.route_points.begin() + overloadActivities.back().end_index + 1, harvRoute.route_points.end() );
 
     logger().printOut(LogLevel::INFO, __FUNCTION__, "Successfully finished the plan for olvs with a total cost " + std::to_string(planCost)

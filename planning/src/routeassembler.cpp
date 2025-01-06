@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,8 @@
 */
  
 #include "arolib/planning/routeassembler.hpp"
+
+#include "arolib/geometry/geometry_helper.hpp"
 
 
 namespace arolib{
@@ -250,9 +252,9 @@ std::shared_ptr<const IInfieldTracksConnector> RouteAssembler::getTracksConnecto
     return m_tracksConnector;
 }
 
-void RouteAssembler::setTracksConnectionsMap(ITrackSequencer::PathsMapConstPtr_t conns)
+void RouteAssembler::setTracksConnectionsMapManager(geometry::PathsMapManagerPtr_t pmm)
 {
-    m_tracksConnectionsMap = conns;
+    m_tracksConnectionsMap = pmm;
 }
 bool RouteAssembler::addConnectionToTrack(const std::vector<Point> &nextTrack,
                                           const Subfield &sf,
@@ -279,11 +281,11 @@ bool RouteAssembler::addConnectionToTrack(const std::vector<Point> &nextTrack,
     if(m_tracksConnectionsMap){
         double turningRad = IInfieldTracksConnector::getTurningRad(m_machine, -1);
         Pose2D poseNext = Pose2D(nextTrack.front(), geometry::get_angle(nextTrack.front(), nextTrack.at(1)));
-        PointVec conn1 = ITrackSequencer::getPathFromMap(m_tracksConnectionsMap, pose_start, poseNext, turningRad, true);
+        PointVec conn1 = geometry::PathsMapManager::getPathFromMap(m_tracksConnectionsMap, pose_start, poseNext, turningRad, true);
         PointVec conn2;
         if(checkBothSides){
             poseNext = Pose2D(nextTrack.back(), geometry::get_angle(nextTrack.back(), r_at(nextTrack,1)));
-            conn2 = ITrackSequencer::getPathFromMap(m_tracksConnectionsMap, pose_start, poseNext, turningRad, true);
+            conn2 = geometry::PathsMapManager::getPathFromMap(m_tracksConnectionsMap, pose_start, poseNext, turningRad, true);
         }
         if(!conn1.empty() && !conn2.empty()){
             if( geometry::getGeometryLength(conn1) > geometry::getGeometryLength(conn2) )

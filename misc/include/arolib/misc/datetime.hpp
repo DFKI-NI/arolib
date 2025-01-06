@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,14 +17,7 @@
 #ifndef ARO_DATETIME_HPP
 #define ARO_DATETIME_HPP
 
-#include <ctime>
 #include <string>
-#include <sstream>
-#include <cmath>
-#include <iomanip>
-#include <cctype>
-#include <algorithm>
-#include <iostream>
 #include <chrono>
 
 namespace arolib {

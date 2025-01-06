@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,16 +17,7 @@
 #ifndef AROLIB_ROUNDTRIPPLANNER_HPP
 #define AROLIB_ROUNDTRIPPLANNER_HPP
 
-#include <ctime>
-
-#include "arolib/planning/path_search/directedgraph.hpp"
-#include "arolib/planning/path_search/astar.hpp"
-#include "planningException.hpp"
-#include "arolib/planning/path_search/graphhelper.hpp"
 #include "arolib/planning/path_search/astar_successor_checkers.hpp"
-
-#include "arolib/misc/loggingcomponent.h"
-#include "arolib/misc/filesystem_helper.h"
 
 
 namespace arolib{
@@ -89,7 +80,7 @@ public:
      * @param successorCheckers_toDest Checkers used to know if a transition to a certain successor node is valid  when planning to the destination (@sa Astar::PlanParameters::successorCheckers)
      * @param successorCheckers_toRoute Checkers used to know if a transition to a certain successor node is valid  when planning back to the route (@sa Astar::PlanParameters::successorCheckers)
      * @param allowReverseDriving Allow reverse driving
-     * @param functAtDest this function will be called to the last route point of the 'to the destination' route segment to get the first route point of the 'back to the route' segment
+     * @param functAtDest this function will be called to the last route point of the 'to the destination' route segment to get the first route point of the 'back to the route' segment. If the returned RoutePoint is invalid, it will be disregarded.
      * @return True on success
      */
     bool planTrip(const DirectedGraph::Graph &graph,
@@ -113,6 +104,12 @@ public:
      * @return (updated) route including the planned trip to the (intermediate) destination
      */
     const Route& getPlannedRoute() const;
+
+    /**
+     * @brief Get the last planned destination vertex
+     * @return Last planned destination vertex
+     */
+    DirectedGraph::vertex_t getPlannedDestinationVt() const;
 
     /**
      * @brief Get the index ranges of the (sub) trips from the (updated) route including the planned trip to the (intermediate) destination

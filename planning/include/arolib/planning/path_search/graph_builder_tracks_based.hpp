@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,24 +17,14 @@
 #ifndef _AROLIB_GRAPH_BUILDER_TRACKS_BASED_H
 #define _AROLIB_GRAPH_BUILDER_TRACKS_BASED_H
 
-#include <iostream>
-#include <fstream>
-#include <tuple>
-#include <ctime>
 #include <functional>
 #include <unordered_set>
 
-#include "arolib/planning/path_search/directedgraph.hpp"
-#include "arolib/planning/path_search/graphhelper.hpp"
-#include "arolib/planning/path_search/graph_building_info.hpp"
-#include "arolib/geometry/geometry_helper.hpp"
-#include "arolib/geometry/field_geometry_processing.hpp"
-#include "arolib/types/route.hpp"
-#include "arolib/types/outfieldinfo.hpp"
+#include "arolib/types/subfield.hpp"
 #include "arolib/types/machinedynamicinfo.hpp"
-#include "arolib/types/coordtransformer.hpp"
-#include "arolib/misc/logger.h"
-#include "arolib/misc/filesystem_helper.h"
+#include "arolib/misc/basic_responses.h"
+#include "arolib/planning/path_search/directedgraph.hpp"
+#include "arolib/planning/path_search/graph_building_info.hpp"
 
 
 namespace arolib{

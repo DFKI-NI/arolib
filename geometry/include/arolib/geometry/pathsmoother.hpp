@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,11 +17,8 @@
 #ifndef AROLIB_PATH_SMOOTHER_HPP
 #define AROLIB_PATH_SMOOTHER_HPP
 
-#include <algorithm>
 #include <set>
-#include <functional>
 
-#include "curves_helper.hpp"
 #include "arolib/types/point.hpp"
 
 namespace arolib{

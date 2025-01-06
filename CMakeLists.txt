@@ -5,7 +5,7 @@ cmake_minimum_required(VERSION 3.2.0)
 enable_testing()
 
 # Project name
-project (AroLib VERSION 0.1.0 LANGUAGES CXX)
+project (AroLib VERSION 2.1.0 LANGUAGES CXX)
 
 message(STATUS "CMAKE_C_COMPILER = ${CMAKE_C_COMPILER}")
 message(STATUS "CMAKE_CXX_COMPILER = ${CMAKE_CXX_COMPILER}")

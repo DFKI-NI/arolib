@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,15 +17,11 @@
 #ifndef AROLIB_ROUTE_SMOOTHER_HPP
 #define AROLIB_ROUTE_SMOOTHER_HPP
 
-#include <vector>
-#include <map>
 #include <fstream>
 
-#include "arolib/types/machine.hpp"
+#include "arolib/types/polygon.hpp"
 #include "arolib/types/route.hpp"
-#include "arolib/geometry/pathsmoother.hpp"
 #include "arolib/misc/loggingcomponent.h"
-#include "arolib/misc/container_helper.h"
 #include "arolib/misc/basicconversions.hpp"
 
 namespace arolib{

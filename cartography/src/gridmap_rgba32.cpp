@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -105,15 +105,10 @@ RGBA32Gridmap::RGBA32Gridmap(const RGBA32Gridmap &other)
     logger().setBaseName(__FUNCTION__);
 }
 
-RGBA32Gridmap::~RGBA32Gridmap()
+RGBA32Gridmap::RGBA32Gridmap(RGBA32Gridmap &&other)
+    : Gridmap<RGBA32CellData>(other)
 {
-
-}
-
-RGBA32Gridmap &RGBA32Gridmap::operator=(const RGBA32Gridmap &other)
-{
-    Gridmap<RGBA32CellData>::operator =(other);
-    return *this;
+    logger().setBaseName(__FUNCTION__);
 }
 
 
@@ -215,7 +210,7 @@ bool RGBA32Gridmap::saveValuesCsv(std::ostream &out, const std::string &sep, con
             }
             out << sep;
         }
-        out << std::endl;
+        out << "\n";
     }
     return true;
 }

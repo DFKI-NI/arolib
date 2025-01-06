@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,9 +13,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License
 */
- 
-#include "arolib/types/machine.hpp"
+
+#include <limits>
 #include <cmath>
+
+#include "arolib/types/machine.hpp"
 #include "arolib/types/units.hpp"
 
 namespace arolib {

@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,13 @@
  
 
 #include "arolib/planning/track_connectors/infieldtracksconnectorgraphbased.hpp"
+
+#include <ctime>
+
+#include "arolib/misc/filesystem_helper.h"
+#include "arolib/geometry/geometry_helper.hpp"
+#include "arolib/planning/path_search/graphhelper.hpp"
+#include "arolib/planning/path_search/astar_successor_checkers.hpp"
 
 namespace arolib{
 
@@ -287,6 +294,11 @@ void InfieldTracksConnectorGraphBased::setMaxCountCloseVts(int val)
         m_maxCountCloseVts = std::numeric_limits<size_t>::max();
 }
 
+void InfieldTracksConnectorGraphBased::enableLimitBoundaryCheck(bool enabled)
+{
+    m_withLimitBoundaryCheck = enabled;
+}
+
 void InfieldTracksConnectorGraphBased::setOutputSearchFolder(const std::string &outputFolder)
 {
     m_outputFolder = outputFolder;
@@ -535,7 +547,7 @@ bool InfieldTracksConnectorGraphBased::isVertexValid(const VertexFunctionParams 
 {
     const auto& rp = params.vt_prop.route_point;
 
-    if( infieldBoundary.points.size() > 3 && ag::in_polygon(rp, infieldBoundary) )
+    if( m_withLimitBoundaryCheck && infieldBoundary.points.size() > 3 && ag::in_polygon(rp, infieldBoundary) )
         return m_allowVertexFunc(params) && isVertexValid(params, Polygon(), allowInitLocationVts);
 
     if(rp.type == RoutePoint::RESOURCE_POINT)
@@ -936,9 +948,9 @@ InfieldTracksConnectorGraphBased::InternalEdgeCostCalculator::InternalEdgeCostCa
 {
 }
 
-void InfieldTracksConnectorGraphBased::InternalEdgeCostCalculator::generateInternalParameters(DirectedGraph::Graph &graph)
+void InfieldTracksConnectorGraphBased::InternalEdgeCostCalculator::generateInternalParameters(DirectedGraph::Graph &graph, const std::vector<Machine> &machines)
 {
-    m_baseCostCalculator->generateInternalParameters(graph);
+    m_baseCostCalculator->generateInternalParameters(graph, machines);
 }
 
 double InfieldTracksConnectorGraphBased::InternalEdgeCostCalculator::calcCost(const Machine& machine,

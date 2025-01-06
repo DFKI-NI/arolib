@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,10 @@
 */
  
 #include "arolib/io/aroxmlindocument.hpp"
+
+
+#include "arolib/misc/base64Utility.hpp"
+#include "arolib/types/coordtransformer.hpp"
 
 namespace arolib {
 namespace io {
@@ -229,6 +233,7 @@ bool AroXMLInDocument::read( const ReadHandler & base, ResourcePoint &pt){
 
         ok_ut = getValue(RHTree(base), "defaultUnloadingTime", pt.defaultUnloadingTime);
         getValue(RHTree(base), "defaultUnloadingTimePerKg", pt.defaultUnloadingTimePerKg);
+        getValue(RHTree(base), "massCapacity", pt.massCapacity);
 
         if(getBranch(base, "geometry", branch)){
             if(!read(branch, pt.geometry))
@@ -755,6 +760,7 @@ bool AroXMLInDocument::read( const ReadHandler & base, Route &route){
     bool ok_rid = false;
     ReadHandler branch;
 
+    getValue(RHTree(base), "base_date_time", route.baseDateTime);
     ok_mid = getValue(RHTree(base), "machine_id", route.machine_id);
     ok_rid = getValue(RHTree(base), "route_id", route.route_id);
 
@@ -822,6 +828,53 @@ bool AroXMLInDocument::read( const ReadHandler & base, std::map<MachineId_t, Mac
                 return false;
             }
             dynamicInfo.insert(di);
+        }
+    }
+    return true;
+}
+
+bool AroXMLInDocument::read(const ReadHandler &base, std::pair<ResourcePointId_t, ResourcePointState> &state)
+{
+    if(!m_isDocOpen){
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
+        return false;
+    }
+
+    state.second = ResourcePointState();
+
+    if(!getValue(RHTree(base), "resource_point_id", state.first)){
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "ResourcePointState: Resource point id not found");
+        return false;
+    }
+    getValue(RHTree(base), "capacityMass", state.second.capacityMass);
+    getValue(RHTree(base), "capacityVolume", state.second.capacityVolume);
+    getValue(RHTree(base), "enabled", state.second.enabled);
+    getValue(RHTree(base), "timestamp", state.second.timestamp);
+    return true;
+
+}
+
+bool AroXMLInDocument::read(const ReadHandler &base, std::map<ResourcePointId_t, ResourcePointState> &states)
+{
+    states.clear();
+    if(!m_isDocOpen){
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Document is not open");
+        return false;
+    }
+
+    size_t count = 0;
+
+    auto tag_mdi = getTag<ResourcePointState>();
+
+    BOOST_FOREACH( boost::property_tree::ptree::value_type const& v, RHTree(base) ){
+        if(v.first == tag_mdi){
+            ++count;
+            std::pair<ResourcePointId_t, ResourcePointState> state;
+            if ( !read( createRH(v.second), state) ){
+                logger().printOut(LogLevel::ERROR, __FUNCTION__, "Error reading resource point state " + std::to_string(count));
+                return false;
+            }
+            states.insert(state);
         }
     }
     return true;
@@ -1767,6 +1820,7 @@ bool AroXMLInDocument::readPlanParameters(const std::string& filename,
                                           std::map<std::string, std::map<std::string, std::string> > &configParameters,
                                           OutFieldInfo &outFieldInfo,
                                           std::map<MachineId_t, MachineDynamicInfo>& machinesDynamicInfo,
+                                          std::map<ResourcePointId_t, ResourcePointState> &resourcePointStates,
                                           std::map<std::string, ArolibGrid_t>& gridmaps,
                                           Point::ProjectionType coordinatesType_out,
                                           const std::vector<std::string>& parentTags,
@@ -1781,6 +1835,7 @@ bool AroXMLInDocument::readPlanParameters(const std::string& filename,
     configParameters.clear();
     outFieldInfo.clearAll();
     machinesDynamicInfo.clear();
+    resourcePointStates.clear();
     gridmaps.clear();
 
     if( !doc.openFile(filename) || !doc.openDocument() )
@@ -1794,6 +1849,7 @@ bool AroXMLInDocument::readPlanParameters(const std::string& filename,
     doc.read( gridmaps, branch );
     doc.read( outFieldInfo, branch );
     doc.read( machinesDynamicInfo, branch );
+    doc.read( resourcePointStates, branch );
 
     //required
     return doc.read( field, branch )
@@ -1807,6 +1863,7 @@ bool AroXMLInDocument::readPlanParameters(const std::string& filename,
                                           std::map<std::string, std::map<std::string, std::string> > &configParameters,
                                           OutFieldInfo &outFieldInfo,
                                           std::map<MachineId_t, MachineDynamicInfo>& machinesDynamicInfo,
+                                          std::map<ResourcePointId_t, ResourcePointState> &resourcePointStates,
                                           std::map<std::string, ArolibGrid_t> &gridmaps,
                                           Point::ProjectionType coordinatesType_out,
                                           const std::vector<std::string>& parentTags,
@@ -1819,6 +1876,7 @@ bool AroXMLInDocument::readPlanParameters(const std::string& filename,
     configParameters.clear();
     outFieldInfo.clearAll();
     machinesDynamicInfo.clear();
+    resourcePointStates.clear();
     gridmaps.clear();
 
     if( !doc.openFile(filename) || !doc.openDocument() )
@@ -1832,6 +1890,7 @@ bool AroXMLInDocument::readPlanParameters(const std::string& filename,
     doc.read( gridmaps, branch );
     doc.read( outFieldInfo, branch );
     doc.read( machinesDynamicInfo, branch );
+    doc.read( resourcePointStates, branch );
 
     //required
     return doc.read( workingGroup, branch )
@@ -1840,100 +1899,6 @@ bool AroXMLInDocument::readPlanParameters(const std::string& filename,
 
 }
 
-bool AroXMLInDocument::readPlanParameters(const std::string &filename,
-                                          Field &field,
-                                          std::vector<Machine> &workingGroup,
-                                          std::map<std::string, std::map<std::string, std::string> > &configParameters,
-                                          OutFieldInfo &outFieldInfo,
-                                          std::map<MachineId_t, MachineDynamicInfo> &machinesDynamicInfo,
-                                          std::string &yieldmap_tifBase64,
-                                          std::string &drynessmap_tifBase64,
-                                          std::string &soilmap_tifBase64,
-                                          std::string &remainingAreaMap_tifBase64, Point::ProjectionType coordinatesType_out,
-                                          const std::vector<std::string> &parentTags,
-                                          LogLevel logLevel)
-{
-    AroXMLInDocument doc(logLevel);
-
-    doc.setCoordinatesType(coordinatesType_out);
-
-    field.clear();
-    workingGroup.clear();
-    configParameters.clear();
-    outFieldInfo.clearAll();
-    machinesDynamicInfo.clear();
-    yieldmap_tifBase64.clear();
-    drynessmap_tifBase64.clear();
-    soilmap_tifBase64.clear();
-    remainingAreaMap_tifBase64.clear();
-
-    if( !doc.openFile(filename) || !doc.openDocument() )
-        return false;
-
-    ReadHandler branch;
-    if(!doc.getBranchHandler(parentTags, branch))
-        return false;
-
-    //optional
-    doc.read( yieldmap_tifBase64, branch, "yieldmap_tifBase64" );
-    doc.read( drynessmap_tifBase64, branch, "drynessmap_tifBase64" );
-    doc.read( soilmap_tifBase64, branch, "soilmap_tifBase64" );
-    doc.read( remainingAreaMap_tifBase64, branch, "remainingAreaMap_tifBase64" );
-    doc.read( outFieldInfo, branch );
-    doc.read( machinesDynamicInfo, branch );
-
-    //required
-    return doc.read( field, branch )
-           && doc.read( workingGroup, branch )
-           && doc.read( configParameters, branch, "configParameters" )
-           && doc.closeFile();
-}
-
-bool AroXMLInDocument::readPlanParameters(const std::string &filename,
-                                       std::vector<Machine> &workingGroup,
-                                       std::map<std::string, std::map<std::string, std::string> > &configParameters,
-                                       OutFieldInfo &outFieldInfo,
-                                       std::map<MachineId_t, MachineDynamicInfo> &machinesDynamicInfo,
-                                       std::string &yieldmap_tifBase64,
-                                       std::string &drynessmap_tifBase64,
-                                       std::string &soilmap_tifBase64,
-                                       std::string &remainingAreaMap_tifBase64, Point::ProjectionType coordinatesType_out,
-                                       const std::vector<std::string> &parentTags, LogLevel logLevel)
-{
-    AroXMLInDocument doc(logLevel);
-
-    doc.setCoordinatesType(coordinatesType_out);
-
-    workingGroup.clear();
-    configParameters.clear();
-    outFieldInfo.clearAll();
-    machinesDynamicInfo.clear();
-    yieldmap_tifBase64.clear();
-    drynessmap_tifBase64.clear();
-    soilmap_tifBase64.clear();
-    remainingAreaMap_tifBase64.clear();
-
-    if( !doc.openFile(filename) || !doc.openDocument() )
-        return false;
-
-    ReadHandler branch;
-    if(!doc.getBranchHandler(parentTags, branch))
-        return false;
-
-    //optional
-    doc.read( yieldmap_tifBase64, branch, "yieldmap_tifBase64" );
-    doc.read( drynessmap_tifBase64, branch, "drynessmap_tifBase64" );
-    doc.read( soilmap_tifBase64, branch, "soilmap_tifBase64" );
-    doc.read( remainingAreaMap_tifBase64, branch, "remainingAreaMap_tifBase64" );
-    doc.read( outFieldInfo, branch );
-    doc.read( machinesDynamicInfo, branch );
-
-    //required
-    return doc.read( workingGroup, branch )
-           && doc.read( configParameters, branch, "configParameters" )
-           && doc.closeFile();
-
-}
 
 bool AroXMLInDocument::readPlan(const std::string &filename,
                              std::map<int, std::vector<Route> > &routes, bool syncRoutes, Point::ProjectionType coordinatesType_out,
@@ -1987,74 +1952,6 @@ bool AroXMLInDocument::readPlan(const std::string &filename,
 
             && doc.closeFile();
 
-}
-
-bool AroXMLInDocument::readPlan(const std::string &filename,
-                             Field &field,
-                             std::vector<Machine> &workingGroup,
-                             std::map<int, std::vector<Route> > &routes,
-                             std::string &yieldmap_tifBase64,
-                             std::string &drynessmap_tifBase64,
-                             std::string &soilmap_tifBase64,
-                             std::string &remainingAreaMap_tifBase64,
-                             bool syncRoutes, Point::ProjectionType coordinatesType_out,
-                             const std::vector<std::string> &parentTags,
-                             LogLevel logLevel)
-{
-    AroXMLInDocument doc(logLevel);
-    Logger logger(logLevel, "AroXMLInDocument");
-
-    doc.setCoordinatesType(coordinatesType_out);
-
-    routes.clear();
-
-    if( !doc.openFile(filename) || !doc.openDocument() )
-        return false;
-
-    std::vector<std::string> parentTags_plan = parentTags;
-    parentTags_plan.emplace_back("plan");
-
-    ReadHandler branch;
-    if(!doc.getBranchHandler(parentTags_plan, branch))
-        return false;
-
-    //optional
-    doc.read( yieldmap_tifBase64, branch, "yieldmap_tifBase64" );
-    doc.read( drynessmap_tifBase64, branch, "drynessmap_tifBase64" );
-    doc.read( soilmap_tifBase64, branch, "soilmap_tifBase64" );
-    doc.read( remainingAreaMap_tifBase64, branch, "remainingAreaMap_tifBase64" );
-
-    size_t count = 0;
-    return doc.read(field, branch)
-           && doc.read(workingGroup, branch)
-           && doc.getMultiBranchHandlers(branch,
-                                      getTag<Subfield>(),
-                                      [&](const ReadHandler& rh) {
-                                          count++;
-                                          int id;
-                                          if( !doc.read(id, rh, "id" ) ){
-                                              logger.printOut(LogLevel::WARNING, __FUNCTION__, "Error reading 'id' of element #" + std::to_string( count ));
-                                              return true;
-                                          }
-                                          auto it = routes.find(id);
-                                          if(it != routes.end()){
-                                              logger.printOut(LogLevel::WARNING, __FUNCTION__, "Repeated 'id' " + std::to_string( id ) + " in element #" + std::to_string( count ) + ". Desregarding input.");
-                                              return true;
-                                          }
-                                          std::vector<Route> rts;
-                                          ReadHandler branch;
-                                          doc.getBranch( rh, getTag(rts), branch );
-                                          if( !doc.read(branch, rts ) ){
-                                              logger.printOut(LogLevel::WARNING, __FUNCTION__, "Error reading 'routes' of element #" + std::to_string( count ));
-                                              return true;
-                                          }
-                                          if(syncRoutes)
-                                              Route::syncRoutes(rts);
-                                          routes[id] = rts;
-                                          return true;
-                                      })
-
-            && doc.closeFile();
 }
 
 bool AroXMLInDocument::readPlan(const std::string &filename,

@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,17 +19,35 @@
 
 namespace arolib{
 
-void AstarPlan::adjustAccessPoints(bool lastAccessIsExit)
+void AstarPlan::adjustAccessPoints(bool firstAccessIsExit, bool startFromFront)
 {
-    for(auto it_rp = route_points_.rbegin() ; it_rp != route_points_.rend() ; it_rp++){
-        if(it_rp->isFieldAccess()){
-            if(lastAccessIsExit)
-                it_rp->type = RoutePoint::FIELD_EXIT;
-            else
-                it_rp->type = RoutePoint::FIELD_ENTRY;
-            lastAccessIsExit = !lastAccessIsExit;
+    for(size_t i = 0 ; i < route_points_.size() ; ++i){
+        auto & rp = startFromFront ? route_points_.at(i) : r_at(route_points_, i);
+        if(rp.isFieldAccess()){
+            size_t j = i+1;
+            while(j < route_points_.size()){
+                auto & rp2 = startFromFront ? route_points_.at(j) : r_at(route_points_, j);
+                if(!rp2.isFieldAccess())
+                    break;
+                j++;
+            }
+            for(;i < j; i++){
+                auto & rp = startFromFront ? route_points_.at(i) : r_at(route_points_, i);
+                rp.type = firstAccessIsExit ? RoutePoint::FIELD_EXIT : RoutePoint::FIELD_ENTRY;
+            }
+            firstAccessIsExit = !firstAccessIsExit;
         }
     }
+}
+
+void AstarPlan::adjustAccessPointsFromLast(bool lastAccessIsExit)
+{
+    return adjustAccessPoints(lastAccessIsExit, false);
+}
+
+void AstarPlan::adjustAccessPointsFromFirst(bool firstAccessIsExit)
+{
+    return adjustAccessPoints(firstAccessIsExit, true);
 }
 
 void AstarPlan::insertIntoGraph(DirectedGraph::Graph &graph) const {

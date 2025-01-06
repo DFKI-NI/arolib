@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,18 +17,8 @@
 #ifndef _AROLIB_GRAPH_BUILDING_INFO_H
 #define _AROLIB_GRAPH_BUILDING_INFO_H
 
-#include <iostream>
-#include <fstream>
-#include <tuple>
-#include <ctime>
-#include <functional>
-#include <unordered_set>
 
 #include <arolib/planning/path_search/directedgraph.hpp>
-#include <arolib/misc/loggingcomponent.h>
-#include <arolib/misc/filesystem_helper.h>
-#include <arolib/types/coordtransformer.hpp>
-
 
 namespace arolib{
 namespace DirectedGraph{

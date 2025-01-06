@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,16 +17,11 @@
 #ifndef ARO_EDGECOSTCALCULATOR_HPP
 #define ARO_EDGECOSTCALCULATOR_HPP
 
-#include <memory>
 #include <functional>
-#include <unordered_map>
-#include <sstream>
 
-#include "arolib/planning/planningworkspace.h"
-#include "arolib/planning/path_search/directedgraph.hpp"
 #include "arolib/misc/loggingcomponent.h"
 #include "arolib/misc/basicconversions.hpp"
-#include "arolib/cartography/sharedgridsmanager.hpp"
+#include "arolib/planning/path_search/directedgraph.hpp"
 
 namespace arolib{
 
@@ -71,9 +66,10 @@ public:
      * @brief Generates internal parameters from the graph, e.g. edge parameters to be used in the cost calculation
      *
      * Should be called after all other parameters have been set and when the complete graph has been constructed. Removing edges/vertices from the later on will cause undesired calculations.
-     * @param logLevel Log level
+     * @param graph graph
+     * @param machines Machines
      */
-    virtual void generateInternalParameters(DirectedGraph::Graph& graph) = 0;
+    virtual void generateInternalParameters(DirectedGraph::Graph& graph, const std::vector<Machine>& machines) = 0;
 
     /**
      * @brief Calculate the edge cost
@@ -123,6 +119,30 @@ public:
     virtual double calcHeuristic(const Machine& machine,
                                  const DirectedGraph::vertex_property &v_prop_current,
                                  const DirectedGraph::vertex_property &v_prop_goal) = 0;
+
+    /**
+     * @brief Check if the cost depend on the machine (only for inside the field).
+     * @return True if the cost depend on the machine (only for inside the field).
+     */
+    virtual bool dependsOnMachine() const = 0;
+
+    /**
+     * @brief Check if the cost depend on the load (only for inside the field).
+     * @return True if the cost depend on the load (only for inside the field).
+     */
+    virtual bool dependsOnLoad() const = 0;
+
+    /**
+     * @brief Check if the cost depend on time (only for inside the field).
+     * @return True if the cost depend on time (only for inside the field).
+     */
+    virtual bool dependsOnTime() const = 0;
+
+    /**
+     * @brief Check if the cost depend on distance (only for inside the field).
+     * @return True if the cost depend on distance (only for inside the field).
+     */
+    virtual bool dependsOnDistance() const = 0;
 
     /**
      * @brief Set the general parameters
@@ -212,7 +232,7 @@ public:
     using CalcHeuristicFunc = std::function< double  ( const Machine&,
                                                        const DirectedGraph::vertex_property &,
                                                        const DirectedGraph::vertex_property & ) >;
-    using GenInternalParamsFun = std::function< void  ( const DirectedGraph::Graph& ) >;
+    using GenInternalParamsFun = std::function< void  ( const DirectedGraph::Graph&, const std::vector<Machine>& ) >;
 
     /**
      * @brief Constructor.
@@ -226,13 +246,17 @@ public:
                                       const CalcCostFunc2& _calcCost2,
                                       const CalcHeuristicFunc& _calcHeuristic,
                                       const GenInternalParamsFun& _genInternalParams,
+                                      bool dependsOnMachine,
+                                      bool dependsOnLoad,
+                                      bool dependsOnTime,
+                                      bool dependsOnDistance,
                                       const LogLevel& logLevel = LogLevel::INFO);
 
     /**
      * @brief Generates internal parameters from the graph, e.g. edge parameters to be used in the cost calculation
      * @sa generateInternalParameters::calcCost
      */
-    virtual void generateInternalParameters(DirectedGraph::Graph& graph) override;
+    virtual void generateInternalParameters(DirectedGraph::Graph& graph, const std::vector<Machine>& machines) override;
 
     /**
      * @brief Compute the edge cost.
@@ -265,6 +289,30 @@ public:
                                  const DirectedGraph::vertex_property &v_prop_current,
                                  const DirectedGraph::vertex_property &v_prop_goal) override;
 
+    /**
+     * @brief Check if the cost depend on the machine (only for inside the field).
+     * @return True if the cost depend on the machine (only for inside the field).
+     */
+    virtual bool dependsOnMachine() const override { return m_dependsOnMachine; }
+
+    /**
+     * @brief Check if the cost depend on the load (only for inside the field).
+     * @return True if the cost depend on the load (only for inside the field).
+     */
+    virtual bool dependsOnLoad() const override { return m_dependsOnLoad; }
+
+    /**
+     * @brief Check if the cost depend on time (only for inside the field).
+     * @return True if the cost depend on time (only for inside the field).
+     */
+    virtual bool dependsOnTime() const override { return m_dependsOnTime; }
+
+    /**
+     * @brief Check if the cost depend on distance (only for inside the field).
+     * @return True if the cost depend on distance (only for inside the field).
+     */
+    virtual bool dependsOnDistance() const override { return m_dependsOnDistance; }
+
 
 protected:
 
@@ -284,6 +332,10 @@ protected:
     CalcCostFunc2 m_calcCost2; /**< Function to be called when IEdgeCostCalculator::calcCost (version 2) is called >*/
     CalcHeuristicFunc m_calcHeuristic; /**< Function to be called when IEdgeCostCalculator::calcHeuristic is called >*/
     GenInternalParamsFun m_genInternalParams; /**< Function to be called when IEdgeCostCalculator::generateInternalParameters is called >*/
+    bool m_dependsOnMachine; /**< True if the calculations depend on the machine >*/
+    bool m_dependsOnLoad; /**< True if the calculations depend on the load >*/
+    bool m_dependsOnTime; /**< True if the calculations depend on time >*/
+    bool m_dependsOnDistance; /**< True if the calculations depend on distance >*/
 };
 
 
@@ -306,7 +358,7 @@ public:
      * @brief Generates internal parameters from the graph, e.g. edge parameters to be used in the cost calculation
      * @sa generateInternalParameters::calcCost
      */
-    virtual void generateInternalParameters(DirectedGraph::Graph& graph) override;
+    virtual void generateInternalParameters(DirectedGraph::Graph& graph, const std::vector<Machine>& machines) override;
 
     /**
      * @brief Compute the edge cost.
@@ -339,6 +391,31 @@ public:
     virtual double calcHeuristic(const Machine& machine,
                                  const DirectedGraph::vertex_property &v_prop_current,
                                  const DirectedGraph::vertex_property &v_prop_goal) override;
+
+    /**
+     * @brief Check if the cost depend on the machine (only for inside the field).
+     * @return True if the cost depend on the machine (only for inside the field).
+     */
+    virtual bool dependsOnMachine() const override { return true; }
+
+    /**
+     * @brief Check if the cost depend on the load (only for inside the field).
+     * @return True if the cost depend on the load (only for inside the field).
+     */
+    virtual bool dependsOnLoad() const override { return false; }
+
+    /**
+     * @brief Check if the cost depend on time (only for inside the field).
+     * @return True if the cost depend on time (only for inside the field).
+     */
+    virtual bool dependsOnTime() const override { return true; }
+
+    /**
+     * @brief Check if the cost depend on distance (only for inside the field).
+     * @return True if the cost depend on distance (only for inside the field).
+     */
+    virtual bool dependsOnDistance() const override { return false; }
+
 protected:
 
     /**
@@ -374,7 +451,7 @@ public:
      * @brief Generates internal parameters from the graph, e.g. edge parameters to be used in the cost calculation
      * @sa generateInternalParameters::calcCost
      */
-    virtual void generateInternalParameters(DirectedGraph::Graph& graph) override;
+    virtual void generateInternalParameters(DirectedGraph::Graph& graph, const std::vector<Machine>& machines) override;
 
     /**
      * @brief Compute the edge cost for a default edge based on its start/end points' locations.
@@ -408,6 +485,31 @@ public:
     virtual double calcHeuristic(const Machine& machine,
                                  const DirectedGraph::vertex_property &v_prop_current,
                                  const DirectedGraph::vertex_property &v_prop_goal) override;
+
+    /**
+     * @brief Check if the cost depend on the machine (only for inside the field).
+     * @return True if the cost depend on the machine (only for inside the field).
+     */
+    virtual bool dependsOnMachine() const override { return true; }
+
+    /**
+     * @brief Check if the cost depend on the load (only for inside the field).
+     * @return True if the cost depend on the load (only for inside the field).
+     */
+    virtual bool dependsOnLoad() const override { return false; }
+
+    /**
+     * @brief Check if the cost depend on time (only for inside the field).
+     * @return True if the cost depend on time (only for inside the field).
+     */
+    virtual bool dependsOnTime() const override { return false; }
+
+    /**
+     * @brief Check if the cost depend on distance (only for inside the field).
+     * @return True if the cost depend on distance (only for inside the field).
+     */
+    virtual bool dependsOnDistance() const override { return true; }
+
 protected:
 
 

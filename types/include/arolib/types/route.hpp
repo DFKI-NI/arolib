@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,16 +17,8 @@
 #ifndef _AROLIB_ROUTE_HPP
 #define _AROLIB_ROUTE_HPP
 
-#include <vector>
-#include <algorithm>
-#include <stdexcept>
-#include <ctime>
-#include "arolib/types/linestring.hpp"
 #include "arolib/types/route_point.hpp"
 #include "arolib/types/machine.hpp"
-#include "arolib/types/track.hpp"
-#include "arolib/types/coordtransformer.hpp"
-#include "arolib/misc/datetime.hpp"
 
 namespace arolib{
 

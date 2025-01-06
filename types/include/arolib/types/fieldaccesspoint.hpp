@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,12 +16,6 @@
  
 #ifndef _AROLIB_FIELDACCESSPOINT_H_
 #define _AROLIB_FIELDACCESSPOINT_H_
-
-#include <iostream>
-#include <string>
-#include <vector>
-#include <cmath>
-
 
 #include "arolib/types/point.hpp"
 
@@ -95,12 +89,9 @@ public:
     AccessPointType accessType; /**< Access type */
 };
 
-inline bool operator==(const FieldAccessPoint& lhs, const FieldAccessPoint& rhs) {
-  return (lhs.x == rhs.x) &&\
-         (lhs.y == rhs.y) &&\
-        (lhs.z == rhs.z) &&\
-        (lhs.accessType == rhs.accessType);
-}
+std::ostream& operator<< (std::ostream &out, const FieldAccessPoint& data);
+
+bool operator==(const FieldAccessPoint& lhs, const FieldAccessPoint& rhs);
 
 }
 

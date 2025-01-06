@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,16 +17,13 @@
 #ifndef AROLIBGRAPHPROCESSOR_H
 #define AROLIBGRAPHPROCESSOR_H
 
-#include <unistd.h>
-#include <iostream>
-#include <math.h>
-#include <string>
-
 #include "arolib/misc/basic_responses.h"
 #include "arolib/misc/loggingcomponent.h"
-#include "arolib/cartography/sharedgridsmanager.hpp"
-#include "arolib/planning/path_search/graph_builder_tracks_based.hpp"
-#include "arolib/planning/planningworkspace.h"
+#include "arolib/types/subfield.hpp"
+#include "arolib/types/machinedynamicinfo.hpp"
+#include "arolib/cartography/common.hpp"
+#include "arolib/cartography/gridcellsinfomanager.hpp"
+#include "arolib/planning/path_search/directedgraph.hpp"
 
 
 namespace arolib {
@@ -34,7 +31,7 @@ namespace arolib {
 /**
  * @brief Class used to generate the routes/plans for all machines in the harvesting scenario, processing (innitially planned) harvester routes and generating OLV routes based on them
  */
-class GraphProcessor : public LoggingComponent, protected PlanningWorkspaceAccessor
+class GraphProcessor : public LoggingComponent
 {
 public:
     /**

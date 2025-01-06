@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,34 @@
 
 namespace arolib
 {
+
+MappableParameters::ParameterBase::ParameterBase(std::string parameter_name)
+    : name(parameter_name){
+
+}
+
+bool MappableParameters::parseFromStringMap(const std::map<std::string, std::string> &strMap, bool strict)
+{
+    auto params = get_parameters();
+    for (auto &param : params)
+    {
+        if (strMap.count(param->name)) // key is in both maps
+            param->deserealize(strMap.at(param->name));
+
+        else if (strict) // key missing from input stringmap
+            return false;
+    }
+    return true;
+}
+
+std::map<std::string, std::string> MappableParameters::parseToStringMap()
+{
+    auto params = get_parameters();
+    std::map<std::string, std::string> ret;
+    for (auto &param : params)
+        ret[param->name] = param->serealize();
+    return ret;
+}
 
 
 }

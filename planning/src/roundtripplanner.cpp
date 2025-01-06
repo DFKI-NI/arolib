@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,9 +14,11 @@
  * limitations under the License
 */
  
+
 #include "arolib/planning/roundtripplanner.hpp"
+
 #include "arolib/planning/path_search/graphhelper.hpp"
-#include "arolib/planning/path_search/astar.hpp"
+#include "arolib/misc/filesystem_helper.h"
 
 namespace arolib{
 
@@ -31,9 +33,9 @@ std::map<std::string, std::string> RoundtripPlanner::PlannerSettings::parseToStr
 }
 
 RoundtripPlanner::RoundtripPlanner(const Machine &machine,
-                 const PlannerSettings & settings, std::shared_ptr<IEdgeCostCalculator> edgeCostCalculator,
-                 const std::string &outputFolder,
-                 LogLevel logLevel):
+                                   const PlannerSettings & settings, std::shared_ptr<IEdgeCostCalculator> edgeCostCalculator,
+                                   const std::string &outputFolder,
+                                   LogLevel logLevel):
     LoggingComponent(logLevel, __FUNCTION__),
     m_settings(settings),
     m_machine(machine),
@@ -109,15 +111,17 @@ bool RoundtripPlanner::planTrip(const DirectedGraph::Graph &graph,
     if(!m_state.subRoutes.empty() && !m_state.subRoutes.back().route_points.empty()){//add info 'at (intermediate) destination'
         auto rpLast = m_state.subRoutes.back().route_points.back();
         auto rpAtDest = functAtDest(rpLast, m_state.destVt);
-        m_state.subRoutes.back().route_points.emplace_back(rpAtDest);
-        m_state.planCost_atDest += m_edgeCostCalculator->calcCost(m_machine,
-                                                                  rpAtDest,
-                                                                  rpLast,
-                                                                  rpAtDest.time_stamp - rpLast.time_stamp,
-                                                                  0,
-                                                                  0.5 * (rpAtDest.bunker_mass + rpLast.bunker_mass),
-                                                                  {});
-        m_state.updateCost();
+        if(rpAtDest.isValid()){
+            m_state.subRoutes.back().route_points.emplace_back(rpAtDest);
+            m_state.planCost_atDest += m_edgeCostCalculator->calcCost(m_machine,
+                                                                      rpAtDest,
+                                                                      rpLast,
+                                                                      rpAtDest.time_stamp - rpLast.time_stamp,
+                                                                      0,
+                                                                      0.5 * (rpAtDest.bunker_mass + rpLast.bunker_mass),
+                                                                      {});
+            m_state.updateCost();
+        }
     }
 
     if(rp_ret_index < routeBase.route_points.size()){//the process is not over, go back to the route point
@@ -174,6 +178,11 @@ const DirectedGraph::Graph &RoundtripPlanner::getGraph() const
 const Route &RoundtripPlanner::getPlannedRoute() const
 {
     return m_state.routeUpdated;
+}
+
+DirectedGraph::vertex_t RoundtripPlanner::getPlannedDestinationVt() const
+{
+    return m_state.destVt;
 }
 
 bool RoundtripPlanner::getPlannedRouteIndexRanges(size_t &indStart_toDest, size_t &indEnd_toDest, size_t &indStart_toRoute, size_t &indEnd_toRoute) const
@@ -370,10 +379,7 @@ bool RoundtripPlanner::planPathToDestination(AstarPlan &plan, const std::vector<
     }
 
     //@todo we donnot know if the destination point is inside or outside the field
-    if(plan.route_points_.size() > 1 && r_at(plan.route_points_, 1).isFieldAccess() )
-        plan.adjustAccessPoints(true);
-    else
-        plan.adjustAccessPoints(false);
+    plan.adjustAccessPointsFromFirst(true);
 
     m_state.destVt = destination_vt;
 
@@ -510,7 +516,7 @@ bool RoundtripPlanner::planPathToRoutePoint(AstarPlan &plan, std::vector<std::sh
         return false;
     }
 
-    plan.adjustAccessPoints(false);
+    plan.adjustAccessPointsFromLast(false);
 
 //    for(auto& rp : plan.route_points_){
 //        if( !rp.isOfType({RoutePoint::FIELD_ENTRY,

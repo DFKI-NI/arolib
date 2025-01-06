@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,14 +17,9 @@
 #ifndef _AROLIB_FIELD_GEOMETRY_PROCESSING_H_
 #define _AROLIB_FIELD_GEOMETRY_PROCESSING_H_
 
-#include <string>
-#include <iostream>
-#include <fstream>
-#include <sstream>
 
 #include "arolib/types/field.hpp"
-#include "arolib/types/polygon.hpp"
-#include "arolib/geometry/geometry_helper.hpp"
+#include "arolib/types/route_point.hpp"
 
 namespace arolib{
 

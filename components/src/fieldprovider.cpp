@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,10 @@
  
 #include "arolib/components/fieldprovider.h"
 
-#include <H5Tpublic.h>
-#include <hdf5_hl.h>
-#include <highfive/H5DataSet.hpp>
-#include <highfive/H5DataSpace.hpp>
-#include <highfive/H5File.hpp>
+#include "arolib/io/io_kml.hpp"
+#include "arolib/io/io_xml.hpp"
+#include "arolib/io/io_hdf5.hpp"
+#include "arolib/misc/filesystem_helper.h"
 
 namespace arolib {
 
@@ -147,15 +146,15 @@ AroResp FieldProvider::readField(const std::string &fieldId, Field &field, std::
 
 AroResp FieldProvider::readFieldFromFile(const std::string &filename, Field &field)
 {
-    if( fileHasExtension(filename, "xml") ){
+    if( file_has_extension(filename, "xml") ){
         if(!readFieldXML(filename, field))
             return AroResp(1, "Error reading file.");
     }
-    else if( fileHasExtension(filename, "kml") ){
+    else if( file_has_extension(filename, "kml") ){
         if(!readFieldKML(filename, field))
             return AroResp(1, "Error reading file.");
     }
-    else if( fileHasExtension(filename, "h5") ){
+    else if( file_has_extension(filename, "h5") ){
         try
         {
             HighFive::File hdf5_file(filename, HighFive::File::ReadOnly);
@@ -182,7 +181,7 @@ AroResp FieldProvider::readFieldFromFile(const std::string &filename, Field &fie
             return AroResp(1, "Error reading field in file (exception): " + std::string( e.what() ));
         }
     }
-    else if ( fileHasExtension(filename, "") ){
+    else if ( file_has_extension(filename, "") ){
         logger().printWarning(__FUNCTION__, "No file extension (file format) recognized. Attempting to read available formats.");
         AroResp resp;
         resp = readFieldFromFile(filename + ".xml", field);
@@ -284,7 +283,7 @@ AroResp FieldProvider::getFieldMap(const std::string &fieldId, const std::string
 }
 
 int FieldProvider::getFieldList_kml(std::string directory_name, unsigned int &num_fields) {
-    append_slash_to_dir(directory_name);
+    append_separator_to_path(directory_name);
     num_fields =  0;
     std::string pattern = ".kml";
     std::vector<std::string> filelist = get_filenames_recursive(directory_name, pattern, false, true);
@@ -315,7 +314,7 @@ int FieldProvider::getFieldList_kml(std::string directory_name, unsigned int &nu
 
 int FieldProvider::getFieldList_xml(std::string directory_name, unsigned int &num_fields)
 {
-    append_slash_to_dir(directory_name);
+    append_separator_to_path(directory_name);
     num_fields =  0;
     std::string pattern = ".xml";
     std::vector<std::string> filelist = get_filenames_recursive(directory_name, pattern, false, true);
@@ -343,7 +342,7 @@ int FieldProvider::getFieldList_xml(std::string directory_name, unsigned int &nu
 int FieldProvider::getFieldList_hdf5(std::string directory_name,
                                     unsigned int &num_fields) {
 
-   append_slash_to_dir(directory_name);
+   append_separator_to_path(directory_name);
    num_fields =  0;
 
    std::vector<std::string> filelist = get_filenames_recursive(directory_name, ".h5", false, true);

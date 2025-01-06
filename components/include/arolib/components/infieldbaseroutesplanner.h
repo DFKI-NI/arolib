@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,22 +17,15 @@
 #ifndef AROLIB_INFIELDBASEROUTESPLANNER_H
 #define AROLIB_INFIELDBASEROUTESPLANNER_H
 
-#include <unistd.h>
-#include <iostream>
-#include <math.h>
-#include <string>
-#include <fstream>
-
-#include "arolib/misc/logger.h"
-#include "arolib/types/coordtransformer.hpp"
-#include "arolib/geometry/geometry_helper.hpp"
-#include "arolib/geometry/field_geometry_processing.hpp"
+#include "arolib/types/route.hpp"
+#include "arolib/types/machinedynamicinfo.hpp"
+#include "arolib/types/outfieldinfo.hpp"
+#include "arolib/cartography/gridcellsinfomanager.hpp"
+#include "arolib/planning/edge_calculators/edgeSpeedCalculator.hpp"
+#include "arolib/planning/track_connectors/infieldtracksconnector.hpp"
+#include "arolib/planning/track_sequencing/tracksequencer.hpp"
 #include "arolib/planning/generalplanningparameters.hpp"
-#include "arolib/planning/track_sequencing/simpletracksequencer.hpp"
-#include "arolib/planning/track_connectors/infieldtracksconnectordef.hpp"
-#include "arolib/cartography/common.hpp"
-#include "arolib/planning/simpleBaseRoutesPlanner.hpp"
-#include "arolib/misc/basic_responses.h"
+#include "arolib/planning/workedareaanalyst.hpp"
 
 namespace arolib {
 
@@ -84,11 +77,11 @@ public:
      * @param plannerParameters Planner parameters
      * @param remainingArea_map Remaining (unworked) -area map/grid
      * @param machineCurrentStates Map containing the current states of the machines
+     * @param _initRefPoses Map containing the initial reference poses to be used to compute the first tracks to be worked. If set (!nullptr), the machines current locations and remainingArea_map are disregarded when checking the best place to start the routes.
      * @param [in/out*] edgeMassCalculator Mass calculator
      * @param [in/out*] edgeSpeedCalculator Speed calculator (working edges).
      * @param [in/out*] edgeSpeedCalculator Speed calculator (transit edges).
      * @param [out] routes Resulting planned routes
-     * @param _initRefPoint (optional) Vector containing the initial reference point (only the first one is used). If set, remainingArea_map is disregarded when checking the best place to start the routes
      * @return AroResp with error id (0:=OK) and message
      */
     AroResp plan(const Subfield &subfield,
@@ -99,7 +92,33 @@ public:
                  std::shared_ptr<IEdgeSpeedCalculator> edgeSpeedCalculatorTransit,
                  std::vector<Route> & routes,
                  const std::map<MachineId_t, MachineDynamicInfo> *machineCurrentStates = nullptr,
-                 const Pose2D * initRefPose = nullptr,
+                 const std::map<MachineId_t, Pose2D> *_initRefPoses = nullptr,
+                 std::shared_ptr<const ArolibGrid_t> massFactorMap = nullptr,
+                 std::shared_ptr<const ArolibGrid_t> remainingAreaMap = nullptr);
+
+    /**
+     * @brief Generate the infield base routes.
+     * @param [in/out] subfield Subfield containing the necessary data (inc. tracks). It might be updated after the planning.
+     * @param workinggroup Machines used for planning
+     * @param plannerParameters Planner parameters
+     * @param remainingArea_map Remaining (unworked) -area map/grid
+     * @param machineCurrentStates Map containing the current states of the machines
+     * @param _initRefPose (optional) Initial reference poses to be used to compute the first tracks to be worked. If valid, the machines current locations and remainingArea_map are disregarded when checking the best place to start the routes.
+     * @param [in/out*] edgeMassCalculator Mass calculator
+     * @param [in/out*] edgeSpeedCalculator Speed calculator (working edges).
+     * @param [in/out*] edgeSpeedCalculator Speed calculator (transit edges).
+     * @param [out] routes Resulting planned routes
+     * @return AroResp with error id (0:=OK) and message
+     */
+    AroResp plan(const Subfield &subfield,
+                 const std::vector<Machine> &workinggroup,
+                 const PlannerParameters & plannerParameters,
+                 std::shared_ptr<IEdgeMassCalculator> edgeMassCalculator,
+                 std::shared_ptr<IEdgeSpeedCalculator> edgeSpeedCalculator,
+                 std::shared_ptr<IEdgeSpeedCalculator> edgeSpeedCalculatorTransit,
+                 std::vector<Route> & routes,
+                 const std::map<MachineId_t, MachineDynamicInfo> *machineCurrentStates = nullptr,
+                 const Pose2D& initRefPose = Pose2D(Point::invalidPoint()),
                  std::shared_ptr<const ArolibGrid_t> massFactorMap = nullptr,
                  std::shared_ptr<const ArolibGrid_t> remainingAreaMap = nullptr);
 
@@ -123,76 +142,81 @@ public:
 
 protected:
 
+    enum TrackWorkedState{
+        TRACK_WORKED,
+        TRACK_NOT_WORKED,
+        TRACK_PARTIALLY_WORKED
+    };
+
+    struct TrackInfo{
+        TrackWorkedState workedState = TRACK_NOT_WORKED;  /**< Worked states of the track */
+        int workingDirection = 0;  /**< 0: not known; 1: in track's points order; -1: in track's points reverse order; 2: potentially in track's points order; -2: potentially in track's points reverse order */
+        int indFirstWorkingPointFwd = -1;  /**< Index of the first point to work in forward direction */
+        int indFirstWorkingPointRev = -1;  /**< Index of the first point to work in reverse direction */
+    };
+
+    struct TracksInfo{
+        std::vector<TrackInfo> tracksInfo;  /**< Tracks info */
+        std::set<size_t> excludeTrackIndexes;  /**< Tracks to be excluded */
+        std::set<size_t> partiallyWorkedTrackIndexes;  /**< Partially worked */
+        std::map<MachineId_t, size_t> indFirstTrack;  /**< Indexes of the first track that should be worked */
+        TracksInfo(size_t numTracks): tracksInfo(numTracks){}
+    };
+
     /**
-     * @brief Get the indexes of the tracks that are completelly worked
+     * @brief Initialize the tracks' info
      * @param subfield Subfield
      * @param remainingArea_map Remaining (unworked) -area map/grid
      * @param bePrecise Be precise with remainingArea_map?
-     * @return indexes of the tracks that are completelly worked
+     * @return Tracks info
      */
-    std::set<size_t> getExcludeTrackIndexes(const Subfield &subfield, std::shared_ptr<const ArolibGrid_t> remainingAreaMap, bool bePrecise);
-
+    static TracksInfo initTracksInfo(const Subfield &subfield, WorkedAreaAnalyst& waa, bool bePrecise);
 
     /**
-     * @brief Sets the inverseTrackOrder and inversePointsOrderStart  based on the RemainingArea map/grid and the machines' current states (locations).
+     * @brief Select a partially worked track as the first track.
      *
      * @param subfield subfield
-     * @param excludeTrackIndexes Indexes of the tracks that are completelly worked
+     * @param [in/out] tracksInfo Tracks info
      * @param workinggroup Machines used for planning
-     * @param plannerParameters Planner parameters
-     * @param remainingArea_map Remaining (unworked) -area map/grid
-     * @param machineCurrentStates Map containing the current states of the machines
-     * @param [out] inverseTrackOrder Process the tracks in inverse order
-     * @param [out] inversePointsOrderStart Process the points of the 1st track in inverse order
+     * @param initRefPoses Current initial reference poses
      * @return True on success.
      */
-    bool getInverseFlagsBasedOnRemainingArea(const Subfield &subfield,
-                                             const std::set<size_t> &excludeTrackIndexes,
-                                             const std::vector<Machine> workinggroup,
-                                             const PlannerParameters & plannerParameters,
-                                             const ArolibGrid_t &remainingArea_map,
-                                             const std::map<MachineId_t, MachineDynamicInfo> *machineCurrentStates,
-                                             bool& inverseTrackOrder,
-                                             bool& inversePointsOrderStart);
+    static bool updateFirstTrackFromPartiallyWorkedTracks(const Subfield &subfield,
+                                                          TracksInfo &tracksInfo,
+                                                          const std::vector<Machine> workinggroup,
+                                                          const std::map<MachineId_t, Pose2D> &initRefPoses);
 
     /**
-     * @brief Sets the inverseTrackOrder and inversePointsOrderStart based on the machines' current locations.
+     * @brief Select the fisrt track to work based on the partially worked tracks and machines that are near the worked segments of those tracks.
      *
-     * It only checks the first and last unworked tracks of the subfield
      * @param subfield subfield
-     * @param excludeTrackIndexes Indexes of the tracks that are completelly worked
+     * @param [in/out] tracksInfo Tracks info
      * @param workinggroup Machines used for planning
-     * @param plannerParameters Planner parameters
      * @param machineCurrentStates Map containing the current states of the machines
-     * @param [out] inverseTrackOrder Process the tracks in inverse order
-     * @param [out] inversePointsOrderStart Process the points of the 1st track in inverse order
+     * @param initRefPoses Current initial reference poses
      * @return True on success.
      */
-    bool getInverseFlagsBasedOnMachineLocation(const Subfield &subfield,
-                                               const std::set<size_t> &excludeTrackIndexes,
-                                               const std::vector<Machine> workinggroup,
-                                               const PlannerParameters & plannerParameters,
-                                               const std::map<MachineId_t, MachineDynamicInfo> *machineCurrentStates,
-                                               bool& inverseTrackOrder,
-                                               bool& inversePointsOrderStart);
+    static bool updateFirstTrackInfoFromMachinesNearPartiallyWorkedTracks(const Subfield &subfield,
+                                                                          TracksInfo &tracksInfo,
+                                                                          const std::vector<Machine> workinggroup,
+                                                                          const std::map<MachineId_t, MachineDynamicInfo>& machineCurrentStates,
+                                                                          const std::map<MachineId_t, Pose2D> &initRefPoses);
 
     /**
-     * @brief Sets the inverseTrackOrder and inversePointsOrderStart based on the machines' current locations.
+     * @brief Get a reference initial pose based on the current machine locations and the distance to the tracks.
+     *
      * @param subfield subfield
-     * @param excludeTrackIndexes Indexes of the tracks that are completelly worked
+     * @param [in/out] tracksInfo Tracks info
      * @param workinggroup Machines used for planning
-     * @param plannerParameters Planner parameters
-     * @param [out] inverseTrackOrder Process the tracks in inverse order
-     * @param [out] inversePointsOrderStart Process the points of the 1st track in inverse order
+     * @param machineCurrentStates Map containing the current states of the machines
+     * @param initRefPoses Current initial reference poses
      * @return True on success.
      */
-    bool getInverseFlagsBasedOnReferencePoint(const Subfield &subfield,
-                                              const std::set<size_t> &excludeTrackIndexes,
-                                              const Pose2D &refPoint,
-                                              const std::vector<Machine> workinggroup,
-                                              const PlannerParameters & plannerParameters,
-                                              bool& inverseTrackOrder,
-                                              bool& inversePointsOrderStart);
+    static bool completeInitRefPosesFromMachinesLocations(const Subfield &subfield,
+                                                          TracksInfo &tracksInfo,
+                                                          const std::vector<Machine> workinggroup,
+                                                          const std::map<MachineId_t, MachineDynamicInfo>& machineCurrentStates,
+                                                          std::map<MachineId_t, Pose2D> &initRefPoses);
 
 
     /**
@@ -200,11 +224,11 @@ protected:
      * @param p0 First point of the segment
      * @param p1 Second point of the segment
      * @param width Width of the segment
-     * @param remainingArea_map Remaining (unworked) -area map/grid
+     * @param waa WorkedAreaAnalyst
      * @param bePrecise Calculate the percentage of worked area preciselly
-     * @return True if the segment is considered to be worked
+     * @return first: worked state; second: computed value (to be read as worked value: i.e., 0:= not-worked and 1:= worked ; NAN if no valid value was computed)
      */
-    bool isWorked(const Point &p0, const Point &p1, double width, const ArolibGrid_t &remainingAreaMap, bool bePrecise);
+    static std::pair<WorkedAreaAnalyst::WorkedState, float> isSegmentWorked(const Point &p0, const Point &p1, double width, WorkedAreaAnalyst &waa, bool bePrecise);
 
     /**
      * @brief Checks if a segment is worked based on the RemainingArea map/grid (checking the boundary)
@@ -212,11 +236,11 @@ protected:
      * @param p0 First point of the segment
      * @param p1 Second point of the segment
      * @param width Width of the segment
-     * @param remainingArea_map Remaining (unworked) -area map/grid
+     * @param waa WorkedAreaAnalyst
      * @param bePrecise Calculate the percentage of worked area preciselly
-     * @return >0 -> the segment is considered to be worked; 0 -> not worked; <0 -> unknown
+     * @return first: worked state; second: computed value (to be read as worked value: i.e., 0:= not-worked and 1:= worked ; NAN if no valid value was computed)
      */
-    int isWorked(const Polygon& boundary, const Point &p0, const Point &p1, double width, const ArolibGrid_t &remainingAreaMap, bool bePrecise);
+    static std::pair<WorkedAreaAnalyst::WorkedState, float> isSegmentWorked(const Polygon& boundary, const Point &p0, const Point &p1, double width, WorkedAreaAnalyst &waa, bool bePrecise);
 
     /**
      * @brief Checks if a segment has biomass based on the biomass-proportion map/grid
@@ -226,7 +250,7 @@ protected:
      * @param [in/out*] edgeMassCalculator Mass calculator
      * @return True if the segment has biomass
      */
-    bool hasBiomass(const Point &p0, const Point &p1, double workingWidth, std::shared_ptr<IEdgeMassCalculator> edgeMassCalculator);
+    static bool hasBiomass(const Point &p0, const Point &p1, double workingWidth, std::shared_ptr<IEdgeMassCalculator> edgeMassCalculator);
 
 
     /**
@@ -235,8 +259,6 @@ protected:
      * @param excludeTrackIndexes Indexes of the tracks that are completelly worked
      * @param workinggroup Machines used for planning
      * @param plannerParameters Planner parameters
-     * @param inverseTrackOrder Process the tracks in inverse order?
-     * @param inversePointsOrderStart Process the points of the 1st track in inverse order?
      * @param [in/out*] edgeMassCalculator Mass calculator
      * @param [in/out*] edgeSpeedCalculator Speed calculator (working edges).
      * @param [in/out*] edgeSpeedCalculator Speed calculator (transit edges).
@@ -247,9 +269,7 @@ protected:
                                const std::set<size_t> &excludeTrackIndexes,
                                const std::vector<Machine> &workinggroup,
                                const PlannerParameters &plannerParameters,
-                               bool inverseTrackOrder,
-                               bool inversePointsOrderStart,
-                               const Pose2D * initRefPose,
+                               const std::map<MachineId_t, Pose2D> &initRefPoses,
                                std::shared_ptr<IEdgeMassCalculator> edgeMassCalculator,
                                std::shared_ptr<IEdgeSpeedCalculator> edgeSpeedCalculator,
                                std::shared_ptr<IEdgeSpeedCalculator> edgeSpeedCalculatorTransit,
@@ -261,16 +281,16 @@ protected:
      * @param subfield Subfield
      * @param workinggroup Machines used for planning
      * @param [in/out*] edgeMassCalculator Mass calculator
-     * @param remainingArea_map Remaining (unworked) -area map/grid
+     * @param waa WorkedAreaAnalyst
      * @param plannerParameters Planner parameters
      * @return AroResp with error id (0:=OK) and message
      */
-    AroResp adjustBaseRoutes(std::vector<Route> & routes,
-                             const Subfield& subfield,
-                             const std::vector<Machine> &workinggroup,
-                             std::shared_ptr<IEdgeMassCalculator> edgeMassCalculator,
-                             std::shared_ptr<const ArolibGrid_t> remainingAreaMap,
-                             const PlannerParameters & plannerParameters);
+    static AroResp adjustBaseRoutes(std::vector<Route> & routes,
+                                    const Subfield& subfield,
+                                    const std::vector<Machine> &workinggroup,
+                                    std::shared_ptr<IEdgeMassCalculator> edgeMassCalculator,
+                                    WorkedAreaAnalyst &waa,
+                                    const PlannerParameters & plannerParameters);
 
 
     /**
@@ -284,13 +304,13 @@ protected:
      * @param longest If true, it will return the longest segment connecting the 2 points; if false, it will return the shortest one
      * @return Headland part (segment) connecting the 2 points
      */
-    std::vector<Point> getHeadlandPart(const std::vector<Point> &headland,
-                                       const Point& headlandPoint0,
-                                       const Point& headlandPoint1,
-                                       bool includeP0,
-                                       bool includeP1,
-                                       double sampleResolution,
-                                       bool longest = false);
+    static std::vector<Point> getHeadlandPart(const std::vector<Point> &headland,
+                                              const Point& headlandPoint0,
+                                              const Point& headlandPoint1,
+                                              bool includeP0,
+                                              bool includeP1,
+                                              double sampleResolution,
+                                              bool longest = false);
 
     /**
      * @brief Gets the headland part (segment) connecting 2 points using a control point to select whether the connection must be the shortest or the longest segment
@@ -303,19 +323,20 @@ protected:
      * @param sampleResolution Resulution for the headland part
      * @return Headland part (segment) connecting the 2 points
      */
-    std::vector<Point> getHeadlandSidesConnection(const std::vector<Point> &headland,
-                                                  const Point &headlandPoint0,
-                                                  const Point &headlandPoint1,
-                                                  const Point &control_point,
-                                                  bool includeP0,
-                                                  bool includeP1,
-                                                  double sampleResolution);
+    static std::vector<Point> getHeadlandSidesConnection(const std::vector<Point> &headland,
+                                                         const Point &headlandPoint0,
+                                                         const Point &headlandPoint1,
+                                                         const Point &control_point,
+                                                         bool includeP0,
+                                                         bool includeP1,
+                                                         double sampleResolution);
 
 protected:
 
     std::shared_ptr<gridmap::GridCellsInfoManager> m_cim = nullptr;/**< Grid-cells-info manager */
-    const double m_unsamplingTolerance = 0.1;/**< Tolerance to unsample linestrings/polygons */
-    static const double m_thresholdIsWorked;/**< Threshold [0,1] sued to consider an area worked or not*/
+    static const double m_unsamplingTolerance;/**< Tolerance to unsample linestrings/polygons */
+    static const double m_thresholdIsWorkedLB;/**< Lower bound threshold [0,1] used to consider an area worked or not*/
+    static const double m_thresholdIsWorkedUB;/**< Upper bound threshold [0,1] used to consider an area worked or not*/
     std::shared_ptr<ITrackSequencer> m_tracksSequencer;/**< Infield tracks' sequencer */
     std::shared_ptr<IInfieldTracksConnector> m_tracksConnector = nullptr; /**< Infield tracks' connector */
 
@@ -342,8 +363,8 @@ protected:
         virtual double calcMass (const Point& p0, const Point& p1, double width);
 
     private:
-        gridmap::SharedGridsManager m_gridsManager; /**< Grids manager*/
-        std::shared_ptr<IEdgeMassCalculator> m_base; /**< Base EdgeMassCalculator*/
+        gridmap::SharedGridsManager m_gridsManager; /**< Grids manager */
+        std::shared_ptr<IEdgeMassCalculator> m_base; /**< Base EdgeMassCalculator */
         std::shared_ptr<const ArolibGrid_t> m_factorMap; /**< Factor gridmap */
         gridmap::SharedGridsManager::PreciseCalculationOption m_precision /**< Precision option to perform map/grid operations */;
     };

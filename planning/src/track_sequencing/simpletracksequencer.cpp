@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,22 +16,23 @@
  
 #include "arolib/planning/track_sequencing/simpletracksequencer.hpp"
 
-#include <stdexcept>
-#include <algorithm>
+
+#include "arolib/geometry/geometry_helper.hpp"
 
 namespace arolib{
 
 SimpleTrackSequencer::SimpleTrackSequencer(LogLevel logLevel) :
     ITrackSequencer(__FUNCTION__, logLevel)
 {
-
+    m_saveAllComputedPaths = false;
+    m_saveConnectingPaths = false;
 }
 
 AroResp SimpleTrackSequencer::computeSequences(const Subfield &subfield,
                                                const std::vector<Machine> &machines,
                                                const TrackSequencerSettings& settings,
-                                               std::map<MachineId_t, std::vector<TrackInfo> > &sequences,
-                                               const Pose2D* initRefPose,
+                                               Sequences_t &sequences,
+                                               const std::map<MachineId_t, Pose2D> &initRefPoses,
                                                const std::set<size_t> &excludeTrackIndexes)
 {
     sequences.clear();
@@ -54,6 +55,16 @@ AroResp SimpleTrackSequencer::computeSequences(const Subfield &subfield,
     }
     if(trackInds.empty())
         return AroResp(1, "No tracks left after excludeding given tracks");
+
+    //workarround until several ref poses are supported
+    const Pose2D* initRefPose = nullptr;
+    for(auto& m : machines){
+        auto it_m = initRefPoses.find(m.id);
+        if(it_m != initRefPoses.end() && it_m->second.isValid()){
+            initRefPose = &( it_m->second );
+            break;
+        }
+    }
 
     bool tracksInReverse, trackPointsInReverse;
     areTracksInReverse(subfield, initRefPose, tracksInReverse, trackPointsInReverse);

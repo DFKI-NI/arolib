@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -164,7 +164,7 @@ inline void pop_front(std::vector<T>& v, size_t numElements = 1){
     if(numElements == 0)
         return;
     if(v.size() < numElements)
-        throw std::out_of_range( "The container has " + std::to_string(v.size()) + ", less than " + std::to_string(numElements) );
+        throw std::out_of_range( "The container has " + std::to_string(v.size()) + " elements, less than " + std::to_string(numElements) );
     v.erase( v.begin(), v.begin()+numElements );
 }
 
@@ -178,9 +178,24 @@ inline void pop_back(std::vector<T>& v, size_t numElements = 1){
     if(numElements == 0)
         return;
     if(v.size() < numElements)
-        throw std::out_of_range( "The container has " + std::to_string(v.size()) + ", less than " + std::to_string(numElements) );
+        throw std::out_of_range( "The container has " + std::to_string(v.size()) + " elements, less than " + std::to_string(numElements) );
     v.erase( v.begin() + v.size() - numElements, v.end() );
 }
+
+
+///**
+// * @brief Remove and return the element at the given index of the container
+// * @param [in/out] v Vector from where the item will be removed.
+// * @param ind Index of the item to be removed.
+// */
+//template <typename T>
+//inline T pop_at(std::vector<T>& v, size_t ind){
+//    if(ind >= v.size() )
+//        throw std::out_of_range( "The container has " + std::to_string(v.size()) + " elements, ind = " + std::to_string(ind) );
+//    T ret = std::move( v[ind] );
+//    v.erase( v.begin() + ind );
+//    return ret;
+//}
 
 }
 

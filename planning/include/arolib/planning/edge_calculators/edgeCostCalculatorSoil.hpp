@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,12 +17,9 @@
 #ifndef ARO_EDGECOSTCALCULATORSOIL_HPP
 #define ARO_EDGECOSTCALCULATORSOIL_HPP
 
-#include <memory>
-#include <functional>
-#include <unordered_map>
-#include <sstream>
 
 #include "arolib/planning/edge_calculators/edgeCostCalculator.hpp"
+#include "arolib/cartography/sharedgridsmanager.hpp"
 
 namespace arolib{
 
@@ -106,7 +103,7 @@ public:
      * @brief Generates internal parameters from the graph, e.g. edge parameters to be used in the cost calculation
      * @sa generateInternalParameters::calcCost
      */
-    virtual void generateInternalParameters(DirectedGraph::Graph& graph) override;
+    virtual void generateInternalParameters(DirectedGraph::Graph& graph, const std::vector<Machine>& machines) override;
 
     /**
      * @brief Compute the edge cost.
@@ -142,6 +139,30 @@ public:
                                  const DirectedGraph::vertex_property &v_prop_goal) override;
 
     /**
+     * @brief Check if the cost depend on the machine (only for inside the field).
+     * @return True if the cost depend on the machine (only for inside the field).
+     */
+    virtual bool dependsOnMachine() const override { return true; }
+
+    /**
+     * @brief Check if the cost depend on the load (only for inside the field).
+     * @return True if the cost depend on the load (only for inside the field).
+     */
+    virtual bool dependsOnLoad() const override { return true; }
+
+    /**
+     * @brief Check if the cost depend on time (only for inside the field).
+     * @return True if the cost depend on time (only for inside the field).
+     */
+    virtual bool dependsOnTime() const override { return true; }
+
+    /**
+     * @brief Check if the cost depend on distance (only for inside the field).
+     * @return True if the cost depend on distance (only for inside the field).
+     */
+    virtual bool dependsOnDistance() const override { return true; }
+
+    /**
      * @brief Set the cost coefficients
      * @param costCoefficients Cost coefficients
      */
@@ -167,6 +188,13 @@ public:
     virtual bool setSoilCostMap(std::shared_ptr<const ArolibGrid_t> map);
 
     /**
+     * @brief Set the field driven-mass map
+     * @param map Driven-mass map (if null, previous saved map will be removed)
+     * @return True on success
+     */
+    virtual bool setDrivenMassMap(std::shared_ptr<const ArolibGrid_t> map);
+
+    /**
      * @brief Set map-computations precision
      * @param precise Precise calculation option
      */
@@ -184,6 +212,12 @@ protected:
      * @sa IEdgeCostCalculator::parseAndAppendOtherParametersToStringMap
      */
     virtual void parseAndAppendOtherParametersToStringMap(std::map<std::string, std::string>& strMap) const override;
+
+    /**
+     * @brief Generates internal parameters from the graph related to a gridmap (soil-cost, driven-area,..)
+     * @sa generateInternalParameters::calcCost
+     */
+    void generateInternalParametersForMap(DirectedGraph::Graph& graph, const std::string& mapName, int& valuesKey, std::unordered_map<std::string, double>& valuesMap, double width);
 
     /**
      * @brief Get the soil-cost of an edge
@@ -206,6 +240,29 @@ protected:
      * @return Soil-cost
      */
     double getSoilCost(const DirectedGraph::edge_property& edge_prop);
+
+    /**
+     * @brief Get the driven-mass of an edge
+     *
+     * If the cost for the given Edge (string) id is knows, it retuns it; otherwise it computes it using the edges points and width and saves+returns it
+     * @param Edge string id
+     * @param p1 Point 1 of the edge
+     * @param p2 Point 2 of the edge
+     * @param width Width of the edge
+     * @return  Driven-mass
+     */
+    double getDrivenMass(const std::string &edgeStr,
+                         const Point& p1,
+                         const Point& p2,
+                         double width);
+
+    /**
+     * @brief Get the driven-mass of an edge from its edge-property
+     * @param edge_prop Edge-property
+     * @return Driven-mass
+     */
+    double getDrivenMass(const DirectedGraph::edge_property& edge_prop, double width);
+
 
     /**
      * @brief Internal edge cost calculation
@@ -240,8 +297,11 @@ protected:
     gridmap::SharedGridsManager m_gridsManager; /**< Shared grids manager >*/
     gridmap::SharedGridsManager::PreciseCalculationOption m_mapPrecision = gridmap::SharedGridsManager::PRECISE; /**< Maps presicion calculation option >*/
     std::unordered_map<std::string, double> m_edgeSoilCosts; /**< Edge soil-costs >*/
+    std::unordered_map<std::string, double> m_edgeDrivenMass; /**< Edge driven-mass >*/
     int m_soilValuesKey = -1; /**< Soil-values key for edge_prop::customValues >*/
+    int m_drivenMassValuesKey = -1; /**< Driven-mass-values key for edge_prop::customValues >*/
     static const std::string SoilMapName; /**< Soil cost-map name >*/
+    static const std::string DivenMassMapName; /**< Driven-mass map name >*/
     static const std::set<DirectedGraph::EdgeType> m_noSoilCostTypes; /**< Edge types with no soil-cost >*/
 
 };

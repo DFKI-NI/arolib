@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,16 +17,8 @@
 #ifndef AROLIB_OLVPLAN_HPP
 #define AROLIB_OLVPLAN_HPP
 
-#include <ctime>
-
-#include "arolib/planning/path_search/directedgraph.hpp"
-#include "arolib/planning/path_search/astar.hpp"
-#include "planningException.hpp"
-#include "arolib/planning/path_search/graphhelper.hpp"
 #include "arolib/planning/path_search/astar_successor_checkers.hpp"
-
-#include "arolib/misc/loggingcomponent.h"
-#include "arolib/misc/filesystem_helper.h"
+#include "arolib/types/machinedynamicinfo.hpp"
 
 
 namespace arolib{
@@ -712,8 +704,8 @@ private:
         virtual double getMinDurationAtEdge(const GetMinDurationAtEdgeParams& params) const override;
 
     protected:
-        double m_timestamp_nextOLStart;
-        DirectedGraph::vertex_t m_vt_prevOLEnd;
+        double m_timestamp_nextOLStart;  /**< Timestamp of the next overload start */
+        DirectedGraph::vertex_t m_vt_prevOLEnd;  /**< Vertex of the previous overload end */
     };
 };
 

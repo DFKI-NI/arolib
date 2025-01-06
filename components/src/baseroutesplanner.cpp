@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,11 @@
 */
  
 #include "arolib/components/baseroutesplanner.h"
+
+#include "arolib/geometry/geometry_helper.hpp"
+#include "arolib/planning/track_connectors/infieldtracksconnectordef.hpp"
+#include "arolib/planning/track_sequencing/simpletracksequencer.hpp"
+#include "arolib/cartography/common.hpp"
 
 namespace arolib {
 
@@ -39,7 +44,8 @@ bool BaseRoutesPlanner::PlannerParameters::parseFromStringMap(BaseRoutesPlanner:
         int workedAreaTransitRestriction = tmp.workedAreaTransitRestriction;
         int headlandMachineOrderStrategy = tmp.headlandMachineOrderStrategy;
 
-        std::map<std::string, double*> dMap = { {"headlandSpeedMultiplier" , &tmp.headlandSpeedMultiplier} };
+        std::map<std::string, double*> dMap = { {"headlandSpeedMultiplier" , &tmp.headlandSpeedMultiplier},
+                                                {"maxTrackSequencePlanningTime" , &tmp.maxTrackSequencePlanningTime} };
         std::map<std::string, bool*> bMap = { {"workHeadlandFirst" , &tmp.workHeadlandFirst},
                                               {"startHeadlandFromOutermostTrack" , &tmp.startHeadlandFromOutermostTrack},
                                               {"finishHeadlandWithOutermostTrack" , &tmp.finishHeadlandWithOutermostTrack},
@@ -80,6 +86,7 @@ std::map<std::string, std::string> BaseRoutesPlanner::PlannerParameters::parseTo
     ret.insert( subMap.begin(), subMap.end() );
 
     ret["headlandSpeedMultiplier"] = double2string( params.headlandSpeedMultiplier );
+    ret["maxTrackSequencePlanningTime"] = double2string( params.maxTrackSequencePlanningTime );
     ret["workHeadlandFirst"] = std::to_string( params.workHeadlandFirst );
     ret["startHeadlandFromOutermostTrack"] = std::to_string( params.startHeadlandFromOutermostTrack );
     ret["finishHeadlandWithOutermostTrack"] = std::to_string( params.finishHeadlandWithOutermostTrack );
@@ -123,6 +130,8 @@ InfieldBaseRoutesPlanner::PlannerParameters BaseRoutesPlanner::PlannerParameters
 
     params.limitStartToExtremaTracks = limitStartToExtremaTracks;
     params.useMachineTurningRad = useMachineTurningRadInTrackSequencer;
+    params.considerFieldExit = considerFieldExit;
+    params.maxSequencePlanningTime = maxTrackSequencePlanningTime;
     params.inverseTrackOrder = infieldInverseTrackOrder;
     params.inversePointsOrder = infieldInversePointsOrder;
     params.sampleResolutionHeadland = 0;
@@ -153,6 +162,8 @@ void BaseRoutesPlanner::PlannerParameters::fromInfieldPlannerParameters(const In
 
     limitStartToExtremaTracks = params.limitStartToExtremaTracks;
     useMachineTurningRadInTrackSequencer = params.useMachineTurningRad;
+    considerFieldExit = params.considerFieldExit;
+    maxTrackSequencePlanningTime = params.maxSequencePlanningTime;
     infieldInverseTrackOrder = params.inverseTrackOrder;
     infieldInversePointsOrder = params.inversePointsOrder;
 }
@@ -178,7 +189,7 @@ AroResp BaseRoutesPlanner::plan(const Subfield &subfield,
                                 std::vector<Route> &routes,
                                 std::shared_ptr<ArolibGrid_t> massFactorMap,
                                 const std::map<MachineId_t, MachineDynamicInfo> *machineCurrentStates,
-                                const Pose2D *initRefPose,
+                                const std::map<MachineId_t, Pose2D> *initRefPoses,
                                 const OutFieldInfo *outFieldInfo,
                                 std::shared_ptr<const ArolibGrid_t> remainingAreaMap)
 {
@@ -210,7 +221,24 @@ AroResp BaseRoutesPlanner::plan(const Subfield &subfield,
     infieldPlanner.setInfieldTrackSequencer(m_tracksSequencer);
     infieldPlanner.setInfieldTrackConnector(m_tracksConnector_if);
 
+
+    //workarround until headlandPlanner supports more than one refPose
+    const Pose2D* initRefPoseHL = nullptr;
+    if(initRefPoses){
+        for(auto & m : workinggroup){
+            if(m.isOfWorkingType(true)){
+                auto it = initRefPoses->find(m.id);
+                if(it != initRefPoses->end()){
+                    initRefPoseHL = &(it->second);
+                    break;
+                }
+            }
+        }
+    }
+
     if(headlandFirst){
+
+
         aroResp = headlandPlanner.plan(subfield,
                                        workinggroup,
                                        plannerParameters.toHeadlandPlannerParameters(),
@@ -219,7 +247,7 @@ AroResp BaseRoutesPlanner::plan(const Subfield &subfield,
                                        routes_hl,
                                        massFactorMap,
                                        machineCurrentStates,
-                                       initRefPose,
+                                       initRefPoseHL,
                                        outFieldInfo,
                                        remainingAreaMap);
         if(aroResp.isError())
@@ -227,7 +255,7 @@ AroResp BaseRoutesPlanner::plan(const Subfield &subfield,
 
         removeWorkedPoints(routes_hl);
 
-        auto refPose = getRefPose(routes_hl);
+        auto refPoses = getRefPoses(routes_hl);
         auto machineStates = machineCurrentStates? *machineCurrentStates : std::map<MachineId_t, MachineDynamicInfo>();
         updatedMachineStates(routes_hl, machineStates);
         auto massFactorMapEd = getUpdatedMassFactorMap_infield(subfield, machines, routes_hl, massFactorMap);
@@ -240,7 +268,7 @@ AroResp BaseRoutesPlanner::plan(const Subfield &subfield,
                                       edgeSpeedCalculatorTransit,
                                       routes_if,
                                       !machineStates.empty() ? &machineStates : nullptr,
-                                      refPose.isValid() ? &refPose : initRefPose,
+                                      !refPoses.empty() ? &refPoses : initRefPoses,
                                       massFactorMapEd,
                                       remainingAreaMap);
 
@@ -262,7 +290,7 @@ AroResp BaseRoutesPlanner::plan(const Subfield &subfield,
                                       edgeSpeedCalculatorTransit,
                                       routes_if,
                                       machineCurrentStates,
-                                      initRefPose,
+                                      initRefPoses,
                                       massFactorMap,
                                       remainingAreaMap);
         if(aroResp.isError())
@@ -270,7 +298,7 @@ AroResp BaseRoutesPlanner::plan(const Subfield &subfield,
 
         removeWorkedPoints(routes_if);
 
-        auto refPose = getRefPose(routes_if);
+        auto refPoses = getRefPoses(routes_if);
         auto machineStates = machineCurrentStates? *machineCurrentStates : std::map<MachineId_t, MachineDynamicInfo>();
         updatedMachineStates(routes_if, machineStates);
 
@@ -284,7 +312,7 @@ AroResp BaseRoutesPlanner::plan(const Subfield &subfield,
                                        routes_hl,
                                        massFactorMapEd,
                                        !machineStates.empty() ? &machineStates : nullptr,
-                                       refPose.isValid() ? &refPose : initRefPose,
+                                       !refPoses.empty() ? &refPoses.begin()->second : initRefPoseHL, //workarround until headlandPlanner supports more than one refPose
                                        outFieldInfo,
                                        remainingAreaMap);
         if(aroResp.isError())
@@ -292,12 +320,52 @@ AroResp BaseRoutesPlanner::plan(const Subfield &subfield,
 
         removeWorkedPoints(routes_hl);
 
-        aroResp = connectInfieldAndHeadlandRoutes(subfield, routes_hl, routes_if, edgeSpeedCalculatorTransit, machines, routes);
+        aroResp = connectInfieldAndHeadlandRoutes(subfield, routes_if, routes_hl, edgeSpeedCalculatorTransit, machines, routes);
         if(aroResp.isError())
             return AroResp::LoggingResp(1, "Error connecting infield and headland base routes", ": " + aroResp.msg, m_logger, LogLevel::ERROR, __FUNCTION__);
     }
 
     return AroResp::ok();
+}
+
+
+
+AroResp BaseRoutesPlanner::plan(const Subfield &subfield,
+                                const std::vector<Machine> &workinggroup,
+                                const PlannerParameters &plannerParameters,
+                                std::shared_ptr<IEdgeMassCalculator> edgeMassCalculator,
+                                std::shared_ptr<IEdgeSpeedCalculator> edgeSpeedCalculatorHeadland,
+                                std::shared_ptr<IEdgeSpeedCalculator> edgeSpeedCalculatorInfield,
+                                std::shared_ptr<IEdgeSpeedCalculator> edgeSpeedCalculatorTransit,
+                                std::vector<Route> &routes,
+                                std::shared_ptr<ArolibGrid_t> massFactorMap,
+                                const std::map<MachineId_t, MachineDynamicInfo> *machineCurrentStates,
+                                const Pose2D &initRefPose,
+                                const OutFieldInfo *outFieldInfo,
+                                std::shared_ptr<const ArolibGrid_t> remainingAreaMap)
+{
+    std::map<MachineId_t, Pose2D> initRefPoses;
+    std::map<MachineId_t, Pose2D>* pInitRefPoses = nullptr;
+
+    if(initRefPose.isValid()){
+        for(auto& m : workinggroup)
+            initRefPoses[m.id] = initRefPose;
+        pInitRefPoses = &initRefPoses;
+    }
+
+    return plan(subfield,
+                workinggroup,
+                plannerParameters,
+                edgeMassCalculator,
+                edgeSpeedCalculatorHeadland,
+                edgeSpeedCalculatorInfield,
+                edgeSpeedCalculatorTransit,
+                routes,
+                massFactorMap,
+                machineCurrentStates,
+                pInitRefPoses,
+                outFieldInfo,
+                remainingAreaMap);
 }
 
 void BaseRoutesPlanner::setInfieldTrackSequencer(std::shared_ptr<ITrackSequencer> track_sequencer) {
@@ -328,21 +396,36 @@ void BaseRoutesPlanner::setGridCellsInfoManager(std::shared_ptr<gridmap::GridCel
     m_cim = cim;
 }
 
+std::shared_ptr<ITrackSequencer> BaseRoutesPlanner::getDefInfieldTrackSequencer()
+{
+    return std::make_shared<SimpleTrackSequencer>();
+}
+
+std::shared_ptr<IInfieldTracksConnector> BaseRoutesPlanner::getDefTrackConnector_headland2infield()
+{
+    return std::make_shared<InfieldTracksConnectorDef>();
+}
+
+std::shared_ptr<IInfieldTracksConnector> BaseRoutesPlanner::getDefTrackConnector_infield()
+{
+    return std::make_shared<InfieldTracksConnectorDef>();
+}
+
 void BaseRoutesPlanner::setDefInfieldTrackSequencer()
 {
-    m_tracksSequencer = std::make_shared<SimpleTrackSequencer>();
+    m_tracksSequencer = getDefInfieldTrackSequencer();
     m_tracksSequencer->logger().setParent(loggerPtr());
 }
 
 void BaseRoutesPlanner::setDefTrackConnector_headland2infield()
 {
-    m_tracksConnector_hl2if = std::make_shared<InfieldTracksConnectorDef>();
+    m_tracksConnector_hl2if = getDefTrackConnector_headland2infield();
     m_tracksConnector_hl2if->logger().setParent(loggerPtr());
 }
 
 void BaseRoutesPlanner::setDefTrackConnector_infield()
 {
-    m_tracksConnector_if = std::make_shared<InfieldTracksConnectorDef>();
+    m_tracksConnector_if = getDefTrackConnector_infield();
     m_tracksConnector_if->logger().setParent(loggerPtr());
 }
 
@@ -398,25 +481,17 @@ std::vector<Route> BaseRoutesPlanner::removeWorkedPoints(std::vector<Route> &rou
     return removedPoints;
 }
 
-Pose2D BaseRoutesPlanner::getRefPose(const std::vector<Route> &routes)
+std::map<MachineId_t, Pose2D> BaseRoutesPlanner::getRefPoses(const std::vector<Route> &routes)
 {
-    Pose2D ret( Point::invalidPoint() );
-    int ind = -1;
-    double minTimestamp = std::numeric_limits<double>::max();
-    for(size_t i = 0 ; i < routes.size() ; ++i){
-        auto& rps = routes.at(i).route_points;
+    std::map<MachineId_t, Pose2D> ret;
+    for(auto& route : routes){
+        auto& rps = route.route_points;
         if(rps.empty())
             continue;
-        if(rps.back().time_stamp < minTimestamp){
-            minTimestamp = rps.back().time_stamp;
-            ind = i;
-        }
-    }
-    if(ind >= 0){
-        auto& rps = routes.at(ind).route_points;
-        ret.point() = rps.back();
         if(rps.size() > 1)
-            ret.angle = geometry::get_angle( r_at(rps, 1), rps.back() );
+            ret[route.machine_id] = Pose2D(rps.back(), geometry::get_angle( r_at(rps, 1), rps.back() ));
+        else
+            ret[route.machine_id] = Pose2D(rps.back(), 0);
     }
 
     return ret;
@@ -432,8 +507,10 @@ void BaseRoutesPlanner::updatedMachineStates(const std::vector<Route> &routes, s
         auto it_mdi = machineStates.find(route.machine_id);
         if(it_mdi != machineStates.end())
             mdi = it_mdi->second;
-        else
-            mdi.bunkerMass = mdi.bunkerVolume = 0;
+        else{
+            //@todo update bunker mass/volume based on material flow type?
+            //mdi.bunkerMass = mdi.bunkerVolume = ...;
+        }
         mdi.position = rps.back();
         if(rps.size() > 1)
             mdi.theta = geometry::get_angle( r_at(rps, 1), rps.back() );
@@ -656,8 +733,143 @@ AroResp BaseRoutesPlanner::connectHeadlandAndInfieldRoutes(const Subfield &subfi
 
 AroResp BaseRoutesPlanner::connectInfieldAndHeadlandRoutes(const Subfield &subfield, std::vector<Route> &routes_if, std::vector<Route> &routes_hl, std::shared_ptr<IEdgeSpeedCalculator> edgeSpeedCalculatorTransit, const std::map<MachineId_t, Machine> &machines, std::vector<Route> &routes)
 {
-    // @todo
-    return AroResp(1, "Infield-to-headland connection not supported at the moment");
+//    // @todo
+//    return AroResp(1, "Infield-to-headland connection not supported at the moment");
+    routes = routes_if;
+    std::map<MachineId_t, size_t> idsMap;
+    for(size_t i = 0 ; i < routes.size() ; ++i){
+        auto& route = routes.at(i);
+        if(route.route_points.empty())
+            continue;
+
+        auto it_m = machines.find(route.machine_id);
+        if(it_m == machines.end())
+            return AroResp(1, "The machine assigned to one of the routes is not in the working group");
+
+        //adjust worked mass/volume
+        auto rp0 = route.route_points.front();
+        if(rp0.worked_mass > 1e-6 || rp0.worked_volume > 1e-6){
+            for(auto& rp : route.route_points){
+                rp.worked_mass -= rp0.worked_mass;
+                rp.worked_volume -= rp0.worked_volume;
+            }
+        }
+        idsMap[route.machine_id] = i;
+    }
+
+    for(auto& route_hl : routes_hl){
+        auto workedSegment = Point::toPoints( removeWorkedPoints(route_hl).route_points );
+
+        if(route_hl.route_points.empty())
+            continue;
+
+        auto it_m = machines.find(route_hl.machine_id);
+        if(it_m == machines.end())
+            return AroResp(1, "The machine assigned to one of the routes is not in the working group");
+        const Machine& machine = it_m->second;
+
+        RoutePoint rpRef;
+        auto it_r = idsMap.find(route_hl.machine_id);
+        if(it_r == idsMap.end()){
+            routes.push_back(route_hl);
+            rpRef = route_hl.route_points.front();
+
+            //adjust worked mass/volume
+            if(rpRef.worked_mass > 1e-6 || rpRef.worked_volume > 1e-6){
+                for(auto& rp : routes.back().route_points){
+                    rp.worked_mass -= rpRef.worked_mass;
+                    rp.worked_volume -= rpRef.worked_volume;
+                }
+            }
+            continue;
+        }
+
+        auto& route = routes.at(it_r->second);
+        rpRef = route.route_points.back();
+
+        double turningRad = machine.getTurningRadius();
+
+        Polygon boundary = m_tracksConnector_hl2if->getExtendedLimitBoundary(subfield, turningRad);
+//        double boundaryTH = 2*turningRad;
+//        Polygon boundary = subfield.boundary_outer;
+//        float distToBoundary = geometry::calc_dist_to_linestring(boundary.points, route.route_points.back(), false);
+//        if( distToBoundary < boundaryTH )
+//            geometry::offsetPolygon(subfield.boundary_outer, boundary, boundaryTH - distToBoundary, true);
+
+        Pose2D pose0( route.route_points.back() );
+        if(route.route_points.size() > 1)
+            pose0.angle = geometry::get_angle( r_at(route.route_points, 1), pose0 );
+        Pose2D posen;
+        if(workedSegment.empty()){
+            posen.point() = route_hl.route_points.front();
+            if(route_hl.route_points.size() > 1)
+                posen.angle = geometry::get_angle( posen, route_hl.route_points.at(1) );
+        }
+        else{
+            posen.point() = workedSegment.front();
+            if(workedSegment.size() > 1)
+                posen.angle = geometry::get_angle( posen, workedSegment.at(1) );
+            else
+                posen.angle = geometry::get_angle( posen, route_hl.route_points.front() );
+        }
+
+        double extraDist_if2hl0 = -1;
+        double extraDist_if2hln = -1; //subfield.headlands.hasCompleteHeadland() ? -1 : /*0.5 **/ turningRad;
+
+        auto path = m_tracksConnector_hl2if->getConnection(machine, pose0, posen, turningRad,
+                                                           std::make_pair(extraDist_if2hl0, extraDist_if2hln),
+                                                           boundary, subfield.boundary_inner, subfield.headlands);
+        if(path.size() < 2 && extraDist_if2hln > 1e-9)
+            path = m_tracksConnector_hl2if->getConnection(machine, pose0, posen, turningRad, std::make_pair(-1, -1), boundary, subfield.boundary_inner, subfield.headlands);
+
+        if(path.size() < 2){
+            logger().printWarning("Error connecting routes of machine with id " + std::to_string(route.machine_id) + " using the turning radius. Trying again without turning radius... ");
+            path = m_tracksConnector_hl2if->getConnection(machine, pose0, posen, 0.0, std::make_pair(-1, -1), boundary, subfield.boundary_inner, subfield.headlands);
+            if(path.size() < 2){
+                return AroResp(1, "Error connecting routes of machine with id " + std::to_string(route.machine_id));
+            }
+        }
+
+        path.pop_back();
+        if(workedSegment.size() > 1)
+            path.insert(path.end(), workedSegment.begin(), workedSegment.end());
+
+        for(size_t i = 0 ; i < path.size() ; ++i){
+            Point p0 = path.at(i);
+            RoutePoint rp = route.route_points.back();
+            rp.track_id = -1;
+            if(i+1 < path.size())
+                rp.point() = path.at(i+1);
+            else
+                rp.point() = route.route_points.front().point();
+            rp.type = RoutePoint::TRANSIT;
+
+            double speed = edgeSpeedCalculatorTransit->calcSpeed(p0, rp, rp.bunker_mass, machine);
+            if (speed < 1e-9)
+                return AroResp(1, "Invalid speed for machine with id " + std::to_string(machine.id));
+
+            double dtime = geometry::calc_dist(p0, rp) / speed;
+            rp.time_stamp += dtime;
+
+            if(i+1 < path.size())
+                route.route_points.push_back(rp);
+            else
+                rpRef = rp;
+        }
+
+        route.route_points.insert(route.route_points.end(), route_hl.route_points.begin(), route_hl.route_points.end());
+
+        //adjust timestamps and worked mass/volume
+        RoutePoint rp0 = route_hl.route_points.front();
+        for(size_t i = 0 ; i < route_hl.route_points.size() ; ++i){
+            RoutePoint& rp = r_at(route.route_points, i);
+            rp.time_stamp = rp.time_stamp - rp0.time_stamp + rpRef.time_stamp;
+            rp.worked_mass = rp.worked_mass - rp0.worked_mass + rpRef.worked_mass;
+            rp.worked_volume = rp.worked_volume - rp0.worked_volume + rpRef.worked_volume;
+        }
+    }
+
+    return AroResp::ok();
 }
 
 }

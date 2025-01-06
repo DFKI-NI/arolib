@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,12 +17,7 @@
 #ifndef ARO_BASE64UTILITY_HPP
 #define ARO_BASE64UTILITY_HPP
 
-#include <cryptopp/base64.h>
-
-#include <boost/archive/iterators/binary_from_base64.hpp>
-#include <boost/archive/iterators/base64_from_binary.hpp>
-#include <boost/archive/iterators/transform_width.hpp>
-#include <boost/algorithm/string.hpp>
+#include <string>
 
 namespace arolib {
 

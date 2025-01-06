@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,21 +16,24 @@
  
 #include <boost/test/unit_test.hpp>
 #include <boost/filesystem.hpp>
-#include <iostream>
-#include <chrono>
 
+//#include <chrono>
+
+#include "arolib/types/coordtransformer.hpp"
 #include "arolib/geometry/geometry_helper.hpp"
 #include "arolib/io/io_kml.hpp"
 #include "arolib/io/io_xml.hpp"
+#include "arolib/misc/filesystem_helper.h"
 #include "arolib/components/fieldgeometryprocessor.h"
 #include "arolib/planning/track_connectors/infieldtracksconnectordef.hpp"
 
 BOOST_AUTO_TEST_SUITE(test_tracksconnector)
-boost::filesystem::path getOutputDir()
+
+const auto _output_dir = arolib::io::create_path( arolib::io::get_temp_dir(), "arolib", "test", "test_components", "test_tracksconnector" );
+const std::string& getOutputDir()
 {
-    auto out_dir = boost::filesystem::temp_directory_path() / "arolib" / "test" / "test_tracksconnector";
-    boost::filesystem::create_directories(out_dir);
-    return out_dir;
+    arolib::io::create_directory(_output_dir, false);
+    return _output_dir;
 }
 
 arolib::Field getTestField(bool convex = true)
@@ -261,7 +264,7 @@ void test_connectTracks_withCompleteHL_()
     auto &sf = field.subfields.front();
     processSubieldGeometries_completeHL(sf, turningRad, 8);
 
-    arolib::io::writeFieldKML((getOutputDir() / "test_field_completeHL.kml").string(), field);
+    arolib::io::writeFieldKML( arolib::io::create_path(getOutputDir(), "test_field_completeHL.kml"), field );
 
     if(sf.tracks.empty())
         std::cout << "ERROR - " << __FUNCTION__ << ": Error generating field geometries. No tracks" << std::endl << std::endl;
@@ -320,10 +323,10 @@ void test_connectTracks_withCompleteHL_()
             routes.push_back(createRoute(path, machines.back().id, machines.back().id));
     }
 
-    arolib::io::writePlanXML((getOutputDir() / "test_plan_completeHL.xml").string(),
-                             field,
-                             machines,
-                             {routes});
+    arolib::io::writePlanXML( arolib::io::create_path(getOutputDir(), "test_plan_completeHL.xml"),
+                              field,
+                              machines,
+                              {routes} );
     return;
 }
 
@@ -337,7 +340,7 @@ void test_connectTracks_withPartialHL_()
     auto &sf = field.subfields.front();
     processSubieldGeometries_partialHL(sf, turningRad, 8);
 
-    arolib::io::writeFieldKML((getOutputDir() / "test_field_partialHL.kml").string(), field);
+    arolib::io::writeFieldKML( arolib::io::create_path(getOutputDir(), "test_field_partialHL.kml"), field );
 
     if(sf.tracks.empty())
         std::cout << "ERROR - " << __FUNCTION__ << ": Error generating field geometries. No tracks" << std::endl << std::endl;
@@ -395,10 +398,10 @@ void test_connectTracks_withPartialHL_()
             routes.push_back(createRoute(path, machines.back().id, machines.back().id));
     }
 
-    arolib::io::writePlanXML((getOutputDir() / "test_plan_partialHL.xml").string(),
-                             field,
-                             machines,
-                             {routes});
+    arolib::io::writePlanXML( arolib::io::create_path(getOutputDir(), "test_plan_partialHL.xml"),
+                              field,
+                              machines,
+                              {routes} );
 }
 
 void test_connectTracks_withoutHeadland_()
@@ -423,7 +426,7 @@ void test_connectTracks2AccessPoint_withCompleteHL_()
     fapPoses.back().point() = sf.access_points.back();
     fapPoses.back().angle = M_PI;
 
-    arolib::io::writeFieldKML((getOutputDir() / "test_field_completeHL_fap.kml").string(), field);
+    arolib::io::writeFieldKML( arolib::io::create_path(getOutputDir(), "test_field_completeHL_fap.kml"), field );
 
     if(sf.tracks.empty())
         std::cout << "ERROR - " << __FUNCTION__ << ": Error generating field geometries. No tracks" << std::endl << std::endl;
@@ -557,10 +560,10 @@ void test_connectTracks2AccessPoint_withCompleteHL_()
         }
     }
 
-    arolib::io::writePlanXML((getOutputDir() / "test_plan_completeHL_fap.xml").string(),
-                             field,
-                             machines,
-                             {routes});
+    arolib::io::writePlanXML( arolib::io::create_path(getOutputDir(), "test_plan_completeHL_fap.xml"),
+                              field,
+                              machines,
+                              {routes} );
 }
 
 void test_connectTracks2AccessPoint_withPartialHL_()
@@ -573,7 +576,7 @@ void test_connectTracks2AccessPoint_withPartialHL_()
     auto &sf = field.subfields.front();
     processSubieldGeometries_partialHL(sf, turningRad, 8);
 
-    arolib::io::writeFieldKML((getOutputDir() / "test_field_partialHL_fap.kml").string(), field);
+    arolib::io::writeFieldKML( arolib::io::create_path(getOutputDir(), "test_field_partialHL_fap.kml"), field );
 
     if(sf.tracks.empty())
         std::cout << "ERROR - " << __FUNCTION__ << ": Error generating field geometries. No tracks" << std::endl << std::endl;
@@ -717,10 +720,10 @@ void test_connectTracks2AccessPoint_withPartialHL_()
         }
     }
 
-    arolib::io::writePlanXML((getOutputDir() / "test_plan_partialHL_fap.xml").string(),
-                             field,
-                             machines,
-                             {routes});
+    arolib::io::writePlanXML( arolib::io::create_path(getOutputDir(), "test_plan_partialHL_fap.xml"),
+                              field,
+                              machines,
+                              {routes} );
 }
 
 BOOST_AUTO_TEST_CASE(test_connectTracks_withCompleteHL){ test_connectTracks_withCompleteHL_(); }

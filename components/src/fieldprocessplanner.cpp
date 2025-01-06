@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,11 @@
 */
  
 #include "arolib/components/fieldprocessplanner.h"
+
+#include "arolib/planning/path_search/graphhelper.hpp"
+#include "arolib/planning/track_connectors/infieldtracksconnectordef.hpp"
+#include "arolib/planning/path_search/astar_successor_checkers.hpp"
+#include "arolib/misc/filesystem_helper.h"
 
 namespace arolib {
 
@@ -71,6 +76,7 @@ AroResp FieldProcessPlanner::planSubfield(DirectedGraph::Graph &graph,
                                           const std::vector<Machine> &machines,
                                           const OutFieldInfo &outFieldInfo,
                                           const std::map<MachineId_t, MachineDynamicInfo> &machineCurrentStates,
+                                          const std::map<ResourcePointId_t, ResourcePointState> &resourcePointCurrentStates,
                                           const PlannerParameters &_plannerParameters,
                                           const ArolibGrid_t &yieldmap,
                                           const ArolibGrid_t &remainingAreaMap,
@@ -128,6 +134,7 @@ AroResp FieldProcessPlanner::planSubfield(DirectedGraph::Graph &graph,
                                                        baseRoutes,
                                                        workingMachines,
                                                        machineCurrentStates,
+                                                       resourcePointCurrentStates,
                                                        plannerParameters,
                                                        edgeCostCalculator,
                                                        materialFlowType,
@@ -172,19 +179,20 @@ AroResp FieldProcessPlanner::planSubfield(DirectedGraph::Graph &graph,
             //this must be done after the multiOLVPlanner plans, because it assumes that the main routes do not contain this initial path!
             logger().printOut(LogLevel::INFO, __FUNCTION__, "Adding initial paths to the main routes...");
             addInitialPathToMainRoutes(initBaseRoutes, mainRoutes);
+
+            logger().printOut(LogLevel::INFO, __FUNCTION__, "Adding final paths to the main routes...");
+            bool useSearchToExit = true;
+
+            sendWorkingMachinesToExitPoints(updated_graph,
+                                            mainRoutes,
+                                            subfield,
+                                            machines,
+                                            plannerParameters,
+                                            edgeCostCalculator,
+                                            useSearchToExit);
         }
+
         graph = updated_graph;
-
-        logger().printOut(LogLevel::INFO, __FUNCTION__, "Adding final paths to the main routes...");
-        bool useSearchToExit = true;
-
-        sendWorkingMachinesToExitPoints(graph,
-                                        mainRoutes,
-                                        subfield,
-                                        machines,
-                                        plannerParameters,
-                                        edgeCostCalculator,
-                                        useSearchToExit);
 
         plannedRoutes.insert( plannedRoutes.end(), mainRoutes.begin(), mainRoutes.end() );
         plannedRoutes.insert( plannedRoutes.end(), sec_routes.begin(), sec_routes.end() );
@@ -225,6 +233,7 @@ AroResp FieldProcessPlanner::do_planningForStandaloneMachines(const DirectedGrap
                                                               const std::vector<Route> &baseRoutes,
                                                               const std::vector<Machine> &machines,
                                                               const std::map<MachineId_t, MachineDynamicInfo> &machineCurrentStates,
+                                                              const std::map<ResourcePointId_t, ResourcePointState> &resourcePointCurrentStates,
                                                               const RoutePlannerStandaloneMachines::PlannerSettings& plannerParameters,
                                                               const std::shared_ptr<IEdgeCostCalculator> edgeCostCalculator,
                                                               MaterialFlowType materialFlowType,
@@ -238,6 +247,7 @@ AroResp FieldProcessPlanner::do_planningForStandaloneMachines(const DirectedGrap
                                                 baseRoutes,
                                                 machines,
                                                 machineCurrentStates,
+                                                resourcePointCurrentStates,
                                                 boundary,
                                                 plannerParameters,
                                                 edgeCostCalculator,
@@ -1027,8 +1037,16 @@ void FieldProcessPlanner::sendWorkingMachinesToExitPoints(DirectedGraph::Graph &
                     continue;
                 }
 
-                if(minCost > planner.getPlan().plan_cost_total){
-                    bestPlan = planner.getPlan();
+                //check if the current plan costs are (significantly) lower/higher than the ones from the curren best plan
+                double cost_diff = planner.getPlan().plan_cost_total - minCost;
+                bool better;
+                if( std::fabs(cost_diff) > 1e-5 || planner.getPlan().route_points_.empty() || bestPlan.route_points_.empty() )
+                    better = cost_diff < 0;
+                else // the difference between the costs of the plans is not significant -> check which plans finishes first
+                    better = planner.getPlan().route_points_.back().time_stamp < bestPlan.route_points_.back().time_stamp;
+
+                if(better){
+                    planner.swapPlan(bestPlan);
                     minCost = bestPlan.plan_cost_total;
                     planOK = true;
                 }

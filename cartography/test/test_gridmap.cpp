@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,27 +15,20 @@
 */
  
 #include <boost/test/unit_test.hpp>
-#include <boost/filesystem.hpp>
 #include <random>
-#include <string>
-#include <cmath>
 #include <functional>
 
-#include "arolib/cartography/gridmap.hpp"
 #include "arolib/cartography/gridmap_numeric.hpp"
-#include "arolib/types/point.hpp"
 #include "arolib/types/polygon.hpp"
+#include "arolib/misc/filesystem_helper.h"
 
 using namespace arolib;
 
-boost::filesystem::path getOutputDir()
-{
-    auto out_dir = boost::filesystem::temp_directory_path() / "arolib" / "test" / "test_gridmap";
-    boost::filesystem::create_directories(out_dir);
-    return out_dir;
-}
 
 BOOST_AUTO_TEST_SUITE(test_gridmap)
+
+const auto _output_dir = io::create_path( io::get_temp_dir(), "arolib", "test", "test_cartography", "test_gridmap_numeric" );
+
 template <typename T>
 gridmap::Gridmap<T> get_grid(double minX, double maxX, double minY, double maxY, T cellval, double stepsize = 1.0)
 {
@@ -207,7 +200,8 @@ void saveGridHD(const gridmap::Gridmap<T> &grid, const Polygon &poly, T default_
                 grid_HD.setLine(cellPoly.points.at(i), cellPoly.points.at(i + 1), 0.0, 0.0);
         }
     }
-    grid_HD.saveGridAsGeoTiff((getOutputDir() / file_name).string() + ".tif");
+
+    grid_HD.saveGridAsGeoTiff( io::create_path( _output_dir, file_name + ".tif" ) );
 }
 
 template <typename T>

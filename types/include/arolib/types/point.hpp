@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,14 +18,10 @@
 #define _AROLIB_POINT_H_
 
 #include <iostream>
+#include <iomanip>
 #include <vector>
 #include <string>
-#include <cmath>
-#include <iomanip>
-
 #include <boost/functional/hash.hpp>
-
-#include "arolib/misc/basicconversions.hpp"
 
 namespace arolib {
 /**
@@ -189,6 +185,13 @@ public:
     static double bearing(const Point& p0_geo, const Point& p1_geo);
 
     /**
+      * @brief Get the point attributes from a string
+      * @param str String description of the point
+      * @return True on success
+      */
+    bool fromString(std::string str);
+
+    /**
       * @brief Get the point attributes as a string
       * @param precision Decimal precision (disregarded if < 0)
       * @param incZ If true, the z-coordinate is included; otherwise, only x and y are included
@@ -309,13 +312,7 @@ public:
   * @param pt Point to be added/printed
   * @return Updated output stream
   */
-inline std::ostream& operator<< (std::ostream &ostr, const Point& pt) {
-    ostr <<  std::setprecision(3) << "(" << pt.x << ", " << pt.y << ")";
-    return ostr;
-}
-
-using PointVec = std::vector<Point>;
-using PointVecVec = std::vector<std::vector<Point>>;
+std::ostream& operator<< (std::ostream &ostr, const Point& pt);
 
 /**
   * @brief Scalar multiplication
@@ -325,14 +322,12 @@ using PointVecVec = std::vector<std::vector<Point>>;
   * @param s Scalar operand (multiplier/factor)
   * @return Resulting point
   */
-inline Point operator* (const Point& pt, double scale) {
-    Point result;
-    result.x = pt.x * scale;
-    result.y = pt.y * scale;
-    result.z = pt.z * scale;
-    return result;
-}
+Point operator* (const Point& pt, double scale);
 
+
+using PointVec = std::vector<Point>;
+using PointVecVec = std::vector<PointVec>;
+using PointVecCPVec = std::vector<const PointVec *>;
 
 }
 

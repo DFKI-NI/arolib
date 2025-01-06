@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,25 +15,19 @@
 */
  
 #include <boost/test/unit_test.hpp>
-#include <boost/filesystem.hpp>
 #include <random>
-#include <string>
-#include <cmath>
 
 #include "arolib/cartography/gridmap_numeric.hpp"
-#include "arolib/types/point.hpp"
 #include "arolib/types/polygon.hpp"
+#include "arolib/misc/filesystem_helper.h"
 
 using namespace arolib;
 
 BOOST_AUTO_TEST_SUITE(test_gridmap_numeric)
+
 typedef gridmap::NumericGridmap<float> FloatGrid_t;
 
-boost::filesystem::path getOutputDir(){
-    auto out_dir = boost::filesystem::temp_directory_path() / "arolib" / "test" / "test_gridmap_numeric";
-    boost::filesystem::create_directories(out_dir);
-    return out_dir;
-}
+const auto _output_dir = io::create_path( io::get_temp_dir(), "arolib", "test", "test_cartography", "test_gridmap_numeric" );
 
 FloatGrid_t get_grid(double minX, double maxX, double minY, double maxY, double stepsize = 1.0, float cellval = 0.0)
 {
@@ -78,7 +72,8 @@ void saveGridHD(const FloatGrid_t& grid, const Polygon& poly, float poly_val, fl
                 grid_HD.setLine(cellPoly.points.at(i), cellPoly.points.at(i+1), 0.0, edges_val);
         }
     }
-    grid_HD.saveGridAsGeoTiff( (getOutputDir() / file_name).string() + ".tif");
+
+    grid_HD.saveGridAsGeoTiff( io::create_path( _output_dir, file_name + ".tif" ) );
 }
 
 BOOST_AUTO_TEST_CASE(save_and_load_test)
@@ -86,7 +81,9 @@ BOOST_AUTO_TEST_CASE(save_and_load_test)
     FloatGrid_t grid = get_grid(-100, 100, -100, 100);
     randomize_grid(grid);
 
-    std::string png_filename = ( getOutputDir() / "grid.png" ).string();
+    io::create_directory(_output_dir, false);
+
+    std::string png_filename = io::create_path( _output_dir, "grid.png" );
     BOOST_REQUIRE(grid.saveGridAsPNG(png_filename));
     FloatGrid_t grid_png;
     BOOST_REQUIRE(grid_png.readGridFromPNG(png_filename));
@@ -97,7 +94,7 @@ BOOST_AUTO_TEST_CASE(save_and_load_test)
 
     BOOST_CHECK(grid_png.setPointLimits_min(-100, -100, 1.0));
 
-    std::string tif_filename = ( getOutputDir() / "grid.tif" ).string();
+    std::string tif_filename = io::create_path( _output_dir, "grid.tif" );
     BOOST_REQUIRE(grid.saveGridAsGeoTiff(tif_filename));
     FloatGrid_t grid_tif;
     BOOST_REQUIRE(grid_tif.readGridFromGeoTiff(tif_filename));

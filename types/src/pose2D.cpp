@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License
 */
- 
+
+#include <cmath>
+#include <boost/functional/hash.hpp>
 
 #include "arolib/types/pose2D.hpp"
 
@@ -31,6 +33,16 @@ Pose2D::Pose2D(const Point &point, double _angle):
     angle(_angle)
 {
 
+}
+
+Pose2D::Pose2D(const Point &point, const Point &pointNext, bool reverseDir):
+    Point(point)
+{
+    angle = !reverseDir ?
+                std::atan2( (pointNext.y - point.y) , (pointNext.x - point.x) ) :
+                std::atan2( (point.y - pointNext.y) , (point.x - pointNext.x) );
+    if(angle == -M_PI)
+        angle = M_PI;
 }
 
 bool Pose2D::operator==(const Pose2D &other) const

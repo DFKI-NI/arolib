@@ -1,5 +1,5 @@
 /*
- * Copyright 2022  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,14 +22,14 @@ BOOST_AUTO_TEST_CASE(test_ph_sequences)
 {
     auto doTest = [](std::vector<arolib::PartialHeadland>& hls, int ind_from, int ind_to, int expectedSize) -> bool{
         auto seqs = arolib::PartialHeadland::getHeadlandConnectionSequences(hls, ind_from, ind_to);
-        std::cout << "HLs(s=" << hls.size() << ") :: " << ind_from << " -> " << ind_to << "  :: " << seqs.size() << (seqs.size() == expectedSize ? " == " : " != ") << expectedSize << std::endl;
-        for(auto& seq : seqs){
-            std::cout << "\t";
-            for(auto i : seq)
-                std::cout << i << " ";
-            std::cout << std::endl;
-        }
-        std::cout << std::endl;
+//        std::cout << "HLs(s=" << hls.size() << ") :: " << ind_from << " -> " << ind_to << "  :: " << seqs.size() << (seqs.size() == expectedSize ? " == " : " != ") << expectedSize << std::endl;
+//        for(auto& seq : seqs){
+//            std::cout << "\t";
+//            for(auto i : seq)
+//                std::cout << i << " ";
+//            std::cout << std::endl;
+//        }
+//        std::cout << std::endl;
         return seqs.size() == expectedSize;
     };
 

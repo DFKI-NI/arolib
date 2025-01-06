@@ -14,6 +14,7 @@ add_library(${AROLIB_LIB_NAME} SHARED
   src/roundtripplanner.cpp
   src/activitiesswitchingplanner.cpp
   src/transit_restrictions.cpp
+  src/workedareaanalyst.cpp
   src/edge_calculators/edgeMassCalculator.cpp
   src/edge_calculators/edgeSpeedCalculator.cpp
   src/edge_calculators/edgeCostCalculator.cpp
@@ -35,6 +36,8 @@ add_library(${AROLIB_LIB_NAME} SHARED
   src/track_sequencing/tracksequencerclosestnext.cpp
   src/track_sequencing/tracksequenceradjacentnext.cpp
   src/track_sequencing/tracksequencerspiral.cpp
+  src/track_sequencing/simulated_annealing/tracksequencersimannealing.cpp
+  src/track_sequencing/simulated_annealing/stategenerator_swaptracks.cpp
   include/arolib/planning/simpleBaseRoutesPlanner.hpp
   include/arolib/planning/olvPlan.hpp
   include/arolib/planning/route_planner_standalone_machines.hpp
@@ -49,6 +52,7 @@ add_library(${AROLIB_LIB_NAME} SHARED
   include/arolib/planning/roundtripplanner.hpp
   include/arolib/planning/activitiesswitchingplanner.hpp
   include/arolib/planning/transit_restrictions.hpp
+  include/arolib/planning/workedareaanalyst.hpp
   include/arolib/planning/edge_calculators/edgeMassCalculator.hpp
   include/arolib/planning/edge_calculators/edgeSpeedCalculator.hpp
   include/arolib/planning/edge_calculators/edgeCostCalculator.hpp
@@ -70,6 +74,9 @@ add_library(${AROLIB_LIB_NAME} SHARED
   include/arolib/planning/track_sequencing/tracksequencerclosestnext.hpp
   include/arolib/planning/track_sequencing/tracksequenceradjacentnext.hpp
   include/arolib/planning/track_sequencing/tracksequencerspiral.hpp
+  include/arolib/planning/track_sequencing/simulated_annealing/simulated_annealing.hpp
+  include/arolib/planning/track_sequencing/simulated_annealing/tracksequencersimannealing.hpp
+  include/arolib/planning/track_sequencing/simulated_annealing/stategenerator_swaptracks.hpp
 )
 
 #set_target_properties(${AROLIB_LIB_NAME} PROPERTIES DEBUG_POSTFIX ${CMAKE_DEBUG_POSTFIX})

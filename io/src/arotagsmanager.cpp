@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,15 @@
 */
  
 #include "arolib/io/arotagsmanager.hpp"
+
+#include "arolib/types/coordtransformer.hpp"
+#include "arolib/types/field.hpp"
+#include "arolib/types/outfieldinfo.hpp"
+#include "arolib/types/machinedynamicinfo.hpp"
+#include "arolib/types/resourcepointstate.hpp"
+#include "arolib/types/route.hpp"
+#include "arolib/cartography/common.hpp"
+#include "arolib/planning/path_search/directedgraph.hpp"
 
 namespace arolib {
 namespace io {
@@ -52,6 +61,8 @@ const std::map<std::type_index, std::string> AroTagsManager::m_tags = { { std::t
                                                                         { std::type_index(typeid(OutFieldInfo::MachineBunkerState)), "bunker_state" },
                                                                         { std::type_index(typeid(std::map<MachineId_t, MachineDynamicInfo>)), "machinesDynamicInfo" },
                                                                         { std::type_index(typeid(MachineDynamicInfo)), "dynamic_info" },
+                                                                        { std::type_index(typeid(std::map<ResourcePointId_t, ResourcePointState>)), "resourcePointStates" },
+                                                                        { std::type_index(typeid(ResourcePointState)), "resourcePointState" },
                                                                         { std::type_index(typeid(ArolibGrid_t)), "grid" },
                                                                         { std::type_index(typeid(DirectedGraph::Graph)), "graph" },
                                                                         { std::type_index(typeid(DirectedGraph::vertex_pair)), "vertex" },

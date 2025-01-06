@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,15 +17,11 @@
 #ifndef ARO_INFIELDTRACKSCONNECTOR_HPP
 #define ARO_INFIELDTRACKSCONNECTOR_HPP
 
-#include <ctime>
 
 #include "arolib/misc/loggingcomponent.h"
 #include "arolib/types/pose2D.hpp"
 #include "arolib/types/subfield.hpp"
 #include "arolib/types/machine.hpp"
-#include "arolib/geometry/geometry_helper.hpp"
-#include "arolib/geometry/curves_helper.hpp"
-#include "arolib/geometry/pathsmoother.hpp"
 
 namespace arolib{
 

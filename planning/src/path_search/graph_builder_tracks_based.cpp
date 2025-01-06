@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,11 @@
  
 #include "arolib/planning/path_search/graph_builder_tracks_based.hpp"
 
-#include <limits>       // std::numeric_limits
+#include <limits>
+
+#include "arolib/planning/path_search/graphhelper.hpp"
+#include "arolib/geometry/geometry_helper.hpp"
+#include "arolib/geometry/field_geometry_processing.hpp"
 
 //#define DEBUG_GRAPH
 
@@ -1141,9 +1145,10 @@ void GraphBuilder_TracksBased::addFieldAccessPoints(BuilderWorkspace &ws, const 
 
 void GraphBuilder_TracksBased::connectFieldAccessPointsToHeadland(BuilderWorkspace &ws) const{
     double distCmpr = ws.graph.workingWidth_HL() > 0 ? ws.graph.workingWidth_HL() : ws.graph.workingWidth_IF();
-    auto addAccessEdge = [this, &ws](const vertex_t vt_fap, const vertex_property& vp_fap,
-            const vertex_t vt_to, const vertex_property& vp_to,
-            double dist, FieldAccessPoint::AccessPointType accessType){
+    std::set<vertex_t> connectedFAPsToHL;
+    auto addAccessEdge = [this, &ws, &connectedFAPsToHL](const vertex_t vt_fap, const vertex_property& vp_fap,
+                                                         const vertex_t vt_to, const vertex_property& vp_to,
+                                                         double dist, FieldAccessPoint::AccessPointType accessType){
 
         if( accessType == FieldAccessPoint::AP_ENTRY_EXIT
                 || accessType == FieldAccessPoint::AP_ENTRY_ONLY ){
@@ -1172,6 +1177,7 @@ void GraphBuilder_TracksBased::connectFieldAccessPointsToHeadland(BuilderWorkspa
                      true,
                      false );
         }
+        connectedFAPsToHL.insert(vt_fap);
     };
 
     for( size_t i = 0 ; i < ws.verticesHeadlandTracks.size() ; ++i ){
@@ -1215,8 +1221,37 @@ void GraphBuilder_TracksBased::connectFieldAccessPointsToHeadland(BuilderWorkspa
                 }
             }
         }
+    }
 
+    //check for non-connected access points (connect to closest - only complete HL)
+    for(auto& fap_vt_it : ws.verticesAccessPoints){
+        vertex_t vt_fap = fap_vt_it.second.first;
 
+        if(connectedFAPsToHL.find(vt_fap) != connectedFAPsToHL.end())
+            continue;
+
+        const vertex_property& vp_fap = ws.graph[vt_fap];
+
+        double minDist = std::numeric_limits<double>::max();
+        vertex_t vt_hl = -1;
+
+        for( size_t i = 0 ; i < ws.verticesHeadlandTracks.size() ; ++i ){
+            if(ws.verticesHeadlandTracks.at(i).empty())
+                continue;
+
+            //connect to headland vertices of the first track
+            for( auto& vt : ws.verticesHeadlandTracks.at(i).front() ){
+                const vertex_property& vp = ws.graph[vt];
+                double dist = geometry::calc_dist(vp_fap.route_point, vp.route_point);
+                if(dist < minDist){
+                    minDist = dist;
+                    vt_hl = vt;
+                }
+            }
+        }
+
+        if(vt_hl != -1)
+            addAccessEdge( vt_fap, vp_fap, vt_hl, ws.graph[vt_hl], minDist, fap_vt_it.second.second.accessType );
     }
 }
 

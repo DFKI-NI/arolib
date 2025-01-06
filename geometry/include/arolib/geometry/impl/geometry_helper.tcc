@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,12 @@
  
 #ifndef AROLIB_GEOMETRY_HELPER_TCC
 #define AROLIB_GEOMETRY_HELPER_TCC
+
 #include "arolib/geometry/geometry_helper.hpp"
+
+#include "arolib/geometry/boost_geometries_wrapper.hpp"
+#include "arolib/misc/container_helper.h"
+#include "arolib/types/units.hpp"
 
 namespace arolib{
 namespace geometry{
@@ -54,6 +59,17 @@ bool getNormVector(const std::vector<T> &points, Point& vec, double length)
     if( !setVectorLength(vec, length) )
         return false;
     return true;
+}
+
+template< typename T, typename >
+Pose2D getLinestringEntryExitPose (const std::vector<T>& ls, bool entry, bool inForwardSequence){
+    if(ls.size() < 2)
+        return Pose2D( Point::invalidPoint() );
+    if(entry)
+        return Pose2D ( inForwardSequence ? ls.front() : ls.back() ,
+                        inForwardSequence ? ls.at(1) : r_at(ls, 1) );
+    auto& p = !inForwardSequence ? ls.front() : ls.back();
+    return Pose2D ( p, geometry::get_angle( !inForwardSequence ? ls.at(1) : r_at(ls, 1), p ) );
 }
 
 

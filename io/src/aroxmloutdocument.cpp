@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,9 @@
 */
  
 #include "arolib/io/aroxmloutdocument.hpp"
+
+#include "arolib/misc/base64Utility.hpp"
+#include "arolib/types/coordtransformer.hpp"
 
 namespace arolib {
 namespace io {
@@ -128,7 +131,7 @@ bool AroXMLOutDocument::add(const std::vector<Point> &pts, std::string tag) {
             break;
     }
     if(!tag.empty()){
-        *m_os << std::endl;
+        *m_os << "\n";
         closeTag();
     }
     return ok;
@@ -211,6 +214,7 @@ bool AroXMLOutDocument::add(const ResourcePoint &pt, std::string tag) {
     ok &= add(pt.resourceTypes, UseDefaultTag);
     ok &= add(pt.defaultUnloadingTime, "defaultUnloadingTime");
     ok &= add(pt.defaultUnloadingTimePerKg, "defaultUnloadingTimePerKg");
+    ok &= add(pt.massCapacity, "massCapacity");
     ok &= add(pt.geometry, "geometry");
     if(!tag.empty())
         closeTag();
@@ -622,6 +626,8 @@ bool AroXMLOutDocument::add(const Route &route, std::string tag){
     if(!tag.empty())
         openTag(tag);
 
+    if(!route.baseDateTime.empty())
+        ok &= add(route.baseDateTime, "base_date_time");
     ok &= add(route.machine_id, "machine_id");
     ok &= add(route.route_id, "route_id");
     ok &= add(route.route_points, UseDefaultTag);
@@ -678,6 +684,48 @@ bool AroXMLOutDocument::add(const std::map<MachineId_t, MachineDynamicInfo> &dyn
         openTag(tag);
 
     for(const auto &di : dynamicInfo){
+        if(!ok)
+            break;
+        ok &= add(std::make_pair(di.first, di.second), UseDefaultTag);
+    }
+
+    if(!tag.empty())
+        closeTag();
+    return ok;
+}
+
+bool AroXMLOutDocument::add(const std::pair<ResourcePointId_t, ResourcePointState> &state, std::string tag)
+{
+    bool ok = true;
+    if(!isReadyToWrite())
+        return false;
+    tag = getTag<ResourcePointState>(tag);
+    if(!tag.empty())
+        openTag(tag);
+
+    ok &= add(state.first, "resource_point_id");
+    if(!std::isnan(state.second.capacityMass))
+        ok &= add(state.second.capacityMass, "capacityMass");
+    if(!std::isnan(state.second.capacityVolume))
+        ok &= add(state.second.capacityVolume, "capacityVolume");
+    ok &= add(state.second.enabled, "enabled");
+    ok &= add(state.second.timestamp, "timestamp");
+
+    if(!tag.empty())
+        closeTag();
+    return ok;
+}
+
+bool AroXMLOutDocument::add(const std::map<ResourcePointId_t, ResourcePointState> &states, std::string tag)
+{
+    bool ok = true;
+    if(!isReadyToWrite())
+        return false;
+    tag = getTag<std::map<ResourcePointId_t, ResourcePointState>>(tag);
+    if(!tag.empty())
+        openTag(tag);
+
+    for(const auto &di : states){
         if(!ok)
             break;
         ok &= add(std::make_pair(di.first, di.second), UseDefaultTag);
@@ -1269,6 +1317,7 @@ bool AroXMLOutDocument::savePlanParameters(const std::string &filename,
                                            const std::map<std::string, std::map<std::string, std::string> > &configParameters,
                                            const OutFieldInfo &outFieldInfo,
                                            const std::map<MachineId_t, MachineDynamicInfo> &machinesDynamicInfo,
+                                           const std::map<ResourcePointId_t, ResourcePointState> &resourcePointStates,
                                            const std::map<std::string, const ArolibGrid_t *> gridmaps,
                                            Point::ProjectionType coordinatesType_in,
                                            Point::ProjectionType coordinatesType_out)
@@ -1282,6 +1331,7 @@ bool AroXMLOutDocument::savePlanParameters(const std::string &filename,
            doc.add(configParameters, "configParameters") &&
            doc.add(outFieldInfo, UseDefaultTag) &&
            doc.add(machinesDynamicInfo, UseDefaultTag) &&
+           doc.add(resourcePointStates, UseDefaultTag) &&
            doc.add(gridmaps, UseDefaultTag) &&
            doc.closeDocument() &&
            doc.closeFile();
@@ -1292,7 +1342,8 @@ bool AroXMLOutDocument::savePlanParameters(const std::string &filename,
                                            const std::map<std::string, std::map<std::string, std::string> > &configParameters,
                                            const OutFieldInfo &outFieldInfo,
                                            const std::map<MachineId_t, MachineDynamicInfo> &machinesDynamicInfo,
-                                           const std::map<std::string, const ArolibGrid_t *> gridmaps,
+                                           const std::map<ResourcePointId_t, ResourcePointState> &resourcePointStates,
+                                           const std::map<std::string, const ArolibGrid_t *> &gridmaps,
                                            Point::ProjectionType coordinatesType_in,
                                            Point::ProjectionType coordinatesType_out)
 {
@@ -1304,33 +1355,8 @@ bool AroXMLOutDocument::savePlanParameters(const std::string &filename,
            doc.add(configParameters, "configParameters") &&
            doc.add(outFieldInfo, UseDefaultTag) &&
            doc.add(machinesDynamicInfo, UseDefaultTag) &&
+           doc.add(resourcePointStates, UseDefaultTag) &&
            doc.add(gridmaps, UseDefaultTag) &&
-           doc.closeDocument() &&
-           doc.closeFile();
-}
-
-bool AroXMLOutDocument::savePlanParameters(const std::string &filename,
-                                        const std::vector<Machine> &workingGroup,
-                                        const std::map<std::string, std::map<std::string, std::string> > &configParameters,
-                                        const OutFieldInfo &outFieldInfo,
-                                        const std::map<MachineId_t, MachineDynamicInfo> &machinesDynamicInfo,
-                                        const std::string &yieldmap_tifBase64,
-                                        const std::string &drynessmap_tifBase64,
-                                        const std::string &soilmap_tifBase64,
-                                        const std::string &remainingAreaMap_tifBase64, Point::ProjectionType coordinatesType_in, Point::ProjectionType coordinatesType_out)
-{
-    AroXMLOutDocument doc;
-    doc.setCoordinatesTypes(coordinatesType_in, coordinatesType_out);
-    return doc.openFile(filename) &&
-           doc.openDocument() &&
-           doc.add(workingGroup, UseDefaultTag) &&
-           doc.add(configParameters, "configParameters") &&
-           doc.add(outFieldInfo, UseDefaultTag) &&
-           doc.add(machinesDynamicInfo, UseDefaultTag) &&
-           ( yieldmap_tifBase64.empty() ? true : doc.add(yieldmap_tifBase64, "yieldmap_tifBase64") ) &&
-           ( drynessmap_tifBase64.empty() ? true : doc.add(drynessmap_tifBase64, "drynessmap_tifBase64") ) &&
-           ( soilmap_tifBase64.empty() ? true : doc.add(soilmap_tifBase64, "soilmap_tifBase64") ) &&
-           ( remainingAreaMap_tifBase64.empty() ? true : doc.add(remainingAreaMap_tifBase64, "remainingAreaMap_tifBase64") ) &&
            doc.closeDocument() &&
            doc.closeFile();
 }

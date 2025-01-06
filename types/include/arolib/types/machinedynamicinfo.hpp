@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,9 +17,11 @@
 #ifndef _AROLIB_MACHINEDYNAMICINFO_H_
 #define _AROLIB_MACHINEDYNAMICINFO_H_
 
-#include <vector>
-#include "point.hpp"
+#include <map>
+#include <cmath>
+
 #include "machine.hpp"
+#include "point.hpp"
 
 namespace arolib {
 
@@ -36,8 +38,8 @@ public:
 
     Point position = Point(0,0); /**< Position/location of the machine */
     double theta = 0; /**< Orientation angle of the machine w.r.t. the x-axis [Rad] */
-    double bunkerMass = 0; /**< Yield mass in the bunker [kg] */
-    double bunkerVolume = 0; /**< Yield volume in the bunker [m³] */
+    double bunkerMass = -1; /**< Yield mass in the bunker [kg] (if < 0 -> unknown) */
+    double bunkerVolume = -1; /**< Yield volume in the bunker [m³] (if < 0 -> unknown) */
     double timestamp = 0; /**< Current timestamp of the machine */
 
     /**

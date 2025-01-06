@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,13 @@
  
 #include "arolib/components/headlandbaseroutesplanner.h"
 
+
+#include "arolib/geometry/geometry_helper.hpp"
+#include "arolib/geometry/curves_helper.hpp"
+#include "arolib/cartography/sharedgridsmanager.hpp"
+
 namespace arolib {
 
-const double HeadlandBaseRoutesPlanner::ThresholdIsWorked = 0.5;
 const std::string HeadlandBaseRoutesPlanner::RemainingAreaMapName = "REM_AREA";
 const std::string HeadlandBaseRoutesPlanner::MassFactorMapName = "MASS_FACTOR";
 
@@ -388,10 +392,14 @@ AroResp HeadlandBaseRoutesPlanner::initInternalGeneralParameters(InternalParamet
     if(remainingAreaMap)
         LoggingComponent::setTemporalLoggersParent(lh, *this, *remainingAreaMap);
 
-    if(m_cim)
+    if(m_cim){
         ip.gm.setCellsInfoManager(m_cim);
-    if(remainingAreaMap && remainingAreaMap->isAllocated())
+        ip.waa.setGridCellsInfoManager(m_cim);
+    }
+    if(remainingAreaMap && remainingAreaMap->isAllocated()){
         ip.gm.addGrid(RemainingAreaMapName, remainingAreaMap);
+        ip.waa.setWorkedAreaMap(remainingAreaMap, false);
+    }
     if(massFactorMap && massFactorMap->isAllocated())
         ip.gm.addGrid(MassFactorMapName, massFactorMap);
 
@@ -528,7 +536,6 @@ AroResp HeadlandBaseRoutesPlanner::getStartingParameters_completeHL_workedArea(c
                                                                                InternalParametersForCompleteHL & ip,
                                                                                std::vector<size_t>& potentialFirstWorkingTrackPointIdxs)
 {
-    auto precision_wam = ( plannerParameters.bePreciseWithRemainingAreaMap ? gridmap::SharedGridsManager::PRECISE : gridmap::SharedGridsManager::PRECISE_ONLY_IF_AVAILABLE );
     potentialFirstWorkingTrackPointIdxs.clear();
     ip.indFirstWorkingTrack = tracks.size();
     for(size_t i = 0 ; i < tracks.size() ; ++i){
@@ -536,8 +543,16 @@ AroResp HeadlandBaseRoutesPlanner::getStartingParameters_completeHL_workedArea(c
         indTrack = ( ip.reverseTracksOrder ? tracks.size()-indTrack-1 : indTrack );
         auto& track = tracks.at(indTrack);
         auto& track_pts = track.points;
+        if(track_pts.size() < 2)
+            continue;
+        size_t deltaIndNext = geometry::calc_dist(track_pts.front(), track_pts.back()) > 1e-3 ? 0 : 1;
         for(size_t j = 0 ; j+1 < track_pts.size() ; ++j){
-            if( !isSegmentWorked(track_pts.at(j), track_pts.at(j+1), track.width, ip) ){
+            const Point *pPrev = nullptr, *pNext = nullptr;
+            if(track_pts.size() >= 4+deltaIndNext){
+                pPrev = j > 0 ? &track_pts.at(j-1) : &r_at(track_pts, deltaIndNext);
+                pNext = j+2 < track_pts.size() ? &track_pts.at(j+2) : &track_pts.at(deltaIndNext);
+            }
+            if( !isSegmentWorked(track_pts.at(j), track_pts.at(j+1), track.width, ip, pPrev, pNext) ){
                 ip.indFirstWorkingTrack = indTrack;
                 break;
             }
@@ -553,8 +568,14 @@ AroResp HeadlandBaseRoutesPlanner::getStartingParameters_completeHL_workedArea(c
         int indWorked = -1;
         auto& track = tracks.at(ip.indFirstWorkingTrack);
         auto& track_pts = track.points;
+        size_t deltaIndNext = geometry::calc_dist(track_pts.front(), track_pts.back()) > 1e-3 ? 0 : 1;
         for(size_t j = 0 ; j+1 < track_pts.size() ; ++j){
-            if( isSegmentWorked(track_pts.at(j), track_pts.at(j+1), track.width, ip) ){
+            const Point *pPrev = nullptr, *pNext = nullptr;
+            if(track_pts.size() >= 4+deltaIndNext){
+                pPrev = j > 0 ? &track_pts.at(j-1) : &r_at(track_pts, deltaIndNext);
+                pNext = j+2 < track_pts.size() ? &track_pts.at(j+2) : &track_pts.at(deltaIndNext);
+            }
+            if( isSegmentWorked(track_pts.at(j), track_pts.at(j+1), track.width, ip, pPrev, pNext) ){
                 indWorked = j;
                 break;
             }
@@ -596,7 +617,7 @@ AroResp HeadlandBaseRoutesPlanner::getStartingParameters_completeHL_machineState
                                                                                   int & indStartingPoint)
 {
     int indStartingPoint2 = -1;
-    refPoseFromMachine.point() = Point::invalidPoint();
+    refPoseFromMachine.setInvalid();
     Pose2D refPoseFromMachine2;
     auto& trackPts = firstWorkingTrack.points;
 
@@ -3061,34 +3082,40 @@ int HeadlandBaseRoutesPlanner::getSortedListIndexForHeadland(size_t indHL, const
 }
 
 bool HeadlandBaseRoutesPlanner::isSegmentWorked(const Point &p0, const Point &p1, double width,
-                                                InternalParametersGeneral &ip){
-    if(!ip.gm.hasGrid(RemainingAreaMapName))
+                                                InternalParametersGeneral &ip,
+                                                const Point *pPrev, const Point *pNext, double *pValue){
+
+    if(!ip.waa.getWorkedAreaMap())
         return false;
 
-    bool errorTmp = true;
-    double value = 1;
-    double area = arolib::geometry::calc_dist(p0, p1) * width;
+    auto workedPair = ip.waa.isSegmentWorked(p0, p1, width, ip.precision_wam);
+    auto& workedState = workedPair.first;
+    auto& value = workedPair.second;
 
-    if( area > 1e-9 ){
-        std::vector<gridmap::GridmapLayout::GridCellOverlap> cellsInfo;
-        ip.gm.getCellsInfoUnderLine(RemainingAreaMapName, p0, p1, width, ip.precision_wam, cellsInfo);
-
-        if(!cellsInfo.empty())
-            value = ip.gm.getGrid(RemainingAreaMapName)->getCellsComputedValue( cellsInfo,
-                                                                                ArolibGrid_t::AVERAGE_TOTAL,
-                                                                                area,
-                                                                                false,
-                                                                                &errorTmp );
-    }
-    else{
-        arolib::Point p0_1;
-        p0_1.x = 0.5*( p0.x + p1.x );
-        p0_1.y = 0.5*( p0.y + p1.y );
-        if(ip.gm.getGrid(RemainingAreaMapName)->hasValue(p0_1))
-            value = ip.gm.getGrid(RemainingAreaMapName)->getValue(p0_1, &errorTmp);
+    if(workedState == WorkedAreaAnalyst::UNKNOWN && std::isnan(value)){
+        if(pValue)
+            *pValue = std::nan("1");
+        return false;
     }
 
-    return (!errorTmp && value < ThresholdIsWorked);
+    if(workedState == WorkedAreaAnalyst::UNKNOWN){
+        double valuePrev = value, valueNext = value;
+        if(pPrev){
+            auto workedPair2 = ip.waa.isSegmentWorked(*pPrev, p0, width, ip.precision_wam);
+            if( !std::isnan(workedPair2.second) )
+                valuePrev = workedPair2.second;
+        }
+        if(pNext){
+            auto workedPair2 = ip.waa.isSegmentWorked(p1, *pNext, width, ip.precision_wam);
+            if( !std::isnan(workedPair2.second) )
+                valueNext = workedPair2.second;
+        }
+        value = 0.2 * (valuePrev + valueNext) + 0.6 * value;
+    }
+
+    if(pValue)
+        *pValue = value;
+    return value > 0.5;
 
 }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,30 +17,24 @@
 #ifndef AROLIB_HEADLANDBASEROUTESPLANNER_H
 #define AROLIB_HEADLANDBASEROUTESPLANNER_H
 
-#include <cstdlib>
-#include <unistd.h>
-#include <iostream>
-#include <math.h>
-#include <string>
-#include <fstream>
-#include <memory>
 #include <functional>
 
-#include "arolib/misc/logger.h"
-#include "arolib/geometry/geometry_helper.hpp"
-#include "arolib/geometry/field_geometry_processing.hpp"
-#include "arolib/planning/generalplanningparameters.hpp"
-#include "arolib/cartography/common.hpp"
-#include "arolib/cartography/sharedgridsmanager.hpp"
-#include "arolib/planning/simpleBaseRoutesPlanner.hpp"
 #include "arolib/misc/basic_responses.h"
+#include "arolib/types/subfield.hpp"
+#include "arolib/types/route.hpp"
+#include "arolib/types/machinedynamicinfo.hpp"
+#include "arolib/types/outfieldinfo.hpp"
+#include "arolib/cartography/gridcellsinfomanager.hpp"
+#include "arolib/planning/edge_calculators/edgeSpeedCalculator.hpp"
+#include "arolib/planning/generalplanningparameters.hpp"
+#include "arolib/planning/workedareaanalyst.hpp"
 
 namespace arolib {
 
 /**
  * @brief This Class plans the base-routes for headland processing like harvester routes (only headland, without the inner-field)
  */
-class HeadlandBaseRoutesPlanner : public LoggingComponent, protected PlanningWorkspaceAccessor
+class HeadlandBaseRoutesPlanner : public LoggingComponent
 {
 public:
 
@@ -120,7 +114,7 @@ public:
      * @brief Generate the headland base routes.
      *
      * The massFactorMap is a gridmap containing the factor/multiplier to be to be applied on the mass calculation (used on top of the edgeMassCalculator). It could be based on the areas that have been worked already (e.g. the inner-field), or in general a correction for the mass calculation.
-     * If restrictToBoundary = true, the planner automatically factors out the areas outside of the field, hence these areas must not be factored out in this massFactorMap.
+     * If plannerParameters.restrictToBoundary = true, the planner automatically factors out the areas outside of the field, hence these areas must not be factored out in this massFactorMap.
      * The massFactorMap must also factor out worked-areas corresponding to the workedAreaMap.
      * The workedAreaMap is used only to estimate the initial planning parameters for partially worked fields (incl. in which track and track-point to start working), but not for mass calculation (hence the need to include the corresponding mass factor in the massFactorMap. Likewise, the massFactorMap is not used to estimate the initial planning parameters.
      *
@@ -172,6 +166,7 @@ protected:
     struct InternalParametersGeneral
     {
         gridmap::SharedGridsManager gm; /**< Gridmaps manager (holding the needed gridmaps) */
+        WorkedAreaAnalyst waa; /**< WorkedAreaAnalyst */
         std::shared_ptr<ArolibGrid_t> massFactorMapWA; /**< Mass-factor gridmap (worked area) */
         gridmap::SharedGridsManager::PreciseCalculationOption precision_wam = gridmap::SharedGridsManager::PRECISE_ONLY_IF_AVAILABLE; /**< Precision used for computations with the worked/remaining-area map */
         gridmap::SharedGridsManager::PreciseCalculationOption precision_massMap = gridmap::SharedGridsManager::PRECISE_ONLY_IF_AVAILABLE; /**< Precision used for computations with the mass map */
@@ -975,12 +970,18 @@ protected:
      * @param p1 Second point of the segment
      * @param width Width of the segment
      * @param [in/out] ip Internal planning parameters.
+     * @param pPrev Previous point to check previous segment when inconclusive (disregarded if null)
+     * @param pNext Next point to check next segment when inconclusive (disregarded if null)
+     * @param [out] pValue The value [0,1] obtained from the map (NAN on error)
      * @return True if the segment is considered to be worked
      */
     static bool isSegmentWorked(const Point &p0,
                                 const Point &p1,
                                 double width,
-                                InternalParametersGeneral & ip);
+                                InternalParametersGeneral & ip,
+                                const Point* pPrev = nullptr,
+                                const Point* pNext = nullptr,
+                                double *pValue = nullptr);
 
     /**
      * @brief Checks if a partial headland is completelly worked based on the pre-computed headland states
@@ -1103,7 +1104,6 @@ protected:
 
 
 protected:
-    static const double ThresholdIsWorked;/**< Threshold [0,1] used to consider an area worked or not */
     static const std::string RemainingAreaMapName;/**< Name of the worked-area gridmap (given by the user) */
     static const std::string MassFactorMapName;/**< Name of the worked-area gridmap (given by the user) */
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,13 +18,10 @@
 #define AROLIBLOGGER_H
 
 #include <string>
-#include <iostream>
+#include <ostream>
 #include <iomanip>
 #include <mutex>
 #include <memory>
-#include <tuple>
-#include <functional>
-#include <chrono>
 
 #include "arolib/misc/tuple_helper.h"
 #include "arolib/misc/datetime.hpp"
@@ -354,7 +351,7 @@ public:
      * @brief Get the stored basename of the logger
      * @return Stored basename of the logger
      */
-    inline const std::shared_ptr<Logger> parent() const { return m_parent; }
+    inline const std::shared_ptr<Logger> parent() const { return m_parent.lock(); }
 
     /**
      * @brief Set the log level and reset/remove the parent if existent.
@@ -375,7 +372,7 @@ public:
      * If the logger has a parent, the logger's log level and output stream is inherited from the parent.
      * @param parent Pointer to the parent logger. If = null --> no parent
      */
-    void setParent(const std::shared_ptr<Logger> parent);
+    void setParent(const std::shared_ptr<Logger> &parent);
 
     /**
      * @brief Remove the logger's parent logger (i.e. no parent)
@@ -496,7 +493,7 @@ protected:
     LogLevel m_logLevel = LogLevel::INFO; /**< Logger's log level */
     std::string m_baseName = ""; /**< Logger's base name (to be printed in the message headers iif not an empty-string) */
     mutable std::ostream* m_os = &std::cout; /**< Pointer to the logger's output stream */
-    std::shared_ptr<Logger> m_parent = nullptr; /**< Logger's parent (to inherit its log level and output stream) */
+    std::weak_ptr<Logger> m_parent; /**< Logger's parent (to inherit its log level and output stream) */
     int m_precision = 10; /**< Logger's (number) precision */
     //mutable std::chrono::steady_clock::time_point m_timestamp; /**< Timestamp of the last message */
     mutable DateTime m_timestamp; /**< Timestamp of the last message */

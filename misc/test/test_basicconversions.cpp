@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,11 +15,11 @@
 */
  
 #include <boost/test/unit_test.hpp>
-#include <string>
-#include <iostream>
+
 #include <limits>
 
 #include "arolib/misc/basicconversions.hpp"
+
 using namespace arolib;
 
 BOOST_AUTO_TEST_SUITE(test_basicconversions)

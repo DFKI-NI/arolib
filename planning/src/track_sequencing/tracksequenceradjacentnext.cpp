@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,23 +16,25 @@
  
 #include "arolib/planning/track_sequencing/tracksequenceradjacentnext.hpp"
 
-#include <stdexcept>
-#include <algorithm>
+#include "arolib/geometry/geometry_helper.hpp"
+#include "arolib/geometry/field_geometry_processing.hpp"
 
 namespace arolib{
 
 TrackSequencerAdjacentNext::TrackSequencerAdjacentNext(LogLevel logLevel) :
-    ITrackSequencer(__FUNCTION__, logLevel)
+    ITrackSequencer(__FUNCTION__, logLevel),
+    TrackSequencerClosestNext(true, logLevel)
 {
-    m_useConnOverBoundaryAsReference = true;
+    m_saveAllComputedPaths = false;
+    m_saveConnectingPaths = false;
 }
 
 AroResp TrackSequencerAdjacentNext::computeSequences(const Subfield &subfield,
-                                                    const std::vector<Machine> &machines,
-                                                    const TrackSequencerSettings& settings,
-                                                    std::map<MachineId_t, std::vector<TrackInfo> > &sequences,
-                                                    const Pose2D* initRefPose,
-                                                    const std::set<size_t> &excludeTrackIndexes)
+                                                     const std::vector<Machine> &machines,
+                                                     const TrackSequencerSettings& settings,
+                                                     Sequences_t &sequences,
+                                                     const std::map<MachineId_t, Pose2D> &initRefPoses,
+                                                     const std::set<size_t> &excludeTrackIndexes)
 {
     sequences.clear();
 
@@ -66,6 +68,15 @@ AroResp TrackSequencerAdjacentNext::computeSequences(const Subfield &subfield,
 
     auto& trackIndsStart = ( extremaTrackInds.empty() ? trackInds : extremaTrackInds );
 
+    //workarround until several ref poses are supported
+    const Pose2D* initRefPose = nullptr;
+    for(auto& m : machines){
+        auto it_m = initRefPoses.find(m.id);
+        if(it_m != initRefPoses.end() && it_m->second.isValid()){
+            initRefPose = &( it_m->second );
+            break;
+        }
+    }
 
     auto nextTrackIndexes = getFirstTracksIndexes(subfield, initRefPose, trackIndsStart, machines.size());// holds indexes corresponding to trackInds, not the the track index in the tracks vectors
     if(nextTrackIndexes.empty())
@@ -112,8 +123,16 @@ AroResp TrackSequencerAdjacentNext::computeSequences(const Subfield &subfield,
             connBoundary = subfield.boundary_outer;
     }
 
+    std::chrono::steady_clock::time_point time_start = std::chrono::steady_clock::now();
     int indMachine = 0;
     while(assignedTrackIndexes.size() < trackInds.size()){
+
+        if(settings.maxSequencePlanningTime > 1e-6){
+            double duration = 0.001 * std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - time_start).count();
+            if(duration > settings.maxSequencePlanningTime)
+                return AroResp(1, "Planning timeout");
+        }
+
         auto machine = machines.at(indMachine);
         size_t indPrevTrack = nextTrackIndexes.at(indMachine).first;
         bool prevTrackInReverse = nextTrackIndexes.at(indMachine).second == ITrackSequencer::REVERSE;
@@ -168,7 +187,8 @@ AroResp TrackSequencerAdjacentNext::computeSequences(const Subfield &subfield,
         for(auto& it : sequences){
             logger().printDebug("", "\t Machine id : " + std::to_string(it.first) + ":");
             for(TrackInfo& info : it.second)
-                logger().printDebug("", "\t\t" + std::to_string(info.trackIndex) + "("  + std::to_string(info.trackPointsDirection) + ")");
+                logger().printDebug("", "\t\t" + std::to_string(info.trackIndex) + ( info.trackPointsDirection == TrackPointsDirection::UNDEF ? "(?)" :
+                                                                                   ( info.trackPointsDirection == TrackPointsDirection::FORWARD ? "(FW)" : "(RV)" ) ) );
         }
         logger().printDebug(__FUNCTION__, "Resulting IF tracks sequences (end)");
     }

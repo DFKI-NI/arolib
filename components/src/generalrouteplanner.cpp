@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,9 @@
 */
  
 #include "arolib/components/generalrouteplanner.h"
+
+#include "arolib/geometry/geometry_helper.hpp"
+#include "arolib/planning/path_search/astar_successor_checkers.hpp"
 
 namespace arolib {
 
@@ -99,7 +102,7 @@ AroResp GeneralRoutePlanner::planRouteToPointInSubfield(DirectedGraph::Graph &gr
     }
 
     plan = aStar.getPlan();
-    plan.adjustAccessPoints(machineInside);
+    plan.adjustAccessPointsFromLast(machineInside);
 
     route.machine_id = machine.id;
     route.route_id = 0;
@@ -119,58 +122,6 @@ AroResp GeneralRoutePlanner::planRouteToPointInSubfield(DirectedGraph::Graph &gr
     }
 
     return AroResp::ok();
-}
-
-AroResp GeneralRoutePlanner::planRouteToPointInSubfield(DirectedGraph::Graph &graph, Route &route,
-                                                        PlanningWorkspace &pw, size_t subfieldIdx,
-                                                        const MachineId_t &machineId,
-                                                        const DirectedGraph::vertex_t &goal_vt,
-                                                        const GeneralRoutePlanner::PlanParameters &planParameters,
-                                                        std::shared_ptr<IEdgeCostCalculator> edgeCostCalculator,
-                                                        PlanGeneralInfo *pPlanInfo)
-{
-    if(!edgeCostCalculator){
-        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Invalid edgeCostCalculator." );
-        return AroResp(1, "Invalid edgeCostCalculator." );
-    }
-    if(subfieldIdx >= getField(pw).subfields.size()){
-        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Invalid subfield index");
-        return AroResp(1, "Invalid subfield index");
-    }
-    const auto &subfield = getField(pw).subfields.at(subfieldIdx);
-    const auto &machineCurrentStates = getMachineCurrentStates(pw);
-    const auto &allMachines = getMachines(pw);
-
-    bool machineFound = false;
-    Machine machine;
-    for(const auto& m : allMachines){
-        if(m.id == machineId){
-            machine = m;
-            machineFound = true;
-            break;
-        }
-    }
-    if(!machineFound){
-        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Machine not found in working group");
-        return AroResp(1, "Machine not found in working group");
-    }
-
-    m_planningWorkspace = &pw;
-    m_pw_subfieldIdx = subfieldIdx;
-
-    auto ret = planRouteToPointInSubfield( graph,
-                                           route,
-                                           subfield,
-                                           machine,
-                                           goal_vt,
-                                           planParameters,
-                                           machineCurrentStates,
-                                           edgeCostCalculator,
-                                           pPlanInfo );
-
-    m_planningWorkspace = nullptr;
-
-    return ret;
 }
 
 AroResp GeneralRoutePlanner::planRouteToPointInSubfield(DirectedGraph::Graph &graph,
@@ -248,62 +199,6 @@ AroResp GeneralRoutePlanner::planRouteToPointInSubfield(DirectedGraph::Graph &gr
 
     logger().printOut(LogLevel::ERROR, __FUNCTION__, "No plan found for any of the valid vertices withing a radius of " + std::to_string(searchRadius));
     return AroResp(1, "No plan found for any of the valid vertices withing a radius of " + std::to_string(searchRadius));
-}
-
-AroResp GeneralRoutePlanner::planRouteToPointInSubfield(DirectedGraph::Graph &graph,
-                                                        Route &route,
-                                                        PlanningWorkspace &pw,
-                                                        size_t subfieldIdx,
-                                                        const MachineId_t &machineId,
-                                                        const Point &goal,
-                                                        const PlanParameters &planParameters,
-                                                        std::shared_ptr<IEdgeCostCalculator> edgeCostCalculator,
-                                                        double searchRadius,
-                                                        PlanGeneralInfo *pPlanInfo)
-{
-    if(!edgeCostCalculator){
-        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Invalid edgeCostCalculator." );
-        return AroResp(1, "Invalid edgeCostCalculator." );
-    }
-    if(subfieldIdx >= getField(pw).subfields.size()){
-        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Invalid subfield index");
-        return AroResp(1, "Invalid subfield index");
-    }
-    const auto &subfield = getField(pw).subfields.at(subfieldIdx);
-    const auto &machineCurrentStates = getMachineCurrentStates(pw);
-    const auto &allMachines = getMachines(pw);
-
-    bool machineFound = false;
-    Machine machine;
-    for(const auto& m : allMachines){
-        if(m.id == machineId){
-            machine = m;
-            machineFound = true;
-            break;
-        }
-    }
-    if(!machineFound){
-        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Machine not found in working group");
-        return AroResp(1, "Machine not found in working group");
-    }
-
-    m_planningWorkspace = &pw;
-    m_pw_subfieldIdx = subfieldIdx;
-
-    auto ret = planRouteToPointInSubfield( graph,
-                                           route,
-                                           subfield,
-                                           machine,
-                                           goal,
-                                           planParameters,
-                                           machineCurrentStates,
-                                           edgeCostCalculator,
-                                           searchRadius,
-                                           pPlanInfo );
-
-    m_planningWorkspace = nullptr;
-
-    return ret;
 }
 
 AroResp GeneralRoutePlanner::planRouteToExitPoint(DirectedGraph::Graph &graph,
@@ -419,7 +314,7 @@ AroResp GeneralRoutePlanner::planRouteToExitPoint(DirectedGraph::Graph &graph,
             return AroResp(1, "No plan to any of the resource points was found for machine with id " + std::to_string(m.id));
         }
 
-        plan.adjustAccessPoints(machineInside);
+        plan.adjustAccessPointsFromLast(machineInside);
 
         routes.emplace_back( Route() );
         routes.back().machine_id = m.id;
@@ -445,50 +340,6 @@ AroResp GeneralRoutePlanner::planRouteToExitPoint(DirectedGraph::Graph &graph,
     }
 
     return AroResp::ok();
-}
-
-AroResp GeneralRoutePlanner::planRouteToExitPoint(DirectedGraph::Graph &graph,
-                                                  std::vector<Route> &routes,
-                                                  PlanningWorkspace &pw,
-                                                  size_t subfieldIdx,
-                                                  const std::set<MachineId_t> &machineIds, const std::set<FieldAccessPointId_t> &fapIds,
-                                                  const PlanParameters &planParameters,
-                                                  std::shared_ptr<IEdgeCostCalculator> edgeCostCalculator,
-                                                  PlanGeneralInfo *pPlanInfo)
-{
-    if(!edgeCostCalculator){
-        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Invalid edgeCostCalculator." );
-        return AroResp(1, "Invalid edgeCostCalculator." );
-    }
-    if(subfieldIdx >= getField(pw).subfields.size()){
-        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Invalid subfield index");
-        return AroResp(1, "Invalid subfield index");
-    }
-    const auto &subfield = getField(pw).subfields.at(subfieldIdx);
-    const auto &machineCurrentStates = getMachineCurrentStates(pw);
-    const auto &allMachines = getMachines(pw);
-    std::vector<Machine> machines;
-    for(const auto& m : allMachines){
-        if(machineIds.find(m.id) != machineIds.end())
-            machines.emplace_back(m);
-    }
-
-    m_planningWorkspace = &pw;
-    m_pw_subfieldIdx = subfieldIdx;
-
-    auto ret = planRouteToExitPoint( graph,
-                                     routes,
-                                     subfield,
-                                     machines,
-                                     fapIds,
-                                     planParameters,
-                                     machineCurrentStates,
-                                     edgeCostCalculator,
-                                     pPlanInfo );
-
-    m_planningWorkspace = nullptr;
-
-    return ret;
 }
 
 AroResp GeneralRoutePlanner::planRouteToResourcePoint(DirectedGraph::Graph &graph, std::vector<Route> &routes,
@@ -613,7 +464,7 @@ AroResp GeneralRoutePlanner::planRouteToResourcePoint(DirectedGraph::Graph &grap
             return AroResp(1, "No plan to any of the resource points was found for machine with id " + std::to_string(m.id));
         }
 
-        plan.adjustAccessPoints(machineInside);
+        plan.adjustAccessPointsFromLast(machineInside);
 
         routes.emplace_back( Route() );
         routes.back().machine_id = m.id;
@@ -639,53 +490,6 @@ AroResp GeneralRoutePlanner::planRouteToResourcePoint(DirectedGraph::Graph &grap
     }
 
     return AroResp::ok();
-}
-
-AroResp GeneralRoutePlanner::planRouteToResourcePoint(DirectedGraph::Graph &graph,
-                                                      std::vector<Route> &routes,
-                                                      PlanningWorkspace &pw,
-                                                      size_t subfieldIdx,
-                                                      const std::set<MachineId_t> &machineIds,
-                                                      const PlanParameters &planParameters,
-                                                      const std::set<ResourcePointId_t> &resourcePointIds,
-                                                      const std::set<ResourcePoint::ResourceType> &resourceTypes,
-                                                      std::shared_ptr<IEdgeCostCalculator> edgeCostCalculator,
-                                                      PlanGeneralInfo *pPlanInfo)
-{
-    if(!edgeCostCalculator){
-        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Invalid edgeCostCalculator." );
-        return AroResp(1, "Invalid edgeCostCalculator." );
-    }
-    if(subfieldIdx >= getField(pw).subfields.size()){
-        logger().printOut(LogLevel::ERROR, __FUNCTION__, "Invalid subfield index");
-        return AroResp(1, "Invalid subfield index");
-    }
-    const auto &subfield = getField(pw).subfields.at(subfieldIdx);
-    const auto &machineCurrentStates = getMachineCurrentStates(pw);
-    const auto &allMachines = getMachines(pw);
-    std::vector<Machine> machines;
-    for(const auto& m : allMachines){
-        if(machineIds.find(m.id) != machineIds.end())
-            machines.emplace_back(m);
-    }
-
-    m_planningWorkspace = &pw;
-    m_pw_subfieldIdx = subfieldIdx;
-
-    auto ret = planRouteToResourcePoint( graph,
-                                         routes,
-                                         subfield,
-                                         machines,
-                                         planParameters,
-                                         resourcePointIds,
-                                         resourceTypes,
-                                         machineCurrentStates,
-                                         edgeCostCalculator,
-                                         pPlanInfo );
-
-    m_planningWorkspace = nullptr;
-
-    return ret;
 }
 
 void GeneralRoutePlanner::setOutputFiles(const std::string &foldername_planData,

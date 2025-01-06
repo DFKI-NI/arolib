@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,8 @@
 #define AROLIB_CARTOGRAPHY_GRIDMAP_RGBA32_HPP
 
 #include "gridmap.hpp"
+
+#include <png++/image.hpp>
 
 namespace arolib{
 namespace gridmap{
@@ -117,23 +119,35 @@ public:
     */
    explicit RGBA32Gridmap(LogLevel logLevel = LogLevel::INFO);
 
-   /**
-    * Copy constructor.
-     * @param other Other gridmap.
-    */
-   RGBA32Gridmap(const RGBA32Gridmap& other);
+    /**
+     * Copy constructor.
+      * @param other Other gridmap.
+     */
+    RGBA32Gridmap(const RGBA32Gridmap& other);
+
+    /**
+     * Move constructor.
+      * @param other Other gridmap.
+     */
+    RGBA32Gridmap(RGBA32Gridmap&& other);
 
    /**
     * Destructor.
     */
-   virtual ~RGBA32Gridmap();
+   virtual ~RGBA32Gridmap() = default;
 
 
-   /**
-   * Copy assignment
-   * @param other Other grid.
-   */
-   virtual RGBA32Gridmap& operator=(const RGBA32Gridmap& other);
+    /**
+    * Copy assignment
+    * @param other Other grid.
+    */
+    virtual RGBA32Gridmap& operator=(const RGBA32Gridmap& other) = default;
+
+    /**
+    * Move assignment
+    * @param other Other grid.
+    */
+    virtual RGBA32Gridmap& operator=(RGBA32Gridmap&& other) = default;
 
    /**
     * Saves the grid as a PNG file (plus meta-file).

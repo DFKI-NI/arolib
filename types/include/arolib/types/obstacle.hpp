@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -40,7 +40,7 @@ public:
     };
 
     /**
-      * @brief Conver int to onstacle type
+      * @brief Convert int to onstacle type
       */
     static ObstacleType intToObstacleType(int value){
         if(value == ObstacleType::OBS_OTHER)
@@ -59,10 +59,25 @@ public:
         throw std::invalid_argument( "The given value does not correspond to any Obstacle::ObstacleType" );
     }
 
+    Polygon boundary; /**< Perimeter points */
     ObstacleType type = ObstacleType::OBS_OTHER; /**< Type */
     std::string type_description; /**< Type description */
-    Polygon boundary; /**< Perimeter points */
+
+
+    /**
+      * @brief Constructor
+      * @param _boundary Boundary
+      * @param _type Obstacle type
+      * @param _type_description Obstacle-type description
+      */
+    explicit Obstacle(const Polygon& _boundary = Polygon(), ObstacleType _type = ObstacleType::OBS_OTHER, const std::string& _type_description = "")
+        : boundary(_boundary), type(_type), type_description(_type_description){}
 };
+
+inline std::ostream& operator<< (std::ostream &out, const Obstacle& data) {
+  out << "Obstacle {type: " << data.type << " , boundary: " << data.boundary << "}";
+  return out;
+}
 
 inline bool operator==(const Obstacle& lhs, const Obstacle& rhs) {
   return (lhs.type == rhs.type) && (lhs.boundary == rhs.boundary);

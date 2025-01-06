@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,14 +17,6 @@
 #ifndef ARO_POSEBASEDASTAR_HPP
 #define ARO_POSEBASEDASTAR_HPP
 
-#include <functional>
-
-#include "arolib/geometry/geometry_helper.hpp"
-#include "arolib/geometry/curves_helper.hpp"
-#include "arolib/misc/container_helper.h"
-#include "arolib/misc/logger.h"
-#include "arolib/misc/randomgeneration.hpp"
-#include "arolib/planning/path_search/poseBasedGraph.hpp"
 #include "arolib/planning/path_search/poseBasedCostCalculator.hpp"
 
 namespace arolib{

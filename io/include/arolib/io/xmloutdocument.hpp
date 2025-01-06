@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,15 +17,9 @@
 #ifndef AROLIB_IO_XMLOUTDOCUMENT_HPP
 #define AROLIB_IO_XMLOUTDOCUMENT_HPP
 
-#include <ostream>
-#include <fstream>
-#include <sstream>
 
 #include "arodocument.hpp"
 #include "arotagsmanager.hpp"
-#include "io_common.hpp"
-#include "arolib/types/coordtransformer.hpp"
-#include "arolib/misc/base64Utility.hpp"
 
 namespace arolib {
 namespace io {
@@ -147,6 +141,13 @@ public:
      */
     bool add(const std::map<std::string, std::map<std::string, std::string> > &values, // map<tag, map< name , value > >
                    std::string tag = "");
+
+    /**
+     * @brief Add/write a comment line (should not include change of lines - '\n')
+     * @param comment Comment to be written
+     * @return True on success
+     */
+    bool addCommentLine(const std::string &comment);
 
 
 protected:

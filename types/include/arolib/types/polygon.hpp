@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,6 +29,8 @@ namespace arolib {
 class Polygon {
 public:
     std::vector<Point> points; /**< Perimeter points */
+
+    explicit Polygon(const std::vector<Point>& _points = {}) : points(_points){}
 };
 
 
@@ -42,10 +44,7 @@ public:
 };
 
 inline std::ostream& operator<< (std::ostream &out, const arolib::Polygon& data) {
-  out << "Polygon { ";
-  for(const auto& point: data.points)
-  { out << point << " "; }
-  out << "}";
+  out << "Polygon {pts: " << data.points.size() << "}";
   return out;
 }
 

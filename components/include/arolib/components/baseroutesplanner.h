@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,24 +17,10 @@
 #ifndef AROLIB_BASEROUTESPLANNER_H
 #define AROLIB_BASEROUTESPLANNER_H
 
-#include <cstdlib>
-#include <unistd.h>
-#include <iostream>
-#include <math.h>
-#include <string>
-#include <fstream>
-#include <memory>
-#include <functional>
-
-#include "arolib/misc/logger.h"
-#include "arolib/geometry/geometry_helper.hpp"
-#include "arolib/geometry/field_geometry_processing.hpp"
+#include "arolib/cartography/gridcellsinfomanager.hpp"
+#include "arolib/planning/track_connectors/infieldtracksconnector.hpp"
+#include "arolib/planning/track_sequencing/tracksequencer.hpp"
 #include "arolib/planning/generalplanningparameters.hpp"
-#include "arolib/planning/track_connectors/infieldtracksconnectordef.hpp"
-#include "arolib/cartography/common.hpp"
-#include "arolib/cartography/sharedgridsmanager.hpp"
-#include "arolib/planning/simpleBaseRoutesPlanner.hpp"
-#include "arolib/misc/basic_responses.h"
 #include "arolib/components/headlandbaseroutesplanner.h"
 #include "arolib/components/infieldbaseroutesplanner.h"
 
@@ -65,6 +51,8 @@ public:
 
         bool limitStartToExtremaTracks = true; /**< Is the selection of the starting track in the infield limited to a track located at an extrema? */
         bool useMachineTurningRadInTrackSequencer = false; /**< Should the machine turning radius be used in the tracks sequencer computations? */
+        bool considerFieldExit = true; /**< Should the transit to exit the field be considered? */
+        double maxTrackSequencePlanningTime = -1; /**< Maximum infield track-sequence-planning time [s] (disregarded if <= 0) */
         bool infieldInverseTrackOrder; /**< Invert the order of the tracks (might be disregarded based on the curent worked state of the field, the locations of the machines or the reference point)*/
         bool infieldInversePointsOrder; /**< Invert the order of the points of the first track (might be disregarded based on the curent worked state of the field, the locations of the machines or the reference point) */
 
@@ -121,7 +109,7 @@ public:
      * @brief Generate the field base routes.
      *
      * The massFactorMap is a gridmap containing the factor/multiplier to be to be applied on the mass calculation (used on top of the edgeMassCalculator). It could be based on the areas that have been worked already (e.g. the inner-field), or in general a correction for the mass calculation.
-     * The planner automatically factors out the areas outside of the field, hence these areas must not be factored out in this massFactorMap.
+     * If plannerParameters.restrictToBoundary = true, the planner automatically factors out the areas outside of the field, hence these areas must not be factored out in this massFactorMap.
      * The massFactorMap must also factor out worked-areas corresponding to the workedAreaMap.
      * The workedAreaMap is used only to estimate the initial planning parameters for partially worked fields (incl. in which track and track-point to start working), but not for mass calculation (hence the need to include the corresponding mass factor in the massFactorMap. Likewise, the massFactorMap is not used to estimate the initial planning parameters.
      *
@@ -134,7 +122,7 @@ public:
      * @param [out] routes Resulting planned routes
      * @param [in/out] massFactorMap Gridmap containing the factor/multiplier to be to be applied on the mass calculation (used on top of the edgeMassCalculator). If set, it will be updated based on the resulting base routes (the cells corresponding to the routes will be set to 0.0). If set but not allocated, it will be initialized by the planner. See method description for more information
      * @param machineCurrentStates (optional) Machine current states used to decide where to start working (disregarded if null).
-     * @param initRefPose (optional) Reference pose to decide where to start working (disregarded if null or if the starting point can be obtained from the workedAreaMap or the machineCurrentStates).
+     * @param initRefPoses (optional) Reference poses for each machine to decide where to start working (disregarded if null or if the starting point can be obtained from the workedAreaMap or the machineCurrentStates).
      * @param outFieldInfo (optional) Out-of-field information used to decide where to start working (disregarded if null, or if initRefPoint was given, or if the starting point can be obtained from the workedAreaMap or the machineCurrentStates).
      * @param remainingAreaMap (optional) Remaining-area map/grid, where cell values of 1 := unworked; 0 := worked; noValue := not worked. If null -> the whole area is considered unworked. See method description for more information.
      * @return AroResp with error id (0:=OK) and message
@@ -149,7 +137,44 @@ public:
                  std::vector<Route> & routes,
                  std::shared_ptr<ArolibGrid_t> massFactorMap = nullptr,
                  const std::map<MachineId_t, MachineDynamicInfo> *machineCurrentStates = nullptr,
-                 const Pose2D * initRefPose = nullptr,
+                 const std::map<MachineId_t, Pose2D> *initRefPoses = nullptr,
+                 const OutFieldInfo* outFieldInfo = nullptr,
+                 std::shared_ptr<const ArolibGrid_t> remainingAreaMap = nullptr);
+
+
+    /**
+     * @brief Generate the field base routes.
+     *
+     * The massFactorMap is a gridmap containing the factor/multiplier to be to be applied on the mass calculation (used on top of the edgeMassCalculator). It could be based on the areas that have been worked already (e.g. the inner-field), or in general a correction for the mass calculation.
+     * If plannerParameters.restrictToBoundary = true, the planner automatically factors out the areas outside of the field, hence these areas must not be factored out in this massFactorMap.
+     * The massFactorMap must also factor out worked-areas corresponding to the workedAreaMap.
+     * The workedAreaMap is used only to estimate the initial planning parameters for partially worked fields (incl. in which track and track-point to start working), but not for mass calculation (hence the need to include the corresponding mass factor in the massFactorMap. Likewise, the massFactorMap is not used to estimate the initial planning parameters.
+     *
+     * @param [in/out] subfield Subfield containing the necessary data (inc. tracks). It might be updated after the planning.
+     * @param workinggroup Machines used for planning
+     * @param plannerParameters Planner parameters
+     * @param [in/out*] edgeMassCalculator Mass calculator
+     * @param [in/out*] edgeSpeedCalculatorHeadland Working speed calculator (for headland)
+     * @param [in/out*] edgeSpeedCalculatorInfield Working speed calculator (for innerfield)
+     * @param [out] routes Resulting planned routes
+     * @param [in/out] massFactorMap Gridmap containing the factor/multiplier to be to be applied on the mass calculation (used on top of the edgeMassCalculator). If set, it will be updated based on the resulting base routes (the cells corresponding to the routes will be set to 0.0). If set but not allocated, it will be initialized by the planner. See method description for more information
+     * @param machineCurrentStates (optional) Machine current states used to decide where to start working (disregarded if null).
+     * @param initRefPoses (optional) Reference pose to decide where to start working (disregarded if not valid point or if the starting point can be obtained from the workedAreaMap or the machineCurrentStates).
+     * @param outFieldInfo (optional) Out-of-field information used to decide where to start working (disregarded if null, or if initRefPoint was given, or if the starting point can be obtained from the workedAreaMap or the machineCurrentStates).
+     * @param remainingAreaMap (optional) Remaining-area map/grid, where cell values of 1 := unworked; 0 := worked; noValue := not worked. If null -> the whole area is considered unworked. See method description for more information.
+     * @return AroResp with error id (0:=OK) and message
+     */
+    AroResp plan(const Subfield &subfield,
+                 const std::vector<Machine> &workinggroup,
+                 const PlannerParameters & plannerParameters,
+                 std::shared_ptr<IEdgeMassCalculator> edgeMassCalculator,
+                 std::shared_ptr<IEdgeSpeedCalculator> edgeSpeedCalculatorHeadland,
+                 std::shared_ptr<IEdgeSpeedCalculator> edgeSpeedCalculatorInfield,
+                 std::shared_ptr<IEdgeSpeedCalculator> edgeSpeedCalculatorTransit,
+                 std::vector<Route> & routes,
+                 std::shared_ptr<ArolibGrid_t> massFactorMap = nullptr,
+                 const std::map<MachineId_t, MachineDynamicInfo> *machineCurrentStates = nullptr,
+                 const Pose2D & initRefPose = Pose2D(Point::invalidPoint()),
                  const OutFieldInfo* outFieldInfo = nullptr,
                  std::shared_ptr<const ArolibGrid_t> remainingAreaMap = nullptr);
 
@@ -177,21 +202,36 @@ public:
      */
     virtual void setGridCellsInfoManager(std::shared_ptr<gridmap::GridCellsInfoManager> cim);
 
+    /**
+     * @brief Get a default Infield TrackSequencer to be used.
+     */
+    virtual std::shared_ptr<ITrackSequencer> getDefInfieldTrackSequencer();
+
+    /**
+     * @brief Get a defalt TracksConnector to be used to connect headland and inner field.
+     */
+    virtual std::shared_ptr<IInfieldTracksConnector> getDefTrackConnector_headland2infield();
+
+    /**
+     * @brief Get a default TracksConnector to be used in the inner field.
+     */
+    virtual std::shared_ptr<IInfieldTracksConnector> getDefTrackConnector_infield();
+
 protected:
     /**
      * @brief Set the default Infield TrackSequencer to be used.
      */
-    virtual void setDefInfieldTrackSequencer();
+    void setDefInfieldTrackSequencer();
 
     /**
      * @brief Set the defalt TracksConnector to be used to connect headland and inner field.
      */
-    virtual void setDefTrackConnector_headland2infield();
+    void setDefTrackConnector_headland2infield();
 
     /**
      * @brief Set the default TracksConnector to be used in the inner field.
      */
-    virtual void setDefTrackConnector_infield();
+    void setDefTrackConnector_infield();
 
 
     /**
@@ -220,7 +260,7 @@ protected:
      * @param routes Routes
      * @return Pose (invalid point if not valid pose was obtained)
      */
-    Pose2D getRefPose(const std::vector<Route> &routes);
+    std::map<MachineId_t, Pose2D> getRefPoses(const std::vector<Route> &routes);
 
 
     /**
@@ -295,7 +335,7 @@ protected:
 protected:
     std::shared_ptr<gridmap::GridCellsInfoManager> m_cim = nullptr;/**< Grid-cells-info manager */
     std::shared_ptr<ITrackSequencer> m_tracksSequencer;/**< Infield tracks' sequencer */
-    std::shared_ptr<IInfieldTracksConnector> m_tracksConnector_hl2if = nullptr; /**< Tracks' connector (Headland -> Infield) */
+    std::shared_ptr<IInfieldTracksConnector> m_tracksConnector_hl2if = nullptr; /**< Tracks' connector (Headland <-> Infield) */
     std::shared_ptr<IInfieldTracksConnector> m_tracksConnector_if = nullptr; /**< Tracks' connector (infiend)*/
 
 };

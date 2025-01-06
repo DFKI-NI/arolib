@@ -342,5 +342,5 @@ In [`examples/example_harvesting`](examples/example_harvesting) you can find a s
 | [prospective.HARVEST](https://www.prospectiveharvest.de/de/startseite.html) | German Federal Ministry of Food and Agriculture ([BMEL](https://www.bmel.de/EN/Home/home_node.html)) | 2815700915                       |
 | [SOILAssist](https://www.soilassist.de/en/)                  | German Federal Ministry of Education and Research ([BMBF](https://www.bmbf.de/bmbf/en/home/home_node.html)) | 031A563B / 031B0684B / 031B1065B |
 
-2023: The DFKI Niedersachsen (DFKI NI) is sponsored by the Ministry of Science and Culture of Lower Saxony and the VolkswagenStiftung.
+2024: The DFKI Niedersachsen (DFKI NI) is sponsored by the Ministry of Science and Culture of Lower Saxony and the VolkswagenStiftung.
 

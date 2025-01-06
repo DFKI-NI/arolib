@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License
 */
- 
+
+
 #include "arolib/misc/logger.h"
 
 namespace arolib{
@@ -52,7 +53,9 @@ Logger::Logger(const Logger &other)
 
 Logger &Logger::operator=(const Logger &other){
     if (this != &other) {
-        this->m_parent = other.m_parent;
+        auto parent = other.m_parent.lock();
+        if( !parent || parent.get() != this )
+            m_parent = other.m_parent;
         this->m_logLevel = other.logLevel();
         this->m_baseName = other.m_baseName;
         this->m_timestamp = other.m_timestamp;
@@ -139,8 +142,8 @@ void Logger::printOut(LogLevel logLevel_base,
 
 LogLevel Logger::logLevel() const
 {
-    if(m_parent)
-        return m_parent->logLevel();
+    if(auto parent = m_parent.lock())
+        return parent->logLevel();
     return m_logLevel;
 }
 
@@ -161,7 +164,7 @@ void Logger::setBaseName(const std::string &baseName)
 }
 
 
-void Logger::setParent(const std::shared_ptr<Logger> parent)
+void Logger::setParent(const std::shared_ptr<Logger>& parent)
 {
     if(parent.get() == this) // @todo: this check might fail. Is there a way to check this more robustly?
         return;
@@ -172,7 +175,7 @@ void Logger::setParent(const std::shared_ptr<Logger> parent)
 
 void Logger::resetParent()
 {
-    m_parent = nullptr;
+    m_parent.reset();
 }
 
 void Logger::setOutputStream(std::ostream *os)
@@ -199,8 +202,8 @@ void Logger::includeElapsedTime(bool include)
 }
 std::ostream *Logger::os() const
 {
-    if(m_parent)
-        return m_parent->os();
+    if(auto parent = m_parent.lock())
+        return parent->os();
     return m_os;
 }
 
@@ -278,15 +281,14 @@ std::string Logger::getHeader(LogLevel _logLevel, const std::string& function) c
 }
 
 bool Logger::getIncludeTimestamp() const {
-//    if(m_parent)
-//        return m_parent->getIncludeTimestamp();
+//    if(auto parent = m_parent.lock())
+//        return parent->getIncludeTimestamp();
     return m_includeTimestamp;
 }
 
 bool Logger::getIncludeElapsedTime() const {
-
-//    if(m_parent)
-//        return m_parent->getIncludeElapsedTime();
+//    if(auto parent = m_parent.lock())
+//        return parent->getIncludeElapsedTime();
     return m_includeElapsedTime;
 }
 

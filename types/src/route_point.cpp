@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License
 */
- 
+
+#include <boost/functional/hash.hpp>
+
 #include "arolib/types/route_point.hpp"
 
 namespace arolib {
@@ -242,6 +244,19 @@ size_t RoutePoint::getNextIndByType(const std::vector<RoutePoint> &route_points,
             return i;
     }
     return route_points.size();
+}
+
+size_t RoutePoint::getPrevIndByType(const std::vector<RoutePoint> &route_points, const std::set<RoutePointType> &types, int ind0, size_t indn)
+{
+    if(ind0 < 0)
+        ind0 = route_points.size()-1;
+
+    for(int i = ind0; i >= 0 && i >= indn ; --i){
+        if( types.find( route_points.at(i).type ) != types.end() )
+            return i;
+    }
+    return route_points.size();
+
 }
 
 void RoutePoint::copyBasicWorkingValuesFrom(const RoutePoint &from)

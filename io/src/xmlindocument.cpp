@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,10 @@
 */
  
 #include "arolib/io/xmlindocument.hpp"
+
+
+#include <boost/foreach.hpp>
+
 
 namespace arolib {
 namespace io {
@@ -154,6 +158,7 @@ bool XMLInDocument::read( const ReadHandler & base, std::map<std::string, std::m
 
     try{
         BOOST_FOREACH( boost::property_tree::ptree::value_type const& v, base.t){
+            values[v.first] = {};
             BOOST_FOREACH( boost::property_tree::ptree::value_type const& vv, v.second){
                 values[v.first][vv.first] =  vv.second.get_value<std::string>();
             }

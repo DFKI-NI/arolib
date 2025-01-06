@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,33 +17,19 @@
 #ifndef AROLIB_FIELDPROCESSPLANNER_H
 #define AROLIB_FIELDPROCESSPLANNER_H
 
-#include <unistd.h>
-#include <iostream>
-#include <math.h>
-#include <string>
-#include <memory>
-
-#include "arolib/misc/loggingcomponent.h"
-#include "arolib/misc/container_helper.h"
 #include "arolib/misc/basic_responses.h"
-#include "arolib/types/machine.hpp"
-#include "arolib/types/machinedynamicinfo.hpp"
-#include "arolib/geometry/field_geometry_processing.hpp"
-
+#include "arolib/types/subfield.hpp"
 #include "arolib/planning/generalplanningparameters.hpp"
-#include "arolib/planning/planinfo.h"
-#include "arolib/planning/multiolvplanner.h"
 #include "arolib/planning/route_planner_standalone_machines.hpp"
-#include "arolib/planning/path_search/graphhelper.hpp"
-#include "arolib/planning/track_connectors/infieldtracksconnectordef.hpp"
-#include "arolib/planning/path_search/astar_successor_checkers.hpp"
+#include "arolib/planning/multiolvplanner.h"
+#include "arolib/planning/planinfo.h"
 
 namespace arolib {
 
 /**
  * @brief Class used to generate the routes/plans for all machines in the harvesting scenario, taking (innitially planned) harvester routes and generating OLV routes based on them
  */
-class FieldProcessPlanner : public LoggingComponent, protected PlanningWorkspaceAccessor
+class FieldProcessPlanner : public LoggingComponent
 {
 public:
 
@@ -95,10 +81,11 @@ public:
      * @param machines Machines used for planning
      * @param outFieldInfo Out-of-field information (inc. arrival times, transport times, etc.)
      * @param machineCurrentStates Map containing the current states of the machines
+     * @param resourcePointCurrentStates Current states of the resource points
      * @param plannerParameters Planner parameters
      * @param yieldmap Yield-proportion map/grid (values in t/ha)
      * @param remainingAreaMap Remaining (unharvested) -area map/grid
-     * @param edgeCostCalculator Edge Cost Calculator. Temporary: if = nullptr, uses internal astar functions
+     * @param edgeCostCalculator Edge Cost Calculator.
      * @param [out] pPlanInfo Pointer to where the information of the final plan will be saved (if = nullptr, it is not saved)
      * @return AroResp with error id (0:=OK) and message
      */
@@ -109,6 +96,7 @@ public:
                          const std::vector<arolib::Machine>& machines,
                          const OutFieldInfo &outFieldInfo,
                          const std::map<MachineId_t, arolib::MachineDynamicInfo>& machineCurrentStates,
+                         const std::map<ResourcePointId_t, ResourcePointState> &resourcePointCurrentStates,
                          const PlannerParameters &_plannerParameters,
                          const ArolibGrid_t &yieldmap,
                          const ArolibGrid_t &remainingAreaMap,
@@ -129,6 +117,7 @@ protected:
      * @param baseRoutes Base routes
      * @param machines Machines
      * @param machineCurrentStates Current states of the machines
+     * @param resourcePointCurrentStates Current states of the resource points
      * @param plannerParameters Planner parameters
      * @param edgeCostCalculator Edge Cost Calculator.
      * @param materialFlowType Material flow type
@@ -144,6 +133,7 @@ protected:
                                              const std::vector<Route> &baseRoutes,
                                              const std::vector<Machine> &machines,
                                              const std::map<MachineId_t, MachineDynamicInfo> &machineCurrentStates,
+                                             const std::map<ResourcePointId_t, ResourcePointState> &resourcePointCurrentStates,
                                              const RoutePlannerStandaloneMachines::PlannerSettings& plannerParameters,
                                              const std::shared_ptr<IEdgeCostCalculator> edgeCostCalculator,
                                              MaterialFlowType materialFlowType,

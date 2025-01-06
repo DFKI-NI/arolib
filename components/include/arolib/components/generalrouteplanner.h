@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,29 +17,12 @@
 #ifndef AROLIB_GENERALROUTEPLANNER_H
 #define AROLIB_GENERALROUTEPLANNER_H
 
-#include <unistd.h>
-#include <iostream>
-#include <math.h>
-#include <string>
-#include <chrono>
-
-#include "arolib/types/machine.hpp"
-#include "arolib/types/machinedynamicinfo.hpp"
-
-#include "arolib/misc/container_helper.h"
-#include "arolib/geometry/geometry_helper.hpp"
-#include "arolib/geometry/field_geometry_processing.hpp"
-
-#include "arolib/planning/path_search/directedgraph.hpp"
-#include "arolib/planning/planningworkspace.h"
-#include "arolib/planning/planinfo.h"
-#include "arolib/planning/edge_calculators/edgeCostCalculator.hpp"
-#include "arolib/planning/path_search/astar.hpp"
-#include "arolib/planning/path_search/astar_successor_checkers.hpp"
-
-#include "arolib/misc/loggingcomponent.h"
-#include "arolib/misc/logger.h"
 #include "arolib/misc/basic_responses.h"
+#include "arolib/types/subfield.hpp"
+#include "arolib/types/machinedynamicinfo.hpp"
+#include "arolib/planning/path_search/astar.hpp"
+#include "arolib/planning/edge_calculators/edgeCostCalculator.hpp"
+#include "arolib/planning/planinfo.h"
 
 
 namespace arolib {
@@ -47,7 +30,7 @@ namespace arolib {
 /**
  * @brief Class used for simple route planning (e.g. send a machine to an exit point)
  */
-class GeneralRoutePlanner : public LoggingComponent, protected PlanningWorkspaceAccessor
+class GeneralRoutePlanner : public LoggingComponent
 {
 public:
 
@@ -90,27 +73,6 @@ public:
                                        std::shared_ptr<IEdgeCostCalculator> edgeCostCalculator,
                                        PlanGeneralInfo *pPlanInfo = nullptr);
 
-    /**
-     * @brief Generate the route for the given machine from its current location to the given location inside the subfield.
-     * @param [in/out] graph Graph
-     * @param [out] route Planned route
-     * @param [in/out] pw Planning workspace containing the necessary data (subfield, initial harvester routes, etc.) for planning, as well as the resulting harvester and olv planned routes.
-     * @param subfieldIdx Index of the subfield (in pw) that will be planned
-     * @param machineId Id of the machine to be sent to the point
-     * @param edgeCostCalculator Edge Cost Calculator. Temporary: if = nullptr, uses internal astar functions
-     * @param [out] pPlanInfo Pointer to where the information of the final plan will be saved (if = nullptr, it is not saved)
-     * @return AroResp with error id (0:=OK) and message
-     */
-    AroResp planRouteToPointInSubfield(DirectedGraph::Graph& graph,
-                                        Route& route,
-                                        PlanningWorkspace &pw,
-                                        size_t subfieldIdx,
-                                        const MachineId_t& machineId,
-                                        const DirectedGraph::vertex_t& goal_vt,
-                                        const PlanParameters& planParameters,
-                                        std::shared_ptr<IEdgeCostCalculator> edgeCostCalculator,
-                                        PlanGeneralInfo *pPlanInfo = nullptr );
-
 
     /**
      * @brief Generate the route for the given machine from its current location to the given location inside the subfield.
@@ -136,28 +98,6 @@ public:
                                        double searchRadius = -1,
                                        PlanGeneralInfo *pPlanInfo = nullptr);
 
-    /**
-     * @brief Generate the route for the given machine from its current location to the given location inside the subfield.
-     * @param [in/out] graph Graph
-     * @param [out] route Planned route
-     * @param [in/out] pw Planning workspace containing the necessary data (subfield, initial harvester routes, etc.) for planning, as well as the resulting harvester and olv planned routes.
-     * @param subfieldIdx Index of the subfield (in pw) that will be planned
-     * @param machineId Id of the machine to be sent to the point
-     * @param edgeCostCalculator Edge Cost Calculator. Temporary: if = nullptr, uses internal astar functions
-     * @param [out] pPlanInfo Pointer to where the information of the final plan will be saved (if = nullptr, it is not saved)
-     * @return AroResp with error id (0:=OK) and message
-     */
-    AroResp planRouteToPointInSubfield(DirectedGraph::Graph& graph,
-                                       Route& route,
-                                       PlanningWorkspace &pw,
-                                       size_t subfieldIdx,
-                                       const MachineId_t& machineId,
-                                       const Point& goal,
-                                       const PlanParameters& planParameters,
-                                       std::shared_ptr<IEdgeCostCalculator> edgeCostCalculator,
-                                       double searchRadius = -1,
-                                       PlanGeneralInfo *pPlanInfo = nullptr );
-
 
     /**
      * @brief Generate route for the given machine(s) from their current location (inside the subfield) to an exit point.
@@ -180,28 +120,6 @@ public:
                                  const std::map<MachineId_t, MachineDynamicInfo>& machineCurrentStates,
                                  std::shared_ptr<IEdgeCostCalculator> edgeCostCalculator,
                                  PlanGeneralInfo *pPlanInfo = nullptr);
-
-    /**
-     * @brief Generate route for the given machine(s) from their current location (inside the subfield) to an exit point.
-     * @param [in/out] graph Graph
-     * @param [out] routes Planned routes
-     * @param [in/out] pw Planning workspace containing the necessary data (subfield, initial harvester routes, etc.) for planning, as well as the resulting harvester and olv planned routes.
-     * @param subfieldIdx Index of the subfield (in pw) that will be planned
-     * @param machineIds Ids of the machines to be sent to the exit point
-     * @param fapIds Ids of the field access points to be included in the search (if empty, all are included)
-     * @param edgeCostCalculator Edge Cost Calculator. Temporary: if = nullptr, uses internal astar functions
-     * @param [out] pPlanInfo Pointer to where the information of the final plan will be saved (if = nullptr, it is not saved)
-     * @return AroResp with error id (0:=OK) and message
-     */
-    AroResp planRouteToExitPoint( DirectedGraph::Graph& graph,
-                                  std::vector<Route>& routes,
-                                  PlanningWorkspace &pw,
-                                  size_t subfieldIdx,
-                                  const std::set<MachineId_t> &machineIds,
-                                  const std::set<FieldAccessPointId_t> &fapIds,
-                                  const PlanParameters& planParameters,
-                                  std::shared_ptr<IEdgeCostCalculator> edgeCostCalculator,
-                                  PlanGeneralInfo *pPlanInfo = nullptr );
 
 
     /**
@@ -229,30 +147,6 @@ public:
                                      PlanGeneralInfo *pPlanInfo = nullptr);
 
     /**
-     * @brief Generate route for the given machine(s) from their current location (inside the subfield) to an exit point.
-     * @param [in/out] graph Graph
-     * @param [out] routes Planned routes
-     * @param [in/out] pw Planning workspace containing the necessary data (subfield, initial harvester routes, etc.) for planning, as well as the resulting harvester and olv planned routes.
-     * @param subfieldIdx Index of the subfield (in pw) that will be planned
-     * @param machineIds Ids of the machines to be sent to the exit point
-     * @param resourcePointIds Ids of the resource points to be included in the search (if empty, all are included)
-     * @param resourceTypes Types of resource points to be included in the search
-     * @param edgeCostCalculator Edge Cost Calculator. Temporary: if = nullptr, uses internal astar functions
-     * @param [out] pPlanInfo Pointer to where the information of the final plan will be saved (if = nullptr, it is not saved)
-     * @return AroResp with error id (0:=OK) and message
-     */
-    AroResp planRouteToResourcePoint(DirectedGraph::Graph& graph,
-                                      std::vector<Route>& routes,
-                                      PlanningWorkspace &pw,
-                                      size_t subfieldIdx,
-                                      const std::set<MachineId_t> &machineIds,
-                                      const PlanParameters& planParameters,
-                                      const std::set<ResourcePointId_t> &resourcePointIds,
-                                      const std::set<ResourcePoint::ResourceType> &resourceTypes,
-                                      std::shared_ptr<IEdgeCostCalculator> edgeCostCalculator,
-                                      PlanGeneralInfo *pPlanInfo = nullptr );
-
-    /**
      * @brief Set the output files for debug and analysis
      * @param filename_graphBuilding File name/path where the gragh-building information will be stored (if empty-string, no data will be saved)
      * @param foldername_planData Folder where the planning (search) information will be stored (if empty-string, no data will be saved)
@@ -263,11 +157,6 @@ public:
 
 protected:
 
-
-
-protected:
-
-    PlanningWorkspace* m_planningWorkspace = nullptr;/**< Pointer to the planning workspace (if NULL, no methods with a planning workspace as parameter were called) */
     size_t m_pw_subfieldIdx; /**< Index of the subfield to be planned (in case the planning workspace is being used (CALC_PW)) */
 
     std::string m_foldername_planData = "";/**< Folder where the planning (search) information will be stored (if empty-string, no data will be saved) */

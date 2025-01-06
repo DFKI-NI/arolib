@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,6 +34,19 @@ ResourcePoint::ResourceType ResourcePoint::intToResourceType(int value)
     throw std::invalid_argument( "The given value does not correspond to any ResourcePoint::ResourceType" );
 }
 
+std::string ResourcePoint::resourceTypeToShortStr(ResourceType value)
+{
+    if(value == ResourceType_UNLOADING)
+        return "ULD";
+    else if(value == ResourceType_LOADING)
+        return "LD";
+    else if(value == ResourceType_CHARGING)
+        return "CHG";
+
+    return "-";
+
+}
+
 ResourcePoint::ResourcePoint(double _x, double _y, double _z):
     Point(_x, _y, _z)
 {
@@ -47,16 +60,20 @@ ResourcePoint::ResourcePoint(const Point &point):
 }
 
 ResourcePoint::ResourcePoint(const Point &point,
-                             const ResourcePointId_t &_id,
+                             const ResourcePointId_t & _id,
                              const std::set<ResourceType> &_resourceTypes,
-                             const double &_defaultUnloadingTime,
-                             const double &_defaultUnloadingTimePerKg,
+                             float _defaultUnloadingTime,
+                             float _defaultUnloadingTimePerKg,
+                             float _massCapacity,
+                             float _volumeCapacity,
                              const Polygon &_geometry):
     Point( point ),
     id(_id),
     resourceTypes(_resourceTypes),
     defaultUnloadingTime(_defaultUnloadingTime),
     defaultUnloadingTimePerKg(_defaultUnloadingTimePerKg),
+    massCapacity(_massCapacity),
+    volumeCapacity(_volumeCapacity),
     geometry(_geometry)
 {
 
@@ -68,6 +85,14 @@ std::vector<ResourcePoint> ResourcePoint::fromPoints(const std::vector<Point> po
     for(size_t i = 0 ; i < points.size(); ++i)
         ret[i] = ResourcePoint(points[i]);
     return ret;
+}
+
+bool operator==(const ResourcePoint &lhs, const ResourcePoint &rhs) {
+    return (lhs.point() == rhs.point()) &&
+            (lhs.resourceTypes == rhs.resourceTypes) &&
+            (std::fabs(lhs.defaultUnloadingTime - rhs.defaultUnloadingTime) < 1e-6) &&
+            (std::fabs(lhs.defaultUnloadingTimePerKg - rhs.defaultUnloadingTimePerKg) < 1e-6) &&
+            (lhs.geometry == rhs.geometry);
 }
 
 

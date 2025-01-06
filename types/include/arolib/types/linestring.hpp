@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,12 +27,20 @@ namespace arolib {
   */
 class Linestring {
 public:
-  int id; /**< Linestring id */
+  int id = 0; /**< Linestring id */
   std::vector<Point> points; /**< Linestring points */
+
+  explicit Linestring(const std::vector<Point>& _points = {}, int _id = 0) : id(_id), points(_points){}
 };
 
+
+inline std::ostream& operator<< (std::ostream &out, const Linestring& data) {
+  out << "Linestring {id: " << data.id << " , pts: " << data.points.size() << "}";
+  return out;
+}
+
 inline bool operator==(const Linestring& lhs, const Linestring& rhs) {
-  return (lhs.points == rhs.points);
+  return (lhs.id == rhs.id) && (lhs.points == rhs.points);
 }
 
 }

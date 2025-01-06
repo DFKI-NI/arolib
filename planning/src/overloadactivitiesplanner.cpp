@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,8 @@
 */
  
 #include "arolib/planning/overloadactivitiesplanner.h"
+
+#include "arolib/types/track.hpp"
 
 namespace arolib{
 
@@ -36,7 +38,14 @@ OverloadActivitiesPlanner::OverloadActivitiesPlanner(LogLevel logLevel):
 
 }
 
-std::vector<OLVPlan::OverloadInfo> OverloadActivitiesPlanner::computeOverloadActivities(PlannerSettings settings, const Route &harvester_route, const std::vector<Machine> &overloadMachines, const std::map<MachineId_t, MachineDynamicInfo> &machineCurrentStates, int numOverloadActivities, double workedMassLimit, bool leaveRoutePointBetweenOLActivities, std::shared_ptr<Logger> _logger)
+std::vector<OLVPlan::OverloadInfo> OverloadActivitiesPlanner::computeOverloadActivities(PlannerSettings settings,
+                                                                                        const Route &harvester_route,
+                                                                                        const std::vector<Machine> &overloadMachines,
+                                                                                        const std::map<MachineId_t, MachineDynamicInfo> &machineCurrentStates,
+                                                                                        int numOverloadActivities,
+                                                                                        double workedMassLimit,
+                                                                                        bool leaveRoutePointBetweenOLActivities,
+                                                                                        std::shared_ptr<Logger> _logger)
 {
 
 //    if(settings.switchOnlyAtTrackEnd)

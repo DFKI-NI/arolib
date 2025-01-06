@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,20 +17,10 @@
 #ifndef AROLIB_ASTAR_HPP
 #define AROLIB_ASTAR_HPP
 
-#include <fstream>
-#include <memory>
-
 #include "arolib/planning/path_search/directedgraph.hpp"
 #include "arolib/planning/edge_calculators/edgeCostCalculator.hpp"
 #include "arolib/planning/edge_calculators/edgeSpeedCalculator.hpp"
-#include "arolib/geometry/geometry_helper.hpp"
-#include "arolib/misc/container_helper.h"
-#include "arolib/misc/logger.h"
-#include "arolib/planning/generalplanningparameters.hpp"
-#include "arolib/io/io_common.hpp"
-#include "arolib/misc/filesystem_helper.h"
 #include "arolib/planning/path_search/astarPlan.hpp"
-#include "arolib/planning/planningException.hpp"
 
 namespace arolib{
 
@@ -406,6 +396,13 @@ public:
      * @return Planning results
      */
     const AstarPlan& getPlan() const;
+
+
+    /**
+     * @brief Swaps the planning results
+     * @return Planning results to be swapped
+     */
+    void swapPlan(AstarPlan& other);
 
 
     /**

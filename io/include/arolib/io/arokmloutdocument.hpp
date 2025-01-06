@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,17 +17,9 @@
 #ifndef AROLIB_IO_AROKMLOUTDOCUMENT_HPP
 #define AROLIB_IO_AROKMLOUTDOCUMENT_HPP
 
-#include <ostream>
-#include <fstream>
-#include <sstream>
-
-#include "arodocument.hpp"
 #include "xmloutdocument.hpp"
-#include "kmltags.hpp"
-#include "arolib/misc/filesystem_helper.h"
-#include "io_common.hpp"
-#include "arolib/types/coordtransformer.hpp"
-#include "arolib/misc/base64Utility.hpp"
+#include "arolib/io/kmltags.hpp"
+#include "arolib/types/field.hpp"
 #include "arolib/types/route.hpp"
 
 namespace arolib {

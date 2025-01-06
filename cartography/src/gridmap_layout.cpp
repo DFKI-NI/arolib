@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,12 @@
 */
  
 #include "arolib/cartography/gridmap_layout.hpp"
+
+#include <future>
+#include <unordered_map>
+
+#include "arolib/cartography/cellsrangeset.hpp"
+#include "arolib/geometry/geometry_helper.hpp"
 
 namespace arolib {
 namespace gridmap {
@@ -40,31 +46,6 @@ GridmapLayout::GridmapLayout(LogLevel logLevel)
     reset();
 }
 
-
-/**
- * Copy constructor.
- */
-
-GridmapLayout::GridmapLayout(const GridmapLayout &other):
-      LoggingComponent(other)
-{
-    m_minPointX = other.m_minPointX;
-    m_minPointY = other.m_minPointY;
-    m_maxPointX = other.m_maxPointX;
-    m_maxPointY = other.m_maxPointY;
-    m_cellsize = other.m_cellsize;
-    m_sizeX = other.m_sizeX;
-    m_sizeY = other.m_sizeY;
-    m_computeInMultiThread = other.m_computeInMultiThread;
-}
-
-/**
- * Destructor.
- */
-
-GridmapLayout::~GridmapLayout()
-{
-}
 
 //------------------------------------
 //--------------OPERATORS-------------
@@ -881,9 +862,9 @@ CellsRangeList GridmapLayout::getCellsUnderLine2(const Point& start,
  */
 
 std::vector< GridmapLayout::GridCellOverlap > GridmapLayout::getCellsOverlapUnderLine(const Point& start,
-                                                        const Point& end,
-                                                        double width,
-                                                        const Polygon& boundary) const
+                                                                                      const Point& end,
+                                                                                      double width,
+                                                                                      const Polygon& boundary) const
 {
     return getCellsOverlapUnderLine_v1(start, end, width, boundary);
 }
@@ -900,6 +881,40 @@ std::vector< GridmapLayout::GridCellOverlap > GridmapLayout::getCellsOverlapUnde
 
     if ( !isValid() ){
         logger().printOut(LogLevel::ERROR, __FUNCTION__, "The grid layout is not valid");
+        return cellsList;
+    }
+
+    if(width <= 0){
+        bool inside = true;
+        PointVec pts = {start, end};
+        if(!boundary.points.empty()){
+            pts = geometry::get_intersection(pts, boundary);
+            if(pts.empty())
+                pts = {start, end};
+            else{
+                Point p0 = start, pn = end;
+                if( geometry::calc_dist(start, pts.front()) < geometry::calc_dist(start, pts.back()) )
+                    std::swap(p0, pn);
+                if( pts.front() != p0 )
+                    push_front(pts, p0);
+                if( pts.back() != pn )
+                    pts.push_back(pn);
+            }
+            inside = geometry::in_polygon( geometry::getCentroid(pts.front(), pts.at(1)), boundary );
+        }
+        std::set< std::pair<size_t, size_t> > cells;
+        for(size_t i = !inside ; i+1 < pts.size() ; i+=2){
+            indexMap = getCellsUnderLine(start, end, false);
+            for (unsigned int x = indexMap.minX() ; x <= indexMap.maxX() ; ++x){
+                auto yRanges = indexMap.getColumn(x);
+                for(const auto& yRange : yRanges){
+                    for (int y = yRange.first ; y <= yRange.second ; ++y)
+                        cells.insert( std::make_pair(x, y) );
+                }
+            }
+        }
+        for(auto cell : cells)
+            cellsList.emplace_back( GridCellOverlap(cell.first, cell.second, 1.0) );
         return cellsList;
     }
 
@@ -997,16 +1012,16 @@ std::vector< GridmapLayout::GridCellOverlap > GridmapLayout::getCellsOverlapUnde
                 lastY = max_y;
                 for (int y = min_y ; y <= max_y ; ++y){
                     getCellPolygon(x,y,cellPoly);
-
+                    double overlap;
                     if ( width > m_cellsize*4.0 && arolib::geometry::in_polygon(cellPoly, linePoly) ) //is more time-efficient to check this before instead of calculating direcly the area, assuming that most of the cells in the map are inside the polygon
-                        areaIntersection = areaCell;
+                        overlap = 1.0;
                     else{
                         areaIntersection = 0;
                         intersections = arolib::geometry::get_likely_intersection(linePoly, cellPoly, m_cellsize*1e-3);
                         for (unsigned int k = 0 ; k < intersections.size() ; ++k)
                             areaIntersection += std::min( arolib::geometry::calc_area( intersections.at(k) ), areaCell );
+                        overlap = std::min( areaIntersection/areaCell, 1.0 );
                     }
-                    double overlap = std::min( areaIntersection/areaCell, 1.0 );
                     cellsList.emplace_back(  GridCellOverlap(x,y,overlap) );
                 }
             }
@@ -1022,6 +1037,8 @@ std::vector< GridmapLayout::GridCellOverlap > GridmapLayout::getCellsOverlapUnde
                                                                                          double width,
                                                                                          const Polygon& boundary) const
 {
+    if(width <= 0)
+        return getCellsOverlapUnderLine_v1(start, end, width, boundary);
     auto linePoly = arolib::geometry::createRectangleFromLine(start, end, width);
     return getCellsOverlapUnderPolygon(linePoly, boundary);
 }

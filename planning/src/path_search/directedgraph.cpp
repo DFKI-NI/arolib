@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,12 +16,12 @@
  
 #include "arolib/planning/path_search/directedgraph.hpp"
 
-#include <boost/geometry/geometries/register/point.hpp>
-#include <boost/geometry/geometries/register/linestring.hpp>
-#include <boost/geometry/geometries/register/ring.hpp>
+#include <fstream>
 #include <limits>       // std::numeric_limits
 
-#define DEBUG_GRAPH
+#include <arolib/geometry/geometry_helper.hpp>
+
+//#define DEBUG_GRAPH
 
 
 namespace arolib{
@@ -354,7 +354,7 @@ bool Graph::saveVisitSchedule(const std::string &filename, char sep) const
         << "time_in" << sep
         << "time_out" << sep
         << "timestamp" << sep
-        << "next_tvs" << std::endl;
+        << "next_tvs\n";
 
     for(DirectedGraph::vertex_iter it_vt = boost::vertices(*this); it_vt.first != it_vt.second; it_vt.first++){
         const vertex_property& v_prop = (*this)[*it_vt.first];
@@ -371,7 +371,7 @@ bool Graph::saveVisitSchedule(const std::string &filename, char sep) const
                 << vp.time_in << sep
                 << vp.time_out << sep
                 << vp.timestamp << sep
-                << nextVts << std::endl;
+                << nextVts << "\n";
         }
     }
 
@@ -391,7 +391,7 @@ bool Graph::saveVerticesInfo(const std::string &filename, char sep) const
         << "Point.x" << sep << "Point.y" << sep
         << "Graph_loc" << sep
         << "RP_type" << sep
-        << "timestamp" << std::endl;
+        << "timestamp\n";
 
     for(DirectedGraph::vertex_iter it_vt = boost::vertices(*this); it_vt.first != it_vt.second; it_vt.first++){
         const vertex_property& v_prop = (*this)[*it_vt.first];
@@ -400,7 +400,7 @@ bool Graph::saveVerticesInfo(const std::string &filename, char sep) const
             << v_prop.route_point.point().toStringCSV(sep, 10) << sep
             << v_prop.graph_location << sep
             << rp.type << sep
-            << rp.time_stamp << std::endl;
+            << rp.time_stamp << "\n";
     }
 
     out.close();

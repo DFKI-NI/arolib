@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -43,9 +43,6 @@ LoggingComponent::LoggingComponent(arolib::LogLevel logLevel, const std::string 
 
 LoggingComponent::LoggingComponent(std::shared_ptr<Logger> parentLogger, const std::string &baseName)
     : m_logger(std::make_shared<Logger>(parentLogger, baseName)){}
-
-LoggingComponent::LoggingComponent(const LoggingComponent &other)
-    : m_logger(other.m_logger){}
 
 void LoggingComponent::setTemporalLoggersParent(LoggingComponent::LoggersHandler &lh, const LoggingComponent &parent, const LoggingComponent &item)
 {

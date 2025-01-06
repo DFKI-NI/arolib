@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,14 @@
 */
  
 #include "arolib/planning/path_search/graph_building_info.hpp"
+
+#include <fstream>
+#include <boost/algorithm/string.hpp>
+
+#include "arolib/misc/basicconversions.hpp"
+
+#include <arolib/misc/filesystem_helper.h>
+#include <arolib/types/coordtransformer.hpp>
 
 namespace arolib{
 namespace DirectedGraph{
@@ -50,7 +58,7 @@ bool GraphBuildingInfoManager::saveEdgesInfo(const std::string &filename)
         return false;
     }
 
-    auto dir = io::getPathToFile(filename);
+    auto dir = io::get_path_to_file(filename);
     if(!dir.empty())
         io::create_directory(dir);
     std::ofstream file(filename);
@@ -68,7 +76,7 @@ bool GraphBuildingInfoManager::saveEdgesInfo(const std::string &filename)
             << "p_to" << tab << tab
             << "vt_from_type" << tab
             << "vt_to_type" << tab
-            << "bidirectional" << std::endl;
+            << "bidirectional\n";
 
     for(auto &info : m_edgesInfo){
         Point p0Geo = info.p_from, p1Geo = info.p_to;
@@ -83,7 +91,7 @@ bool GraphBuildingInfoManager::saveEdgesInfo(const std::string &filename)
              << p1Geo.x << tab << p1Geo.y << tab
              << info.vt_from_type << tab
              << info.vt_to_type << tab
-             << info.bidirectional << tab << std::endl;
+             << info.bidirectional << tab << "\n";
     }
 
     file.close();

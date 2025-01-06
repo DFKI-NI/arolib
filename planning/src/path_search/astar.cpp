@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,8 +13,16 @@
  * See the License for the specific language governing permissions and
  * limitations under the License
 */
- 
+
 #include "arolib/planning/path_search/astar.hpp"
+
+
+#include <fstream>
+
+#include "arolib/misc/filesystem_helper.h"
+#include "arolib/types/track.hpp"
+#include "arolib/geometry/geometry_helper.hpp"
+
 
 
 namespace arolib{
@@ -307,6 +315,11 @@ bool Astar::hasPlan() const {
 
 const AstarPlan &Astar::getPlan() const {
     return m_result;
+}
+
+void Astar::swapPlan(AstarPlan &other)
+{
+    std::swap(m_result, other);
 }
 
 const std::string &Astar::filename_expansionAttempts() {
@@ -1077,7 +1090,7 @@ void Astar::saveExpansionAttempts(const DirectedGraph::Graph &graph)
 
         const std::string sep = ";";
 
-        of << "+VERTICES" << std::endl;
+        of << "+VERTICES\n";
         for(DirectedGraph::vertex_iter vp = vertices(graph); vp.first != vp.second; vp.first++){
             const DirectedGraph::vertex_property& v_prop = graph[*vp.first];
             const RoutePoint &rp = v_prop.route_point;
@@ -1088,11 +1101,11 @@ void Astar::saveExpansionAttempts(const DirectedGraph::Graph &graph)
                 << rp.time_stamp << sep
                 << rp.type << sep
                 << v_prop.graph_location << sep
-                << std::endl;
+                << "\n";
         }
-        of << "-VERTICES" << std::endl;
+        of << "-VERTICES\n";
 
-        of << "+EDGES" << std::endl;
+        of << "+EDGES\n";
         for(DirectedGraph::edge_iter ed = edges(graph); ed.first != ed.second; ed.first++){
             const DirectedGraph::edge_property& prop = graph[*ed.first];
             auto vt1 = source(*ed.first, graph);
@@ -1103,22 +1116,22 @@ void Astar::saveExpansionAttempts(const DirectedGraph::Graph &graph)
                 << prop.defWidth << sep
                 << prop.distance << sep
                 << prop.overruns.size() << sep
-                << std::endl;
+                << "\n";
         }
-        of << "-EDGES" << std::endl;
+        of << "-EDGES\n";
 
-        of << "+PARAMETERS" << std::endl;
-        of << "start_vt:" << m_parameters.start_vt << std::endl;
-        of << "goal_vt:" << m_parameters.goal_vt << std::endl;
-        of << "start_time:" << m_parameters.start_time << std::endl;
-        of << "machine_id:" << m_parameters.machine.id << std::endl;
-        of << "machine_weight:" << m_parameters.machine.weight << std::endl;
-        of << "machine_speed:" << m_parameters.machine_speed << std::endl;
-        of << "initial_olv_bunker_mass:" << m_parameters.initial_bunker_mass << std::endl;
-        of << "includeWaitInCost:" << m_parameters.includeWaitInCost << std::endl;
-        of << "-PARAMETERS" << std::endl;
+        of << "+PARAMETERS" << "\n";
+        of << "start_vt:" << m_parameters.start_vt << "\n";
+        of << "goal_vt:" << m_parameters.goal_vt << "\n";
+        of << "start_time:" << m_parameters.start_time << "\n";
+        of << "machine_id:" << m_parameters.machine.id << "\n";
+        of << "machine_weight:" << m_parameters.machine.weight << "\n";
+        of << "machine_speed:" << m_parameters.machine_speed << "\n";
+        of << "initial_olv_bunker_mass:" << m_parameters.initial_bunker_mass << "\n";
+        of << "includeWaitInCost:" << m_parameters.includeWaitInCost << "\n";
+        of << "-PARAMETERS\n";
 
-        of << "+ATTEMPTS" << std::endl;
+        of << "+ATTEMPTS\n";
         for(const auto& ead : m_expansionAttempts){
             of << std::setprecision(10)
                << ead.count << sep
@@ -1134,7 +1147,7 @@ void Astar::saveExpansionAttempts(const DirectedGraph::Graph &graph)
                << ead.current_vt_data.point.x << sep
                << ead.current_vt_data.point.y << sep
                << ead.successor_vts_data.size()
-               << std::endl;
+               << "\n";
             for(const auto& easd : ead.successor_vts_data){
                 of << std::setprecision(10)
                    << easd.vt << sep
@@ -1147,10 +1160,10 @@ void Astar::saveExpansionAttempts(const DirectedGraph::Graph &graph)
                    << easd.min_time << sep
                    << easd.busy_time << sep
                    << easd.tentative_time
-                   << std::endl;
+                   << "\n";
             }
         }
-        of << "-ATTEMPTS" << std::endl;
+        of << "-ATTEMPTS\n";
 
         of.close();
 
@@ -1172,19 +1185,19 @@ void Astar::writeToDebugFile(const DirectedGraph::Graph &graph,
     std::ofstream ofStart("start.dat");
     ofStart << std::setprecision(12);
     ofStart << graph[start].route_point.x << " "
-            << graph[start].route_point.y << std::endl;
+            << graph[start].route_point.y << "\n";
     ofStart.close();
 
     std::ofstream ofGoal("goal.dat");
     ofGoal << std::setprecision(12);
     ofGoal << graph[goal].route_point.x << " "
-           << graph[goal].route_point.y << std::endl;
+           << graph[goal].route_point.y << "\n";
     ofGoal.close();
 
     std::ofstream ofCurrent("current.dat");
     ofCurrent << std::setprecision(12);
     ofCurrent << graph[current.current_node].route_point.x << " "
-                                                                 << graph[current.current_node].route_point.y << std::endl;
+                                                                 << graph[current.current_node].route_point.y << "\n";
     ofCurrent.close();
 
     std::ofstream ofOpenList("openList.dat");
@@ -1192,7 +1205,7 @@ void Astar::writeToDebugFile(const DirectedGraph::Graph &graph,
     for (auto &node : open_list) {
         ofOpenList << graph[node.second.current_node].route_point.x << " "
                                                                           << graph[node.second.current_node].route_point.y << " "
-                                                                          << node.first << std::endl;
+                                                                          << node.first << "\n";
     }
     ofOpenList.close();
 
@@ -1203,7 +1216,7 @@ void Astar::writeToDebugFile(const DirectedGraph::Graph &graph,
                                                                      << graph[node.second.current_node].route_point.y << " "
                                                                      << node.second.g+node.second.h << " "
                                                                      << node.second.g << " "
-                                                                     << node.second.h << " " << std::endl;
+                                                                     << node.second.h << " " << "\n";
     }
     ofClosedList.close();
 }

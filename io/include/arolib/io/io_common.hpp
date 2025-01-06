@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,6 @@
  
 #ifndef AROLIB_IO_COMMON_HPP
 #define AROLIB_IO_COMMON_HPP
-
-#include "arolib/misc/basicconversions.hpp"
 
 namespace arolib {
 namespace io {

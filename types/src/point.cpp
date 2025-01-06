@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,11 +14,16 @@
  * limitations under the License
 */
  
-#include "arolib/types/point.hpp"
-#include <iostream>
+
+#include <cmath>
 #include <sstream>
-#include <iomanip>
+#include <boost/functional/hash.hpp>
+#include <boost/tokenizer.hpp>
+#include <boost/algorithm/string.hpp>
+
+#include "arolib/types/point.hpp"
 #include "arolib/types/units.hpp"
+#include "arolib/misc/basicconversions.hpp"
 
 namespace arolib {
 
@@ -157,6 +162,35 @@ double Point::bearing(const Point &p0_geo, const Point &p1_geo)
     return brng;
 }
 
+bool Point::fromString(std::string str)
+{
+    try{
+        str.erase(std::remove_if(str.begin(), str.end(), [](char c)->bool{
+            return !( ( c >= 48 && c <= 57 )
+                      || std::string(",.-").find(c) != std::string::npos );
+        }), str.end());
+
+        std::vector<std::string> xyz;
+        boost::split(xyz, str, boost::is_any_of(", "));
+
+        Point pt_in = *this;
+        if( xyz.size() != 2 && xyz.size() != 3 )
+            return false;
+        pt_in.x = string2double(xyz[0]);
+        pt_in.y = string2double(xyz[1]);
+        if (xyz.size() == 3)
+            pt_in.z = string2double(xyz[2]);
+
+        x = pt_in.x;
+        y = pt_in.y;
+        z = pt_in.z;
+        return true;
+    }
+    catch(...){
+        return false;
+    }
+}
+
 
 
 std::string Point::toString(int precision, bool incZ) const
@@ -232,6 +266,19 @@ bool Point::isValid() const
 Point Point::invalidPoint()
 {
     return Point(std::nan("1"), std::nan("1"));
+}
+
+Point operator*(const Point &pt, double scale) {
+    Point result;
+    result.x = pt.x * scale;
+    result.y = pt.y * scale;
+    result.z = pt.z * scale;
+    return result;
+}
+
+std::ostream &operator<<(std::ostream &ostr, const Point &pt) {
+    ostr <<  std::setprecision(10) << "(" << pt.x << ", " << pt.y << ")";
+    return ostr;
 }
 
 }

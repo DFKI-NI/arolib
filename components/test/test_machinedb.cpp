@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@
 #include <iostream>
 
 #include "arolib/types/machine.hpp"
+#include "arolib/misc/filesystem_helper.h"
 #include "arolib/components/machinedb.h"
 
 BOOST_AUTO_TEST_SUITE(test_machinedb)
@@ -28,7 +29,7 @@ BOOST_AUTO_TEST_CASE(test1)
     using namespace arolib;
 
     const std::string arolib_src(getenv("AROLIB_AROLIB_ROOT"));
-    std::string machine_dir = arolib_src + "/testdata/machines";
+    std::string machine_dir = io::create_path(arolib_src, "testdata", "machines");
     MachineDB machinedb(machine_dir);
     machinedb.setCSVHeaderTags({{MachineDB::EntryTag::TAG_MACHINE_TYPE, "type"}});
     machinedb.readFiles();

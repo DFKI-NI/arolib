@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,9 +17,6 @@
 #ifndef AROLIB_ASTAR_PLAN_HPP
 #define AROLIB_ASTAR_PLAN_HPP
 
-#include <vector>
-
-#include "arolib/types/route_point.hpp"
 #include "arolib/planning/path_search/directedgraph.hpp"
 
 namespace arolib{
@@ -35,13 +32,31 @@ public:
      */
     explicit AstarPlan() = default;
 
+
+    /**
+     * @brief Adjust the FIELD_ENTRY/FIELD_EXIT route-point types
+     *
+     * The planned route might use interchangeably the entry/exit types (i.e. a FIELD_ENTRY might be actually a FIELD_EXIT and viceversa), so we assume that the last entry/exit route point is an EXIT or ENTRY point, and from then they must be ENTRY/EXIT/ENTRY/EXIT/etc or EXIT/ENTRY/EXIT/ENTRY/etc...
+     * @param firstAccessIsExit Treat first access point found as exit (if true) or entry (if false)
+     * @param startFromFront Start checking the route points fron the first one (true) or from the last one in reverse (false)
+    */
+    void adjustAccessPoints(bool firstAccessIsExit, bool startFromFront);
+
     /**
      * @brief Adjust the FIELD_ENTRY/FIELD_EXIT route-point types
      *
      * The planned route might use interchangeably the entry/exit types (i.e. a FIELD_ENTRY might be actually a FIELD_EXIT and viceversa), so we assume that the last entry/exit route point is an EXIT or ENTRY point, and from then they must be ENTRY/EXIT/ENTRY/EXIT/etc or EXIT/ENTRY/EXIT/ENTRY/etc...
      * @param lastAccessIsExist Treat last access point as exit (if true) or entry (if false)
     */
-    void adjustAccessPoints(bool lastAccessIsExit);
+    void adjustAccessPointsFromLast(bool lastAccessIsExit);
+
+    /**
+     * @brief Adjust the FIELD_ENTRY/FIELD_EXIT route-point types
+     *
+     * The planned route might use interchangeably the entry/exit types (i.e. a FIELD_ENTRY might be actually a FIELD_EXIT and viceversa), so we assume that the last entry/exit route point is an EXIT or ENTRY point, and from then they must be ENTRY/EXIT/ENTRY/EXIT/etc or EXIT/ENTRY/EXIT/ENTRY/etc...
+     * @param firstAccessIsExit Treat first access point as exit (if true) or entry (if false)
+    */
+    void adjustAccessPointsFromFirst(bool firstAccessIsExit);
 
     /**
      * @brief Update the graph data (edge overruns, vertex visiting periods, ...) with the current plan.

@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,13 +15,14 @@
 */
  
 #include <boost/test/unit_test.hpp>
+
 #include <boost/test/tools/floating_point_comparison.hpp>
 #include <boost/filesystem.hpp>
-#include <iostream>
-#include <chrono>
-#include <string>
+
+// #include <chrono>
 
 #include "arolib/geometry/tracksgenerator.h"
+#include "arolib/types/coordtransformer.hpp"
 #include "arolib/io/io_kml.hpp"
 
 BOOST_AUTO_TEST_SUITE(test_tracksGenerator)

@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,14 @@
 */
 
 #include "arolib/geometry/curves_helper.hpp"
-#include "arolib/types/units.hpp"
+
+#include <algorithm>
+
+#include "arolib/geometry/3rdParty/dubins/dubins.h"
+#include "arolib/geometry/3rdParty/bezier/bezier.h"
+#include "arolib/geometry/3rdParty/spline/splines.hpp"
+
+#include "arolib/geometry/geometry_helper.hpp"
 
 namespace arolib{
 

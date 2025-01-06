@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,28 +17,7 @@
 #ifndef AROLIB_FILELGEOMETRYPROCESSOR_H
 #define AROLIB_FILELGEOMETRYPROCESSOR_H
 
-#include <unistd.h>
-#include <iostream>
-#include <math.h>
-#include <string>
-#include <functional>
-
-#include "arolib/misc/loggingcomponent.h"
-#include "arolib/misc/basic_responses.h"
-#include "arolib/types/machine.hpp"
-#include "arolib/types/machinedynamicinfo.hpp"
-#include "arolib/types/coordtransformer.hpp"
-#include "arolib/geometry/geometry_helper.hpp"
-#include "arolib/geometry/field_geometry_processing.hpp"
 #include "arolib/geometry/tracksgenerator.h"
-#include "arolib/planning/edge_calculators/edgeMassCalculator.hpp"
-#include "arolib/planning/edge_calculators/edgeSpeedCalculator.hpp"
-#include "arolib/planning/planningworkspace.h"
-#include "arolib/planning/aro_functions.hpp"
-#include "arolib/planning/generalplanningparameters.hpp"
-#include "arolib/cartography/common.hpp"
-#include "arolib/io/io_xml.hpp"
-#include "arolib/io/io_kml.hpp"
 
 
 namespace arolib {
@@ -46,7 +25,7 @@ namespace arolib {
 /**
  * @brief Class used to process the field geometries: generate the headland geometries (inner-field boundaries, headland tracks, etc.) and the inner-field tracks
  */
-class FieldGeometryProcessor : public LoggingComponent, protected PlanningWorkspaceAccessor
+class FieldGeometryProcessor : public LoggingComponent
 {
 public:
 

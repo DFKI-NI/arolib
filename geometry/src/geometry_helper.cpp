@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,15 @@
 */
 
 #include "arolib/geometry/geometry_helper.hpp"
+
+#include <boost/geometry/geometries/register/point.hpp>
+#include <boost/geometry/geometries/register/linestring.hpp>
+#include <boost/geometry/geometries/register/ring.hpp>
+
+#include <limits.h>
+
+#include "arolib/types/coordtransformer.hpp"
+#include "arolib/geometry/3rdParty/clipper/clipper.hpp"
 
 BOOST_GEOMETRY_REGISTER_POINT_2D(arolib::Point, double, boost::geometry::cs::cartesian, x, y)
 BOOST_GEOMETRY_REGISTER_RING(std::vector<arolib::Point>)
@@ -97,16 +106,16 @@ void correct_angle(double &ang, bool inDeg, bool onlyPositive){
         ang = rad2deg(ang);
 }
 
-double get_angle(const Point &p0, const Point &p1, bool inDeg, bool limit)
+double get_angle(const Point &p0, const Point &p1, bool inDeg, bool asLines)
 {
     double angle = std::atan2( (p1.y - p0.y) , (p1.x - p0.x) );
 
     if(angle == -M_PI)
         angle = M_PI;
 
-    if (limit){
-        if (angle<-M_PI_2) angle+=M_PI_2;
-        else if (angle>M_PI_2) angle-=M_PI_2;
+    if (asLines){
+        if (angle<-M_PI_2) angle+=M_PI;
+        else if (angle>M_PI_2) angle-=M_PI;
     }
     if (inDeg)
         return rad2deg(angle);
@@ -119,7 +128,7 @@ double get_angle(const Point &p1_0,
                  const Point &p2_0,
                  const Point &p2_1,
                  bool inDeg,
-                 bool limit)
+                 bool asLines)
 {
     if(p1_0 == p1_1 || p2_0 == p2_1)
         return 0;
@@ -134,7 +143,7 @@ double get_angle(const Point &p1_0,
     if(angle < - M_PI)
         angle += 2 * M_PI;
 
-    if (limit){
+    if (asLines){
         if (angle<-M_PI_2) angle+=M_PI;
         else if (angle>M_PI_2) angle-=M_PI;
     }
@@ -145,9 +154,9 @@ double get_angle(const Point &p1_0,
 
 }
 
-double get_angle(const Point &p1, const Point &pivot, const Point &p2, bool inDeg, bool limit)
+double get_angle(const Point &p1, const Point &pivot, const Point &p2, bool inDeg, bool asLines)
 {
-    return get_angle(pivot, p1, pivot, p2, inDeg, limit);
+    return get_angle(pivot, p1, pivot, p2, inDeg, asLines);
 }
 
 double get_bearing(const Point &p0, const Point &p1, bool inUTM){
@@ -161,6 +170,34 @@ double get_bearing(const Point &p0, const Point &p1, bool inUTM){
     }
 
     return Point::bearing(p0_geo, p1_geo);
+}
+
+Pose2D getAngleBisectionPose(const Point &p1, const Point &pivot, const Point &p2, bool inDeg, bool bisectPositiveAngle)
+{
+    Pose2D pose(pivot);
+    if(calc_dist(pivot, p1) == 0){
+        if(calc_dist(pivot, p2) == 0){
+            pose.angle = 0;
+            return pose;
+        }
+        pose.angle = get_angle(pivot, p2, inDeg);
+        return pose;
+    }
+    if(calc_dist(pivot, p2) == 0){
+        pose.angle = get_angle(pivot, p1, inDeg);
+        return pose;
+    }
+
+    double ang = get_angle(p1, pivot, p2, false);
+    if(bisectPositiveAngle && ang <= 0)
+        ang += 2*M_PI;
+
+    pose.angle = get_angle(pivot, p1, false) + 0.5 * ang;
+    correct_angle(pose.angle);
+
+    if(inDeg)
+        pose.angle = rad2deg(pose.angle);
+    return pose;
 }
 
 bool getNormVector(const Point &p0, const Point &p1, double &dX, double &dY, double length){
@@ -1510,9 +1547,9 @@ std::vector<Polygon> extractSubPolygons(const Polygon &_poly_in)
                 }
                 i--;
 
-//                  std::cout << std::setprecision(12) << "boundary out tmp - ear removed" << std::endl;
+//                  std::cout << std::setprecision(12) << "boundary out tmp - ear removed" << "\n";
 //                  for(int i = 0 ; i < poly.points.size() ; ++i)
-//                      std::cout << poly.points.at(i).x << ";"  << poly.points.at(i).y << std::endl;
+//                      std::cout << poly.points.at(i).x << ";"  << poly.points.at(i).y << "\n";
 //                  std::cout << "- ear removed" << std::endl;
 
                 break;
@@ -2676,17 +2713,17 @@ void get_union(const Polygon &outer1,
     boost::geometry::correct(boostPoly2);
 
 
-//      std::cout << std::setprecision(12) << "boostPoly1" << std::endl;
+//      std::cout << std::setprecision(12) << "boostPoly1" << "\n";
 //      for(int i = 0 ; i < boostPoly1.outer().size() ; ++i)
-//          std::cout << boostPoly1.outer().at(i).x() << ";"  << boostPoly1.outer().at(i).y() << std::endl;
+//          std::cout << boostPoly1.outer().at(i).x() << ";"  << boostPoly1.outer().at(i).y() << "\n";
 //      std::cout << "-boostPoly1" << std::endl;
 //      if(!boostPoly1.inners().empty())
 //          std::cout << "boostPoly1 inners not empty" << std::endl;
 
 
-//      std::cout << std::setprecision(12) << "boostPoly2" << std::endl;
+//      std::cout << std::setprecision(12) << "boostPoly2" << "\n";
 //      for(int i = 0 ; i < boostPoly2.outer().size() ; ++i)
-//          std::cout << boostPoly2.outer().at(i).x() << ";"  << boostPoly2.outer().at(i).y() << std::endl;
+//          std::cout << boostPoly2.outer().at(i).x() << ";"  << boostPoly2.outer().at(i).y() << "\n";
 //      std::cout << "-boostPoly2" << std::endl;
 //      if(!boostPoly2.inners().empty())
 //          std::cout << "boostPoly2 inners not empty" << std::endl;

@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,9 @@
 */
  
 #include "arolib/planning/route_planner_standalone_machines.hpp"
+
+#include "arolib/misc/filesystem_helper.h"
+#include "arolib/planning/path_search/graphhelper.hpp"
 
 namespace arolib{
 
@@ -39,7 +42,6 @@ void RoutePlannerStandaloneMachines::PlanData::init(const DirectedGraph::Graph &
     routes = _routes;
     planCosts = std::vector<double>(routes.size(), 0);
     workingWindows.clear();
-
 }
 
 void RoutePlannerStandaloneMachines::PlanData::updateOverallCost()
@@ -47,27 +49,6 @@ void RoutePlannerStandaloneMachines::PlanData::updateOverallCost()
     planOverallCost = 0;
     for(auto &c : planCosts)
         planOverallCost += c;
-}
-
-void RoutePlannerStandaloneMachines::PlanData::updateWorkingWindows(size_t indRoute, size_t indRef, int deltaInd)
-{
-    updateWorkingWindows(workingWindows, indRoute, indRef, deltaInd);
-}
-
-void RoutePlannerStandaloneMachines::PlanData::updateWorkingWindows(std::map<size_t, std::vector<RoutePlannerStandaloneMachines::PlanData::WorkingWindowInfo> > &working, size_t indRoute, size_t indRef, int deltaInd)
-{
-    auto it_r = working.find(indRoute);
-    if(it_r == working.end())
-        return;
-
-    std::vector<WorkingWindowInfo> &uws = it_r->second;
-    for(auto& uw : uws){
-        if(uw.indStart >= indRef){
-            uw.indStart += deltaInd;
-            uw.indFinish += deltaInd;
-        }
-    }
-
 }
 
 bool RoutePlannerStandaloneMachines::PlannerSettings::parseFromStringMap(RoutePlannerStandaloneMachines::PlannerSettings &params, const std::map<std::string, std::string> &map, bool strict)
@@ -80,12 +61,17 @@ bool RoutePlannerStandaloneMachines::PlannerSettings::parseFromStringMap(RoutePl
     if( !ASP_GeneralSettings::parseFromStringMap(tmp, map, strict) )
         return false;
 
+    int finishPointOption = tmp.finishPointOption;
+
     std::map<std::string, double*> dMap = { {"maxPlanningTime" , &tmp.maxPlanningTime} };
-    std::map<std::string, bool*> bMap = { {"finishAtResourcePoint" , &tmp.finishAtResourcePoint} };
+
+    std::map<std::string, int*> enumMap = { {"finishPointOption" , &finishPointOption} };
 
     if( !setValuesFromStringMap( map, dMap, strict)
-            || !setValuesFromStringMap( map, bMap, strict))
+            || !setValuesFromStringMap( map, enumMap, strict))
         return false;
+
+    tmp.finishPointOption = RoutePlannerStandaloneMachines::intToFinishPointOption( finishPointOption );
 
     params = tmp;
     return true;
@@ -105,10 +91,23 @@ std::map<std::string, std::string> RoutePlannerStandaloneMachines::PlannerSettin
     return ret;
 }
 
+RoutePlannerStandaloneMachines::FinishPointOption RoutePlannerStandaloneMachines::intToFinishPointOption(int value)
+{
+    if(value == FinishPointOption::FINISH_AT_FIELD_EXIT)
+        return FinishPointOption::FINISH_AT_FIELD_EXIT;
+    else if(value == FinishPointOption::FINISH_AT_RESOURCE_POINT)
+        return FinishPointOption::FINISH_AT_RESOURCE_POINT;
+    else if(value == FinishPointOption::FINISH_IN_FIELD)
+        return FinishPointOption::FINISH_IN_FIELD;
+
+    throw std::invalid_argument( "The given value does not correspond to any RoutePlannerStandaloneMachines::FinishPoint" );
+}
+
 RoutePlannerStandaloneMachines::RoutePlannerStandaloneMachines(const DirectedGraph::Graph &graph,
                                                                const std::vector<Route> &baseRoutes,
                                                                const std::vector<Machine> &machines,
                                                                const std::map<MachineId_t, MachineDynamicInfo> &machineCurrentStates,
+                                                               const std::map<ResourcePointId_t, ResourcePointState> &resourcePointCurrentStates,
                                                                const Polygon &boundary,
                                                                const RoutePlannerStandaloneMachines::PlannerSettings &settings,
                                                                std::shared_ptr<IEdgeCostCalculator> edgeCostCalculator,
@@ -117,6 +116,7 @@ RoutePlannerStandaloneMachines::RoutePlannerStandaloneMachines(const DirectedGra
     LoggingComponent(logLevel, __FUNCTION__),
     m_graph(graph),
     m_machineInitialStates(machineCurrentStates),
+    m_resourcePointCurrentStates(resourcePointCurrentStates),
     m_boundary(boundary),
     m_settings(settings),
     m_edgeCostCalculator(edgeCostCalculator),
@@ -202,13 +202,13 @@ std::string RoutePlannerStandaloneMachines::planAll(MaterialFlowType materialFlo
     }
 
     reset();
-    std::string resp = calcWorkingWindows(materialFlowType, m_currentPlan);
+    std::string resp = initWorkingWindows(materialFlowType, m_currentPlan);
     if(!resp.empty())
-        return "Error computing the working windows: " + resp;
+        return "Error computing the initial working windows: " + resp;
 
     initRoutesBunkerMasses(m_currentPlan, materialFlowType);
 
-    addOverruns(m_currentPlan);
+    addInitialOverruns(m_currentPlan);
 
     if(m_settings.collisionAvoidanceOption != Astar::WITHOUT_COLLISION_AVOIDANCE)
         addInitialVisitPeriods(m_currentPlan);
@@ -217,10 +217,6 @@ std::string RoutePlannerStandaloneMachines::planAll(MaterialFlowType materialFlo
     resp = planTrips(m_currentPlan, materialFlowType, transitRestriction);
     if(!resp.empty())
         return "Error computing the unload trips: " + resp;
-
-
-    if(m_settings.collisionAvoidanceOption != Astar::WITHOUT_COLLISION_AVOIDANCE)
-        addFinalVisitPeriods(m_currentPlan);
 
 
     m_currentPlan.planOK = true;
@@ -235,134 +231,154 @@ std::vector<Route> RoutePlannerStandaloneMachines::getPlannedRoutes()
     return m_bestPlan.routes;
 }
 
-std::string RoutePlannerStandaloneMachines::calcWorkingWindows(MaterialFlowType materialFlowType, PlanData &plan)
+std::string RoutePlannerStandaloneMachines::getNextWorkingWindow(MaterialFlowType materialFlowType, const Route& route, size_t indPtFrom, double bunker_mass, double bunker_vol, PlanData::WorkingWindowInfo &workingWindow, bool &finished)
 {
-    //@todo include volume computations
+    finished = true;
 
-    //the routes are already initialized with the original (base) routes
+    if(materialFlowType == NEUTRAL_MATERIAL_FLOW)//no transportation needed -> no working windows
+        return ""; //ok
 
-    plan.workingWindows.clear();
+    double machineMaxCapacityMultiplier = (materialFlowType == INPUT_MATERIAL_FLOW ? MachineMaxCapacityMultiplier_InputFlow : MachineMaxCapacityMultiplier_OutputFlow);
+
+    auto& route_points = route.route_points;
+
+    if(indPtFrom >= route_points.size())
+        return ""; //ok
+
+    auto it_m = m_machines.find(route.machine_id);
+    if(it_m == m_machines.end()){
+        reset();
+        logger().printOut(LogLevel::ERROR, __FUNCTION__, 10, "Machine with id " , route.machine_id, " was not given");
+        return "Machine with id " + std::to_string(route.machine_id) + " was not given";
+    }
+
+    Machine &machine = it_m->second;
+
+    bool checkMass = bunker_mass > -1e-6 && machine.bunker_mass > -1e-6;
+    bool checkVol = bunker_vol > -1e-6 && machine.bunker_volume > -1e-6;
+
+    if(machine.bunker_mass < 1e-6 && machine.bunker_volume < 1e-6){//if the machine has no bunker capacity, don't plan transportation
+        return ""; //ok  (or should we return error?)
+        //return "The machine has no valid bunker capacity"; //ok  (or should we return error?)
+    }
+
+    if(!checkMass && !checkVol)
+        return "Invalid bunker capacities";
+
+
+    double usedBunkerMassCapacity = 0, usedBunkerVolumeCapacity = 0; //Note: for input material flow operations, the 'used' level is the empty part of the bunker, hence the complement operation
+    if(checkMass)
+        usedBunkerMassCapacity = ( materialFlowType == MaterialFlowType::INPUT_MATERIAL_FLOW ? machine.bunker_mass - bunker_mass : bunker_mass);
+    if(checkVol)
+        usedBunkerVolumeCapacity = ( materialFlowType == MaterialFlowType::INPUT_MATERIAL_FLOW ? machine.bunker_volume - bunker_vol : bunker_vol);
+
+    size_t maxIndPt = route.route_points.size()-1;
+
+    bool firstRound = indPtFrom == 0;//for cases when the machine has to go directly to unload    //or should we receive that as parameter in case the first round does not start with pt index == 0?
+
+
+    size_t ind0 = maxIndPt+1;
+    for(size_t j = indPtFrom ; j <= maxIndPt ; ++j){
+        if(j+1 <= maxIndPt && route_points.at(j).point() == route_points.at(j+1).point())//check for repeated points corresponding to turning times
+            continue;
+        if(route_points.at(j).isOfTypeWorking_InTrack(true, true) || route_points.at(j).type == RoutePoint::TRACK_START ){
+            ind0 = j;
+            break;
+        }
+    }
+    if(ind0+1 > maxIndPt)//nothing else to work
+        return ""; //ok;
+
+    finished = false;
+
+    auto rp0 = route_points.at(ind0);
+
+    size_t ind1;
+    for(ind1 = ind0+1 ; ind1 <= maxIndPt ; ++ind1){
+        if( route_points.at(ind1).worked_mass - rp0.worked_mass > machineMaxCapacityMultiplier * machine.bunker_mass - usedBunkerMassCapacity ){
+
+            if(firstRound || ind1-1 > ind0)
+                --ind1;
+
+            while(ind1 > ind0
+                  && !( route_points.at(ind1).isOfTypeWorking_InTrack(true) || route_points.at(ind1).type == RoutePoint::TRACK_END )){
+                  --ind1;
+            }
+
+            if(ind1 + firstRound <= ind0)
+                ind1 = ind0+1;
+
+            if( (m_settings.switchOnlyAtTrackEndHL && Track::isHeadlandTrack(route_points.at(ind1).track_id)) ||
+                    (m_settings.switchOnlyAtTrackEnd && Track::isInfieldTrack(route_points.at(ind1).track_id))){
+                auto indTmp = ind1;
+                while(indTmp > ind0 && route_points.at(indTmp).type != RoutePoint::TRACK_END)
+                    --indTmp;
+                if(indTmp + firstRound > ind0)
+                    ind1 = indTmp;
+            }
+            break;
+        }
+    }
+
+    if(ind1 == maxIndPt+1)
+        --ind1;
+
+    workingWindow = PlanData::WorkingWindowInfo();
+    workingWindow.indStart = ind0;
+    workingWindow.indFinish = ind1;
+
+    return ""; //ok
+}
+
+
+std::string RoutePlannerStandaloneMachines::initWorkingWindows(MaterialFlowType materialFlowType, PlanData &plan)
+{
+    //the routes in plan are already initialized with the original (base) routes
+
+    plan.nextWorkingWindows.clear();
     if(materialFlowType == NEUTRAL_MATERIAL_FLOW){//no transportation needed -> working windows
 
 //        for(size_t i = 0 ; i < m_baseRoutes.size() ; ++i){
 //            auto& r = m_baseRoutes.at(i);
 //            auto& route_points = r.route_points;
 
-//            PlanData::WorkingWindowInfo ww;
+//            PlanData::WorkingWindowInfo& ww = plan.workingWindowsNew[i];
 //            ww.indStart = 0;
 //            ww.indFinish = route_points.size()-1;
-
-//            plan.workingWindows[i].emplace_back(ww);
 //        }
         return ""; //ok
     }
 
-    double machineMaxCapacityMultiplier = (materialFlowType == INPUT_MATERIAL_FLOW ? MachineMaxCapacityMultiplier_InputFlow : MachineMaxCapacityMultiplier_OutputFlow);
-
-    for(size_t i = 0 ; i < m_baseRoutes.size() ; ++i){
-        auto& r = m_baseRoutes.at(i);
-        auto& route_points = r.route_points;
-        auto it_m = m_machines.find(r.machine_id);
+    for(size_t i = 0 ; i < plan.routes.size() ; ++i){
+        auto& route = plan.routes.at(i);
+        auto it_m = m_machines.find(route.machine_id);
         if(it_m == m_machines.end()){
             reset();
-            logger().printOut(LogLevel::ERROR, __FUNCTION__, 10, "Machine with id " , r.machine_id, " was not given");
-            return "Machine with id " + std::to_string(r.machine_id) + " was not given";
+            logger().printOut(LogLevel::ERROR, __FUNCTION__, 10, "Machine with id " , route.machine_id, " was not given");
+            return "Machine with id " + std::to_string(route.machine_id) + " was not given";
         }
 
         Machine &machine = it_m->second;
 
-        if(machine.bunker_mass < 1e-5){//if the machine has no bunker capacity, don't plan transportation
+        auto it_mdi = m_machineInitialStates.find(route.machine_id);
 
-//            PlanData::WorkingWindowInfo ww;
-//            ww.indStart = 0;
-//            ww.indFinish = route_points.size()-1;
-//            plan.workingWindows[i].emplace_back(ww);
-
-            continue;
+        //default bunker levels: empty for OUTPUT_MATERIAL_FLOW, full for INPUT_MATERIAL_FLOW
+        double bunker_mass = ( materialFlowType == MaterialFlowType::INPUT_MATERIAL_FLOW ? machine.bunker_mass : 0);
+        double bunker_vol = ( materialFlowType == MaterialFlowType::INPUT_MATERIAL_FLOW ? machine.bunker_volume : 0);
+        if(it_mdi != m_machineInitialStates.end()
+                && ( it_mdi->second.bunkerMass > -1e-6 || it_mdi->second.bunkerVolume > -1e-6 ) ){
+            bunker_mass = it_mdi->second.bunkerMass;
+            bunker_vol = it_mdi->second.bunkerVolume;
         }
 
-        auto it_mdi = m_machineInitialStates.find(r.machine_id);
-        double usedBunkerMassCapacity = 0, usedBunkerVolumeCapacity = 0;
-        if(it_mdi != m_machineInitialStates.end()){
-            usedBunkerMassCapacity = it_mdi->second.bunkerMass;
-            usedBunkerVolumeCapacity = it_mdi->second.bunkerVolume;
-            if(materialFlowType == MaterialFlowType::INPUT_MATERIAL_FLOW){
-                usedBunkerMassCapacity = machine.bunker_mass - usedBunkerMassCapacity; //for input material flow operations, the 'used' level is the empty part of the bunker, hence the complement operation
-                usedBunkerVolumeCapacity = machine.bunker_volume - usedBunkerVolumeCapacity;
-            }
-        }
+        PlanData::WorkingWindowInfo ww;
+        bool finished;
+        auto error = getNextWorkingWindow(materialFlowType, route, 0, bunker_mass, bunker_vol, ww, finished);
+        if(!error.empty())
+            return "Error obtaining initial window for route of machine with id " + std::to_string(route.machine_id) + ": " + error;
 
-        size_t indStartSearch = 0;
-        size_t baseRouteMaxIdx = r.route_points.size()-1;
-
-        bool firstRound = true;//for cases when the machine has to go directly to unload
-        while (1){
-
-            size_t ind0 = baseRouteMaxIdx+1;
-            for(size_t j = indStartSearch ; j <= baseRouteMaxIdx ; ++j){
-                if(j+1 <= baseRouteMaxIdx && route_points.at(j).point() == route_points.at(j+1).point())//check for repeated points corresponding to turning times
-                    continue;
-                if(route_points.at(j).isOfTypeWorking_InTrack(true, true) || route_points.at(j).type == RoutePoint::TRACK_START ){
-                    ind0 = j;
-                    break;
-                }
-            }
-            if(ind0+1 > baseRouteMaxIdx)//nothing else to work
-                break;
-
-            auto rp0 = route_points.at(ind0);
-
-            size_t ind1;
-            for(ind1 = ind0+1 ; ind1 <= baseRouteMaxIdx ; ++ind1){
-                if( route_points.at(ind1).worked_mass - rp0.worked_mass > machineMaxCapacityMultiplier * machine.bunker_mass - usedBunkerMassCapacity ){
-
-                    if(firstRound || ind1-1 > ind0)
-                        --ind1;
-
-                    while(ind1 > ind0
-                          && !( route_points.at(ind1).isOfTypeWorking_InTrack(true) || route_points.at(ind1).type == RoutePoint::TRACK_END )){
-                          --ind1;
-                    }
-
-                    if(ind1 + firstRound <= ind0)
-                        ind1 = ind0+1;
-
-                    if( (m_settings.switchOnlyAtTrackEndHL && Track::isHeadlandTrack(route_points.at(ind1).track_id)) ||
-                            (m_settings.switchOnlyAtTrackEnd && Track::isInfieldTrack(route_points.at(ind1).track_id))){
-                        auto indTmp = ind1;
-                        while(indTmp > ind0 && route_points.at(indTmp).type != RoutePoint::TRACK_END)
-                            --indTmp;
-                        if(indTmp + firstRound > ind0)
-                            ind1 = indTmp;
-                    }
-                    break;
-                }
-            }
-
-            firstRound = false;
-
-            if(ind1 == baseRouteMaxIdx+1)
-                --ind1;
-
-            PlanData::WorkingWindowInfo ww;
-            ww.indStart = ind0;
-            ww.indFinish = ind1;
-
-            plan.workingWindows[i].emplace_back(ww);
-
-            indStartSearch = ind1;
-
-            //update the used bunker capacity depending on how the machine bunker state changes after visiting a resource point between working windows
-            double remainingMass = route_points.back().worked_mass - route_points.at(ww.indFinish).worked_mass;
-            double remainingVol = route_points.back().worked_volume - route_points.at(ww.indFinish).worked_volume;
-            getMachineBunkerStateAfterResourcePoint(machine, materialFlowType,
-                                                    remainingMass, remainingVol,
-                                                    usedBunkerMassCapacity, usedBunkerVolumeCapacity);
-            if(materialFlowType == MaterialFlowType::INPUT_MATERIAL_FLOW){
-                usedBunkerMassCapacity = machine.bunker_mass - usedBunkerMassCapacity; //for input material flow operations, the 'used' level is the empty part of the bunker, hence the complement operation
-                usedBunkerVolumeCapacity = machine.bunker_volume - usedBunkerVolumeCapacity;
-            }
-        }
+        if(!finished)
+            plan.nextWorkingWindows[i] = ww;
 
     }
     return ""; //ok
@@ -379,8 +395,9 @@ std::string RoutePlannerStandaloneMachines::initRoutesBunkerMasses(RoutePlannerS
         double currentBunkerMass, currentBunkerVolume;
         if(it_mdi != m_machineInitialStates.end()){
             currentBunkerMass = it_mdi->second.bunkerMass;
+            currentBunkerVolume = it_mdi->second.bunkerVolume;
         }
-        else{
+        else{//default
             if(materialFlowType == MaterialFlowType::INPUT_MATERIAL_FLOW){
                 currentBunkerMass = machine.bunker_mass;
                 currentBunkerVolume = machine.bunker_volume;
@@ -398,50 +415,11 @@ std::string RoutePlannerStandaloneMachines::initRoutesBunkerMasses(RoutePlannerS
             route.route_points.at(j).bunker_mass = currentBunkerMass;
             route.route_points.at(j).bunker_volume = currentBunkerVolume;
         }
-
-        if(ind+1 >= route.route_points.size())
-            continue;
-
-        //update bunker during working windows
-        for(size_t j = 0 ; j < it_ww->second.size() ; ++j){
-            PlanData::WorkingWindowInfo& ww = it_ww->second.at(j);
-            bool continuesWindows = false;
-
-            if(j > 0){
-                PlanData::WorkingWindowInfo& ww_prev = it_ww->second.at(j-1);
-                continuesWindows = ww.indStart == ww_prev.indFinish;
-
-                double remainingMass = route.route_points.back().worked_mass - route.route_points.at(ww.indStart).worked_mass;
-                double remainingVol = route.route_points.back().worked_volume - route.route_points.at(ww.indStart).worked_volume;
-                getMachineBunkerStateAfterResourcePoint(machine, materialFlowType, remainingMass, remainingVol, currentBunkerMass, currentBunkerVolume);
-            }
-
-            double workedMass0 = route.route_points.at(ww.indStart).worked_mass;
-            double workedVol0 = route.route_points.at(ww.indStart).worked_volume;
-            for(size_t k = ww.indStart + continuesWindows; k <= ww.indFinish; ++k){
-                double mult = (materialFlowType == MaterialFlowType::INPUT_MATERIAL_FLOW ? -1.0 : 1.0);
-                route.route_points.at(k).bunker_mass = currentBunkerMass
-                                                        + mult * (route.route_points.at(k).worked_mass - workedMass0);
-                route.route_points.at(k).bunker_volume = currentBunkerVolume
-                                                        + mult * (route.route_points.at(k).worked_volume - workedVol0);
-            }
-
-        }
-
-        //update bunker after working segment
-        PlanData::WorkingWindowInfo& ww_last = it_ww->second.back();
-        double bunkerMass_last = route.route_points.at(ww_last.indFinish).bunker_mass;
-        double bunkerVol_last = route.route_points.at(ww_last.indFinish).bunker_volume;
-        for(size_t j = ww_last.indFinish+1; j < route.route_points.size(); ++j){
-            route.route_points.at(j).bunker_mass = bunkerMass_last;
-            route.route_points.at(j).bunker_volume = bunkerVol_last;
-        }
-
     }
     return ""; //ok
 }
 
-void RoutePlannerStandaloneMachines::addOverruns(RoutePlannerStandaloneMachines::PlanData &plan)
+void RoutePlannerStandaloneMachines::addInitialOverruns(RoutePlannerStandaloneMachines::PlanData &plan)
 {
     for(size_t i = 0 ; i < plan.routes.size() ; ++i){
         auto& route = plan.routes.at(i);
@@ -453,43 +431,12 @@ void RoutePlannerStandaloneMachines::addOverruns(RoutePlannerStandaloneMachines:
         Machine& machine = it_m->second;
 
         int ind = route.route_points.size() - 1;
-        auto it_r = plan.workingWindows.find(i);
-        if(it_r != plan.workingWindows.end() && !it_r->second.empty())
-            ind = it_r->second.front().indStart;
+        auto it_r = plan.nextWorkingWindows.find(i);
+        if(it_r != plan.nextWorkingWindows.end())
+            ind = it_r->second.indStart;
 
         if(ind > 0)
             addOverruns(plan.graph, machine, route, 0, ind);
-
-        if(ind+1 >= route.route_points.size())
-            continue;
-
-        //update values during working windows
-        for(size_t j = 0 ; j < it_r->second.size() ; ++j){
-            PlanData::WorkingWindowInfo& hw = it_r->second.at(j);
-            bool continuesWindows = false;
-
-            if(j+1 < it_r->second.size()){
-                PlanData::WorkingWindowInfo& hw_next = it_r->second.at(j+1);
-                continuesWindows = hw.indFinish == hw_next.indStart;
-            }
-
-            auto& rpStart = route.route_points.at(hw.indStart);
-            auto rpTmp = rpStart;
-
-            if(continuesWindows)//temporarilly set the bunkers to 0
-                rpStart.bunker_mass = rpStart.bunker_volume = 0;
-
-            if(hw.indStart < hw.indFinish)
-                addOverruns(plan.graph, machine, route, hw.indStart, hw.indFinish);
-
-            rpStart = rpTmp;
-        }
-
-        //update values after working segments
-        PlanData::WorkingWindowInfo& hw_last = it_r->second.back();
-        if(hw_last.indFinish+1 < route.route_points.size())
-            addOverruns(plan.graph, machine, route, hw_last.indFinish, route.route_points.size()-1);
-
     }
 
 }
@@ -529,9 +476,9 @@ void RoutePlannerStandaloneMachines::addInitialVisitPeriods(RoutePlannerStandalo
         Machine& machine = it_m->second;
 
         int ind = route.route_points.size() - 1;
-        auto it_r = plan.workingWindows.find(i);
-        if(it_r != plan.workingWindows.end() && !it_r->second.empty())
-            ind = it_r->second.front().indStart - 1;
+        auto it_r = plan.nextWorkingWindows.find(i);
+        if(it_r != plan.nextWorkingWindows.end())
+            ind = it_r->second.indStart - 1;
 
         if(ind > 0)
             addVisitPeriods(plan.graph, machine, route, 0, ind);
@@ -540,27 +487,6 @@ void RoutePlannerStandaloneMachines::addInitialVisitPeriods(RoutePlannerStandalo
 
 }
 
-void RoutePlannerStandaloneMachines::addFinalVisitPeriods(RoutePlannerStandaloneMachines::PlanData &plan)
-{
-    for(size_t i = 0 ; i < plan.routes.size() ; ++i){
-        auto& route = plan.routes.at(i);
-
-        auto it_m = m_machines.find(route.machine_id);
-        if(it_m == m_machines.end())
-            continue;
-        Machine& machine = it_m->second;
-
-        auto it_r = plan.workingWindows.find(i);
-        if(it_r == plan.workingWindows.end() || it_r->second.empty())
-            continue;
-
-        PlanData::WorkingWindowInfo& hw_last = it_r->second.back();
-        if(hw_last.indFinish+1 < route.route_points.size())
-            addVisitPeriods(plan.graph, machine, route, hw_last.indFinish+1, route.route_points.size()-1);
-
-    }
-
-}
 
 void RoutePlannerStandaloneMachines::addVisitPeriods(DirectedGraph::Graph &graph, const Machine &machine, const Route &route, size_t ind0, size_t ind1)
 {
@@ -609,8 +535,13 @@ void RoutePlannerStandaloneMachines::addVisitPeriods(DirectedGraph::Graph &graph
 
 std::string RoutePlannerStandaloneMachines::planTrips(RoutePlannerStandaloneMachines::PlanData &plan, MaterialFlowType materialFlowType, TransitRestriction transitRestriction)
 {
+    struct NextBunkerCapInfo{
+        double mass;
+        double vol;
+        float K;
+    };
+
     std::string sError;
-    auto workingWindows = plan.workingWindows;
 
     size_t countTrips = 0;
 
@@ -618,28 +549,78 @@ std::string RoutePlannerStandaloneMachines::planTrips(RoutePlannerStandaloneMach
 
     Machine nextMachine;
     size_t indNextRoute, indNextRP, indNextRP_ret;
+    PlanData::WorkingWindowInfo nextWorkingWindow;
 
-    std::vector<DirectedGraph::vertex_t> resource_vts;
+    std::map<DirectedGraph::vertex_t, std::pair<double, double>> resourcePointCapacities;
+
     ResourcePoint::ResourceType resType = materialFlowType == MaterialFlowType::INPUT_MATERIAL_FLOW ? ResourcePoint::ResourceType_LOADING : ResourcePoint::ResourceType_UNLOADING;
     for(const auto& it1 : plan.graph.resourcepoint_vertex_map()){
         const ResourcePoint& resPoint = it1.first;
+        if( materialFlowType != MaterialFlowType::NEUTRAL_MATERIAL_FLOW &&
+                ( std::fabs(resPoint.massCapacity) < 1e-6 || std::fabs(resPoint.volumeCapacity) < 1e-6 ) )
+            continue;
         if(resPoint.resourceTypes.find(resType) != resPoint.resourceTypes.end()){
-            resource_vts.push_back(it1.second);
+            auto itRPCap = m_resourcePointCurrentStates.find(resPoint.id);
+            double massCap = resPoint.massCapacity > -1e-7 ? resPoint.massCapacity : std::numeric_limits<double>::max();
+            double volCap = resPoint.volumeCapacity > -1e-7? resPoint.volumeCapacity : std::numeric_limits<double>::max();
+            if( itRPCap != m_resourcePointCurrentStates.end() ){
+                const ResourcePointState& rpState = itRPCap->second;
+                if( !rpState.enabled )
+                    continue;
+                if( !std::isnan(rpState.capacityMass) )
+                    massCap = rpState.capacityMass;
+                if( !std::isnan(rpState.capacityVolume) )
+                    volCap = rpState.capacityVolume;
+            }
+
+            resourcePointCapacities[it1.second] = std::make_pair(massCap, volCap);
             logger().printOut(LogLevel::DEBUG, __FUNCTION__, "\t\t\tAdded vertex to search for resource point " + std::to_string(resPoint.id) + ": " + resPoint.toString(10) );
         }
     }
+
+    std::vector<DirectedGraph::vertex_t> exit_vts;
+    if(m_settings.finishPointOption == FinishPointOption::FINISH_AT_FIELD_EXIT){
+        for(const auto& it1 : plan.graph.accesspoint_vertex_map()){
+            const FieldAccessPoint& fap = it1.first;
+            if(fap.accessType != FieldAccessPoint::AP_ENTRY_ONLY){
+                exit_vts.push_back(it1.second);
+                logger().printOut(LogLevel::DEBUG, __FUNCTION__, "\t\t\tAdded vertex to search for exit point " + std::to_string(fap.id) + ": " + fap.toString(10) );
+            }
+        }
+    }
+
 
     std::chrono::steady_clock::time_point time_start = std::chrono::steady_clock::now();
 
     adjustBaseRoutesTimestamps(plan);
 
     //plan to resource point first if needed
-    sError = planInitialTrips(plan, workingWindows, resource_vts, materialFlowType, transitRestriction);
+    sError = planInitialTrips(plan, resourcePointCapacities, materialFlowType, transitRestriction);
     if(!sError.empty())
         return sError;
 
-    while(getNextTransportationInfo(plan, workingWindows, indNextRoute, indNextRP, indNextRP_ret, nextMachine)){
+    //add overruns and visit periods of current next working windows
+    for(auto& it : plan.nextWorkingWindows){
+        auto& route = plan.routes.at(it.first);
+        auto& machine = m_machines.at(route.machine_id);
+        auto& ww = it.second;
+        addOverruns(plan.graph, machine, route, ww.indStart, ww.indFinish);
+        if(m_settings.collisionAvoidanceOption != Astar::WITHOUT_COLLISION_AVOIDANCE)
+            addVisitPeriods(plan.graph, machine, route, ww.indStart, ww.indFinish);
+    }
+
+    while(getNextTransportationInfo(plan, materialFlowType, indNextRoute, indNextRP, indNextRP_ret, nextMachine, nextWorkingWindow)){
+        plan.workingWindows[indNextRoute].push_back(nextWorkingWindow);
+
         auto& route = plan.routes.at(indNextRoute);
+
+        //update bunker mass/volume for the working window
+        size_t indFinish = std::min(nextWorkingWindow.indFinish, route.route_points.size()-1);
+        float multCap = materialFlowType == MaterialFlowType::OUTPUT_MATERIAL_FLOW ? 1 : -1;
+        for(size_t i = nextWorkingWindow.indStart+1 ; i <= indFinish ; ++i ){
+            route.route_points.at(i).bunker_mass = route.route_points.at(i-1).bunker_mass + multCap * (route.route_points.at(i).worked_mass - route.route_points.at(i-1).worked_mass);
+            route.route_points.at(i).bunker_volume = route.route_points.at(i-1).bunker_volume + multCap * (route.route_points.at(i).worked_volume - route.route_points.at(i-1).worked_volume);
+        }
 
         //update the folder where the planning (search) information of the current machine will be stored
         std::string folderName = m_outputFolder;
@@ -652,7 +633,27 @@ std::string RoutePlannerStandaloneMachines::planTrips(RoutePlannerStandaloneMach
             }
         }
 
-        //plan to resource (if indNextRP_ret != r.route_points.size()-1, plan route back to indNextRP)
+
+        std::map<DirectedGraph::vertex_t, NextBunkerCapInfo> nextBunkerCapacities;
+        std::vector<DirectedGraph::vertex_t> resource_vts;
+        double remainingMass = route.route_points.back().worked_mass - route.route_points.at(indNextRP).worked_mass;
+        double remainingVol = route.route_points.back().worked_volume - route.route_points.at(indNextRP).worked_volume;
+        for(auto& it_cap : resourcePointCapacities){
+            NextBunkerCapInfo capInfo;
+            capInfo.mass = route.route_points.at(indNextRP).bunker_mass;
+            capInfo.vol = route.route_points.at(indNextRP).bunker_volume;
+            capInfo.K = getMachineBunkerStateAfterResourcePoint(nextMachine, materialFlowType,
+                                                                it_cap.second.first, it_cap.second.second,
+                                                                remainingMass, remainingVol, capInfo.mass, capInfo.vol);
+
+            if(capInfo.K > 0.5){//@todo check the next bunkercapacity with respect to the capacity needed for the next window
+                resource_vts.emplace_back(it_cap.first);
+                nextBunkerCapacities[it_cap.first] = capInfo;
+            }
+
+        }
+
+        //plan to resource or exit (if indNextRP_ret != r.route_points.size()-1, plan route back to indNextRP)
         RoundtripPlanner rtp (nextMachine,
                               m_settings,
                               m_edgeCostCalculator,
@@ -671,15 +672,20 @@ std::string RoutePlannerStandaloneMachines::planTrips(RoutePlannerStandaloneMach
                 return sError;
             }
 
+
             double maxVisitTime_toDest = route.route_points.at(indNextRP).time_stamp;
             double maxVisitTime_toRoute = 0;
+            bool toExitPoint = false;
             if(indNextRP_ret < route.route_points.size())
                 maxVisitTime_toRoute = route.route_points.at(indNextRP_ret).time_stamp;
+            else
+                toExitPoint = ( m_settings.finishPointOption == FinishPointOption::FINISH_AT_FIELD_EXIT );
+
             std::set<MachineId_t> restrictedMachineIds = {nextMachine.id};
             std::set<DirectedGraph::vertex_t> excludeVts_toDest, excludeVts_toRoute;
 
             bool allowReverseDriving = false;
-            if(attempt == 2){//explesetily exclude all remaining working vertices from this machine and allowReverseDriving
+            if(attempt == 2){//explicitly exclude all remaining working vertices from this machine and allowReverseDriving
                 const auto& route_points = route.route_points;
                 for(size_t i = indNextRP+1 ; i < route_points.size() ; ++i){
                     if(!route_points.at(i).isOfTypeWorking(true))
@@ -731,20 +737,26 @@ std::string RoutePlannerStandaloneMachines::planTrips(RoutePlannerStandaloneMach
             successorCheckers_toDest.emplace_back( std::make_shared<AstarSuccessorChecker_VertexExcludeSet_Exceptions1>(excludeVts_toDest) );
             successorCheckers_toRoute.emplace_back( std::make_shared<AstarSuccessorChecker_VertexExcludeSet_Exceptions1>(excludeVts_toRoute) );
 
-            double bunker_mass_after, bunker_volume_after;
-            double remainingMass = route.route_points.back().worked_mass - route.route_points.at(indNextRP).worked_mass;
-            double remainingVol = route.route_points.back().worked_volume - route.route_points.at(indNextRP).worked_volume;
-            getMachineBunkerStateAfterResourcePoint(nextMachine, materialFlowType, remainingMass, remainingVol, bunker_mass_after, bunker_volume_after);
 
             if(!rtp.planTrip(plan.graph,
                              route,
                              indNextRP,
                              indNextRP_ret,
-                             resource_vts,
+                             toExitPoint ? exit_vts : resource_vts,
                              successorCheckers_toDest,
                              successorCheckers_toRoute,
                              allowReverseDriving,
-                             [&bunker_mass_after, &bunker_volume_after, &nextMachine, &plan](const RoutePoint& rp, const DirectedGraph::vertex_t & vt_resP) -> RoutePoint {
+                             [&nextMachine, &plan, toExitPoint, &nextBunkerCapacities, &route]
+                             (const RoutePoint& rp, const DirectedGraph::vertex_t & vt_resP) -> RoutePoint {
+                                if(toExitPoint)
+                                    return RoutePoint(Point::invalidPoint());
+                                auto it_cap = nextBunkerCapacities.find(vt_resP);
+                                if(it_cap == nextBunkerCapacities.end())
+                                   return RoutePoint(Point::invalidPoint());
+
+                                double bunker_mass_after = it_cap->second.mass;
+                                double bunker_volume_after = it_cap->second.vol;
+
                                 RoutePoint rpNew = rp;
                                 double timeAtResource = 60; //initial default
                                 if(nextMachine.unloading_speed_mass > 1e-6)
@@ -783,6 +795,7 @@ std::string RoutePlannerStandaloneMachines::planTrips(RoutePlannerStandaloneMach
 
         }
 
+
         int deltaInd = route.route_points.size();
         route = rtp.getPlannedRoute();
         plan.graph = rtp.getGraph();
@@ -791,42 +804,76 @@ std::string RoutePlannerStandaloneMachines::planTrips(RoutePlannerStandaloneMach
 
         deltaInd = route.route_points.size() - deltaInd;
 
+
         size_t indStart_toDest, indEnd_toDest, indStart_toRoute, indEnd_toRoute;
-        if( rtp.getPlannedRouteIndexRanges(indStart_toDest, indEnd_toDest, indStart_toRoute, indEnd_toRoute) ){
+        if( !rtp.getPlannedRouteIndexRanges(indStart_toDest, indEnd_toDest, indStart_toRoute, indEnd_toRoute) ){
+            sError = "Error obtaining planned route indexes ranges";
+            return sError;
+        }
+
+        //update worked_mass in trip routepoints
+        for(size_t i = indStart_toDest ; i <= indEnd_toRoute && i < route.route_points.size() ; ++i){
+            route.route_points.at(i).worked_mass = route.route_points.at(indNextRP).worked_mass;
+            route.route_points.at(i).worked_volume = route.route_points.at(indNextRP).worked_volume;
+        }
+
+        double massPrev = route.route_points.at(indStart_toDest).bunker_mass;
+        double volPrev = route.route_points.at(indStart_toDest).bunker_volume;
+        double massNew = massPrev;
+        double volNew = volPrev;
+
+
+        if( materialFlowType != MaterialFlowType::NEUTRAL_MATERIAL_FLOW){
+            if(indEnd_toRoute < route.route_points.size()){
+
+                massNew = route.route_points.at(indEnd_toRoute).bunker_mass;
+                volNew = route.route_points.at(indEnd_toRoute).bunker_volume;
+
+                //update currrent capacity of resource points
+                auto it_caps = resourcePointCapacities.find(rtp.getPlannedDestinationVt());
+                if(it_caps != resourcePointCapacities.end()){
+                    it_caps->second.first -= std::fabs( massNew - massPrev );
+                    it_caps->second.second -= std::fabs( volNew - volPrev );
+                }
+            }
 
             //update bunker from first route point after return trip (in case the windows were continues)
             if(indEnd_toRoute+1 < route.route_points.size()){
-                if(materialFlowType == MaterialFlowType::OUTPUT_MATERIAL_FLOW){
-                    route.route_points.at(indEnd_toRoute+1).bunker_mass = 0;
-                    route.route_points.at(indEnd_toRoute+1).bunker_volume = 0;
-                }
-                else{
-                    route.route_points.at(indEnd_toRoute+1).bunker_mass = nextMachine.bunker_mass;
-                    route.route_points.at(indEnd_toRoute+1).bunker_volume = nextMachine.bunker_volume;
-                }
+                route.route_points.at(indEnd_toRoute+1).bunker_mass = massNew;
+                route.route_points.at(indEnd_toRoute+1).bunker_volume = volNew;
             }
 
-            //update worked_mass in trip routepoints
-            for(size_t i = indStart_toDest ; i <= indEnd_toRoute && i < route.route_points.size() ; ++i){
-                route.route_points.at(i).worked_mass = route.route_points.at(indNextRP).worked_mass;
-                route.route_points.at(i).worked_volume = route.route_points.at(indNextRP).worked_volume;
+
+            if(indEnd_toRoute < route.route_points.size()){// get next working window of this route/machine
+                PlanData::WorkingWindowInfo ww_next;
+                bool finished;
+                auto error = getNextWorkingWindow(materialFlowType, route, indEnd_toRoute, massNew, volNew, ww_next, finished);
+                if(!error.empty()){
+                    sError = "Error obtaining next window for route of machine with id " + std::to_string(route.machine_id) + ": " + error;
+                    return sError;
+                }
+
+                if(finished){
+                    plan.nextWorkingWindows.erase(indNextRoute);
+                    continue;
+                }
+
+                //update working window for next check
+                plan.nextWorkingWindows[indNextRoute] = ww_next;
+
+                //update overruns and visit periods of new working window
+                addOverruns(plan.graph, nextMachine, route, ww_next.indStart, ww_next.indFinish);
+                if(m_settings.collisionAvoidanceOption != Astar::WITHOUT_COLLISION_AVOIDANCE)
+                    addVisitPeriods(plan.graph, nextMachine, route, ww_next.indStart, ww_next.indFinish);
             }
         }
 
-        //update the working windows
-
-        auto &windows = workingWindows.at(indNextRoute);
-        pop_front(windows);
-        if(windows.empty())
-            workingWindows.erase(indNextRoute);
-
-        PlanData::updateWorkingWindows(workingWindows, indNextRoute, indNextRP_ret, deltaInd);
-        plan.updateWorkingWindows(indNextRoute, indNextRP_ret, deltaInd);
     }
 
     return sError; //ok
 
 }
+
 
 void RoutePlannerStandaloneMachines::adjustBaseRoutesTimestamps(PlanData& plan)
 {
@@ -861,17 +908,18 @@ void RoutePlannerStandaloneMachines::adjustBaseRoutesTimestamps(PlanData& plan)
     }
 }
 
-std::string RoutePlannerStandaloneMachines::planInitialTrips(PlanData &plan, std::map<size_t, std::vector<PlanData::WorkingWindowInfo> > &workingWindows, const std::vector<DirectedGraph::vertex_t> &resource_vts, MaterialFlowType materialFlowType, TransitRestriction transitRestriction)
+std::string RoutePlannerStandaloneMachines::planInitialTrips(PlanData &plan,
+                                                             std::map<DirectedGraph::vertex_t, std::pair<double, double>> &resourcePointCapacities,
+                                                             MaterialFlowType materialFlowType,
+                                                             TransitRestriction transitRestriction)
 {
     std::string sError;
 
     std::multimap<double, size_t> routesToResource, routesToRoute;
     std::set<size_t> addedRoutes;
-    for(auto& it_ww : workingWindows){
-        auto& wws = it_ww.second;
-        if(wws.empty())
-            continue;
-        PlanData::WorkingWindowInfo &ww = wws.front();
+    std::vector<size_t> routesToResourceInds;
+    for(auto& it_ww : plan.nextWorkingWindows){
+        PlanData::WorkingWindowInfo &ww = it_ww.second;
         const Route& route = plan.routes.at(it_ww.first);
         addedRoutes.insert(it_ww.first);
         auto it_mdi = m_machineInitialStates.find(route.machine_id);
@@ -883,7 +931,7 @@ std::string RoutePlannerStandaloneMachines::planInitialTrips(PlanData &plan, std
         if(ww.indStart == 0 && ww.indFinish == 0){
             routesToResource.insert( std::make_pair( std::max(0.0, it_mdi->second.timestamp),
                                                      it_ww.first ) );
-            pop_front(wws);
+            routesToResourceInds.push_back(it_ww.first);
             continue;
         }
         routesToRoute.insert( std::make_pair( std::max(0.0, it_mdi->second.timestamp),
@@ -903,12 +951,14 @@ std::string RoutePlannerStandaloneMachines::planInitialTrips(PlanData &plan, std
 
     std::map<size_t, AstarPlan> initPlans;
 
+    //plan the initial segments for the machines that can go directly from their current location to the first working window (routesToRoute)
     sError = planInitialSegmentDirectly(plan, routesToRoute, transitRestriction, initPlans);
     if(!sError.empty())
         return sError;
 
 
-    sError = planInitialSegmentViaResource(plan, routesToResource, resource_vts, materialFlowType, transitRestriction, initPlans);
+    //plan the initial segments for the machines that have to go to a resource point before starting the first working window (routesToResource)
+    sError = planInitialSegmentViaResource(plan, routesToResource, resourcePointCapacities, materialFlowType, transitRestriction, initPlans);
     if(!sError.empty())
         return sError;
 
@@ -935,6 +985,8 @@ std::string RoutePlannerStandaloneMachines::planInitialTrips(PlanData &plan, std
                 rp.type = ( isInside ? RoutePoint::TRANSIT : RoutePoint::TRANSIT_OF);
         }
 
+
+        //update the timestamps of the current route (add the duration of the initial route segment)
         double initTimestamp = initRPs.back().time_stamp;
         double refTimestamp = route.route_points.front().time_stamp;
         for(auto& rp : route.route_points)
@@ -949,25 +1001,28 @@ std::string RoutePlannerStandaloneMachines::planInitialTrips(PlanData &plan, std
             route.route_points.front().bunker_volume = initRPs.back().bunker_volume;
         }
 
+        size_t deltaInd = route.route_points.size();
+
+        //add initial route segments to the beginning of the route
         route.route_points.insert(route.route_points.begin(), initRPs.begin(), initRPs.end()-1);
 
-        int deltaInd = route.route_points.size();
+        //update the working window indexes
+        auto it_ww = plan.nextWorkingWindows.find( routeInd );
+        if(it_ww != plan.nextWorkingWindows.end()){
+            deltaInd = route.route_points.size() - deltaInd;
+            it_ww->second.indStart += deltaInd;
+            it_ww->second.indFinish += deltaInd;
+        }
+
         plan.planCosts.at(routeInd) += initPlan.plan_cost_total;
         plan.updateOverallCost();
-
-        deltaInd = route.route_points.size() - deltaInd;
-
-        //update the working windows
-
-        PlanData::updateWorkingWindows(workingWindows, routeInd, 0, initRPs.size()-1);
-        plan.updateWorkingWindows(routeInd, 0, initRPs.size()-1);
-
     }
 
 
     return sError;
 
 }
+
 
 std::string RoutePlannerStandaloneMachines::planInitialSegmentDirectly(PlanData &plan, const std::multimap<double, size_t> &indRoutes, TransitRestriction transitRestriction,
                                                                        std::map<size_t, AstarPlan> &initPlans)
@@ -978,8 +1033,6 @@ std::string RoutePlannerStandaloneMachines::planInitialSegmentDirectly(PlanData 
     for(auto & it_wws : indRoutes){
         size_t routeInd = it_wws.second;
         Route& route = plan.routes.at(routeInd);
-
-        AstarPlan initPlan;
 
         auto it_m = m_machines.find(route.machine_id);
         auto it_mdi = m_machineInitialStates.find(route.machine_id);
@@ -1005,7 +1058,6 @@ std::string RoutePlannerStandaloneMachines::planInitialSegmentDirectly(PlanData 
                 rp.point() = mdi.position;
                 rp.bunker_mass = mdi.bunkerMass;
                 rp.bunker_volume = mdi.bunkerVolume;
-                initPlan.route_points_.emplace_back(rp);
 
                 if(dist < geometry::getGeometryLength(seg)){
                     int ind = geometry::addSampleToGeometryClosestToPoint(seg, mdi.position, 1);
@@ -1015,11 +1067,14 @@ std::string RoutePlannerStandaloneMachines::planInitialSegmentDirectly(PlanData 
                     }
                 }
 
+                if(dist < 1e-3)
+                    continue;
+
+                AstarPlan& initPlan = initPlans[routeInd];
+                initPlan.route_points_.emplace_back(rp);
                 rp = route.route_points.front();
                 rp.time_stamp += ( dist / machine_speed );
                 initPlan.route_points_.emplace_back(rp);
-
-                initPlans[routeInd] = initPlan;
                 continue;
             }
         }
@@ -1089,16 +1144,19 @@ std::string RoutePlannerStandaloneMachines::planInitialSegmentDirectly(PlanData 
         //set again the timestamp of the vertex corresponding to the first route point
         resetTimestampsFromBaseRoute(graph, route, 0, 0, route.route_points.front().time_stamp);
 
-        initPlan = planner.getPlan();
-
-        initPlans[routeInd] = initPlan;
+        initPlans[routeInd] = planner.getPlan();
     }
 
 
     return sError;
 }
 
-std::string RoutePlannerStandaloneMachines::planInitialSegmentViaResource(PlanData &plan, const std::multimap<double, size_t> &indRoutes, const std::vector<DirectedGraph::vertex_t> &resource_vts, MaterialFlowType materialFlowType, TransitRestriction transitRestriction, std::map<size_t, AstarPlan> &initPlans)
+std::string RoutePlannerStandaloneMachines::planInitialSegmentViaResource(PlanData &plan,
+                                                                          const std::multimap<double, size_t> &indRoutes,
+                                                                          std::map<DirectedGraph::vertex_t, std::pair<double, double>> &resourcePointCapacities,
+                                                                          MaterialFlowType materialFlowType,
+                                                                          TransitRestriction transitRestriction,
+                                                                          std::map<size_t, AstarPlan> &initPlans)
 {
     std::string sError;
     auto& graph = plan.graph;
@@ -1123,13 +1181,35 @@ std::string RoutePlannerStandaloneMachines::planInitialSegmentViaResource(PlanDa
         initPlan.plan_cost_total = std::numeric_limits<double>::max();
         initPlan.isOK = false;
 
+        double remainingMass = route.route_points.back().worked_mass - route.route_points.front().worked_mass;
+        double remainingVol = route.route_points.back().worked_volume - route.route_points.front().worked_volume;
+
         std::set<DirectedGraph::vertex_t> resourceVtsSet;
-        for(const auto& it1 : plan.graph.resourcepoint_vertex_map()){
-            resourceVtsSet.insert(it1.second);
+        for(const auto& it1 : resourcePointCapacities){
+            auto caps = it1.second;
+            if( materialFlowType == MaterialFlowType::NEUTRAL_MATERIAL_FLOW ||
+                    ( caps.first < -1e-6 && caps.second < -1e-6) ){
+                resourceVtsSet.insert(it1.first);
+                continue;
+            }
+            if( ( caps.first > -1e-6 && caps.first < 1e-6 ) || ( caps.second > -1e-6 && caps.second < 1e-6 ) )
+                continue;
+
+            double bunker_mass_after = mdi.bunkerMass;
+            double bunker_volume_after = mdi.bunkerVolume;
+
+            auto capK = getMachineBunkerStateAfterResourcePoint(machine, materialFlowType,
+                                                                caps.first, caps.second,
+                                                                remainingMass, remainingVol,
+                                                                bunker_mass_after, bunker_volume_after);
+            if(capK > 0.99)//@todo for now, allow only resource points that can supply/receive most of the material
+                resourceVtsSet.insert(it1.first);
         }
         std::set<MachineId_t> restrictedMachineIds = {machine.id};
 
-        for(auto vt : resource_vts){
+        float bestPlanCapK;
+
+        for(auto vt : resourceVtsSet){
 
             DirectedGraph::vertex_property vt_prop = graph[vt];
 
@@ -1163,9 +1243,11 @@ std::string RoutePlannerStandaloneMachines::planInitialSegmentViaResource(PlanDa
                 rp.type = RoutePoint::INITIAL_POSITION;
                 rp.time_stamp = mdi.timestamp;
                 rp.point() = mdi.position;
+                rp.bunker_mass = std::max(0.0, mdi.bunkerMass);
+                rp.bunker_volume = std::max(0.0, mdi.bunkerVolume);
                 plan1.route_points_.emplace_back(rp);
 
-                rp = vt_prop.route_point;
+                rp.point() = vt_prop.route_point.point();
                 rp.time_stamp += ( dist / machine_speed );
                 plan1.route_points_.emplace_back(rp);
                 plan1.plan_cost_total = 0;
@@ -1222,12 +1304,16 @@ std::string RoutePlannerStandaloneMachines::planInitialSegmentViaResource(PlanDa
 
             //add route point corresponding to load/unload at resource point
 
-            double bunker_mass_after, bunker_volume_after;
+            RoutePoint rpAtRes = plan1.route_points_.back();
+
+            auto caps = resourcePointCapacities[vt];
+            double bunker_mass_after = rpAtRes.bunker_mass, bunker_volume_after = rpAtRes.bunker_volume;
             double remainingMass = route.route_points.back().worked_mass - route.route_points.front().worked_mass;
             double remainingVol = route.route_points.back().worked_volume - route.route_points.front().worked_volume;
-            getMachineBunkerStateAfterResourcePoint(machine, materialFlowType, remainingMass, remainingVol, bunker_mass_after, bunker_volume_after);
-
-            RoutePoint rpAtRes = plan1.route_points_.back();
+            auto capK = getMachineBunkerStateAfterResourcePoint(machine, materialFlowType,
+                                                                caps.first, caps.second,
+                                                                remainingMass, remainingVol,
+                                                                bunker_mass_after, bunker_volume_after);
             if(machine.unloading_speed_mass > 1e-6)
                 rpAtRes.time_stamp += (std::fabs( rpAtRes.bunker_mass - bunker_mass_after ) / machine.unloading_speed_mass);
             else if(machine.unloading_speed_volume > 1e-6)
@@ -1285,8 +1371,9 @@ std::string RoutePlannerStandaloneMachines::planInitialSegmentViaResource(PlanDa
                 continue;
             }
 
-            initPlan = plan1;
+            std::swap(initPlan, plan1);
             initPlan.add(planner.getPlan(), true);
+            bestPlanCapK = capK;
         }
 
         if(!initPlan.isOK){
@@ -1295,7 +1382,22 @@ std::string RoutePlannerStandaloneMachines::planInitialSegmentViaResource(PlanDa
             return sError;
         }
 
-        initPlans[routeInd] = initPlan;
+        //compute next working windows for the machines that needed to go to a resource point first
+        if(!initPlan.route_points_.empty()){
+            PlanData::WorkingWindowInfo ww;
+            bool finished;
+            auto error = getNextWorkingWindow(materialFlowType, route, 0,
+                                              initPlan.route_points_.back().bunker_mass, initPlan.route_points_.back().bunker_volume,
+                                              ww, finished);
+            if(!error.empty())
+                return "Error obtaining initial window for route of machine with id " + std::to_string(route.machine_id) + ": " + error;
+
+            if(!finished)
+                plan.nextWorkingWindows[routeInd] = ww;
+        }
+
+        std::swap(initPlans[routeInd], initPlan);
+
     }
 
 
@@ -1331,24 +1433,31 @@ std::set<DirectedGraph::vertex_t> RoutePlannerStandaloneMachines::getExcludeVert
     return exclude;
 }
 
-bool RoutePlannerStandaloneMachines::getNextTransportationInfo(const RoutePlannerStandaloneMachines::PlanData &plan,
-                                                               const std::map<size_t, std::vector<PlanData::WorkingWindowInfo> > &workingWindows,
-                                                               size_t &indRoute, size_t &indRP, size_t &indRP_ret, Machine &machine)
+
+bool RoutePlannerStandaloneMachines::getNextTransportationInfo(const PlanData &plan, MaterialFlowType materialFlowType,
+                                                               size_t &indRoute, size_t &indRP, size_t &indRP_ret, Machine &machine, PlanData::WorkingWindowInfo& nextWorkingWindow)
 {
 
     bool ret = false;
     double minTime = std::numeric_limits<double>::max();
-    for(const auto& it_hw : workingWindows){
-        const std::vector<PlanData::WorkingWindowInfo> & hws = it_hw.second;
-        if(hws.empty())
-            continue;
+    for(const auto& it_hw : plan.nextWorkingWindows){
+        const PlanData::WorkingWindowInfo& ww = it_hw.second;
 
-        if(hws.size() == 1 && !m_settings.finishAtResourcePoint)
-            continue;
 
-        size_t ind = hws.front().indFinish;
+        size_t ind = ww.indFinish;
         const auto& route = plan.routes.at(it_hw.first);
         if(ind >= route.route_points.size())
+            continue;
+
+        //check the next working window to see if this window is the last one
+        PlanData::WorkingWindowInfo ww_next;
+        bool finished;
+        const auto& m = m_machines.at( route.machine_id );
+        auto error = getNextWorkingWindow(materialFlowType, route, ww.indFinish,
+                                          materialFlowType == MaterialFlowType::INPUT_MATERIAL_FLOW ? m.bunker_mass : 0, // use best case scenario just to check if there is something left to work
+                                          materialFlowType == MaterialFlowType::INPUT_MATERIAL_FLOW ? m.bunker_volume : 0, // use best case scenario just to check if there is something left to work
+                                          ww_next, finished);
+        if(!error.empty())
             continue;
 
         auto rp = route.route_points.at(ind);
@@ -1358,33 +1467,77 @@ bool RoutePlannerStandaloneMachines::getNextTransportationInfo(const RoutePlanne
             minTime = rp.time_stamp;
             indRoute = it_hw.first;
             machine = m_machines.at( route.machine_id );
-            indRP = indRP_ret = ind;
-            if(hws.size() > 1)
-                indRP_ret = hws.at(1).indStart;
-            else if(indRP_ret+1 >= route.route_points.size())//set it to size so that no return trip is computed
-                indRP_ret = route.route_points.size();
+            nextWorkingWindow = ww;
+
+            indRP = ind;
+            indRP_ret = finished ? route.route_points.size()//set it to size so that no return trip is computed
+                                 : ww_next.indStart;
         }
     }
 
     return ret;
 }
 
-void RoutePlannerStandaloneMachines::getMachineBunkerStateAfterResourcePoint(const Machine &machine, MaterialFlowType materialFlowType,
+
+float RoutePlannerStandaloneMachines::getMachineBunkerStateAfterResourcePoint(const Machine &machine,
+                                                                             MaterialFlowType materialFlowType,
+                                                                             double resourcePointMassCapacity, double resourcePointVolumeCapacity,
                                                                              double remainingMass, double remainingVol,
                                                                              double& bunker_mass, double& bunker_volume)
 {
+    float capK = 1;
+
     if(materialFlowType == MaterialFlowType::INPUT_MATERIAL_FLOW){
         remainingMass = std::max(0.0, remainingMass);
         remainingVol = std::max(0.0, remainingVol);
-        bunker_mass = std::min(machine.bunker_mass, remainingMass);
-        bunker_volume = std::min(machine.bunker_volume, remainingVol);
+
+        double neededMassForFullBunker = std::max(0.0, machine.bunker_mass - bunker_mass);
+        double neededVolumeForFullBunker = std::max(0.0, machine.bunker_volume - bunker_volume);
+
+        double requestedMass = std::min(neededMassForFullBunker, remainingMass);
+        double requestedVol = std::min(neededVolumeForFullBunker, remainingVol);
+
+        float massK = 1, volK = 1;
+
+        if(requestedMass > 1e-6){
+            double supply = std::min(requestedMass, resourcePointMassCapacity);
+            massK = 1 - (requestedMass - supply) / requestedMass;
+        }
+        if(requestedVol > 1e-6){
+            double supply = std::min(requestedVol, resourcePointVolumeCapacity);
+            volK = 1 - (requestedVol - supply) / requestedVol;
+        }
+
+        capK = std::min(massK, volK);
+
+        bunker_mass += requestedMass * capK;
+        bunker_volume += requestedVol * capK;
+
     }
-    else{
-        bunker_mass = bunker_volume = 0;
+    else if(materialFlowType == MaterialFlowType::OUTPUT_MATERIAL_FLOW){
+        double requestedMass = std::max(0.0, bunker_mass);
+        double requestedVol = std::max(0.0, bunker_volume);
+
+        float massK = 1, volK = 1;
+
+        if(requestedMass > 1e-6){
+            double supply = std::min(requestedMass, resourcePointMassCapacity);
+            massK = 1 - (requestedMass - supply) / requestedMass;
+        }
+        if(requestedVol > 1e-6){
+            double supply = std::min(requestedVol, resourcePointVolumeCapacity);
+            volK = 1 - (requestedVol - supply) / requestedVol;
+        }
+
+        capK = std::min(massK, volK);
+
+        bunker_mass -= std::max(0.0, requestedMass * capK );
+        bunker_volume -= std::max(0.0, requestedVol * capK );
     }
+
+    return capK;
 
 }
-
 
 
 }

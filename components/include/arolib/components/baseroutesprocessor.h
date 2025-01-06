@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,25 +17,9 @@
 #ifndef AROLIB_BASEROUTESPROCESSOR_H
 #define AROLIB_BASEROUTESPROCESSOR_H
 
-#include <unistd.h>
-#include <iostream>
-#include <math.h>
-#include <string>
 
 #include "arolib/misc/loggingcomponent.h"
-#include "arolib/misc/container_helper.h"
-#include "arolib/geometry/field_geometry_processing.hpp"
-
-#include "arolib/types/machine.hpp"
-
-#include "arolib/planning/planningworkspace.h"
-#include "arolib/planning/edge_calculators/edgeMassCalculator.hpp"
-#include "arolib/planning/track_connectors/infieldtracksconnectordef.hpp"
-#include "arolib/misc/basic_responses.h"
-
-#include <boost/geometry/geometry.hpp>
-#include <boost/geometry/geometries/register/point.hpp>
-#include <boost/geometry/geometries/register/ring.hpp>
+#include "arolib/types/route.hpp"
 
 
 namespace arolib {
@@ -43,7 +27,7 @@ namespace arolib {
 /**
  * @brief Class used to process the initial base routes (prior to planning); It takes the base-routes for IF and HL processing and combines (connects) them  
  */
-class BaseRoutesProcessor : public LoggingComponent, protected PlanningWorkspaceAccessor
+class BaseRoutesProcessor : public LoggingComponent
 {
 public:
 

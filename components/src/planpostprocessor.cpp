@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,12 @@
 */
  
 #include "arolib/components/planpostprocessor.h"
+
+
+#include "arolib/geometry/geometry_helper.hpp"
+#include "arolib/geometry/field_geometry_processing.hpp"
+
+
 namespace arolib {
 using namespace arolib::geometry;
 
@@ -128,7 +134,7 @@ AroResp PlanPostProcessor::addOutfieldSegments(std::vector<Route> &routes, const
             ind1 = route.getNextIndex(ind1, {RoutePoint::FIELD_ENTRY});
             if(ind1 < 0)
                 break;
-            if(ind1 == 0 || !route.route_points.at(ind1-1).isOfType( {RoutePoint::RESOURCE_POINT, RoutePoint::INITIAL_POSITION, RoutePoint::FIELD_EXIT} )){
+            if(ind1 == 0 || !route.route_points.at(ind1-1).isOfType( {RoutePoint::RESOURCE_POINT, RoutePoint::INITIAL_POSITION, RoutePoint::FIELD_EXIT, RoutePoint::FIELD_ENTRY} )){
                 ++ind1;
                 continue;
             }
@@ -161,7 +167,7 @@ AroResp PlanPostProcessor::addOutfieldSegments(std::vector<Route> &routes, const
             ind1 = route.getNextIndex(ind1, {RoutePoint::FIELD_EXIT});
             if(ind1 < 0 || ind1+1 >= route.route_points.size())
                 break;
-            if(ind1 == 0 || !route.route_points.at(ind1+1).isOfType( {RoutePoint::RESOURCE_POINT} )){
+            if(ind1 == 0 || !route.route_points.at(ind1+1).isOfType( {RoutePoint::RESOURCE_POINT, RoutePoint::FIELD_EXIT, RoutePoint::FIELD_ENTRY} )){
                 ++ind1;
                 continue;
             }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,10 +17,8 @@
 #ifndef AROLIB_GRAPH_HELPER_HPP
 #define AROLIB_GRAPH_HELPER_HPP
 
-#include <functional>
-
 #include <arolib/misc/basic_responses.h>
-#include <arolib/types/machine.hpp>
+#include <arolib/types/subfield.hpp>
 #include <arolib/types/machinedynamicinfo.hpp>
 #include <arolib/planning/path_search/astarPlan.hpp>
 

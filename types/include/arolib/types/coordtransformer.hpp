@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,8 +26,8 @@
 #define AROLIB_COORDTRANSFORMER_H_
 
 #include <mutex>
-#include <boost/math/constants/constants.hpp>
 
+#include <boost/math/constants/constants.hpp>
 
 #ifdef BOOST_VERSION
     #if BOOST_VERSION / 100000 > 1
@@ -37,19 +37,8 @@
     #endif
 #endif
 
-#ifdef AROLIB_COORDTRANSFORMER___BOOST_OK
-    #include <boost/geometry/geometry.hpp>
-    #include <boost/geometry/core/cs.hpp>
-    #include <boost/geometry/srs/epsg.hpp>
-    #include <boost/geometry/srs/projection.hpp>
-#endif
-
-
 #include "arolib/misc/loggingcomponent.h"
 #include "point.hpp"
-
-#include <gdal/ogr_spatialref.h>
-#include <gdal/ogr_geometry.h>
 
 namespace arolib{
 

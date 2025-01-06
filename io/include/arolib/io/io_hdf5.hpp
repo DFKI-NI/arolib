@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH and Universität Osnabrück
+ * Copyright 2021-2025 DFKI GmbH and Universität Osnabrück
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,19 +19,10 @@
 #undef H5_USE_BOOST
 #define H5_USE_BOOST
 
-#include <boost/multi_array.hpp>
-#include "arolib/misc/logger.h"
-#include "arolib/types/field.hpp"
-#include "arolib/types/resourcepoint.hpp"
-#include "arolib/cartography/common.hpp"
-
-#include <map>
-
-#include <hdf5_hl.h>
-#include <highfive/H5DataSet.hpp>
-#include <highfive/H5DataSpace.hpp>
-#include <highfive/H5File.hpp>
 #include <highfive/H5Easy.hpp>
+
+#include "arolib/types/field.hpp"
+#include "arolib/cartography/common.hpp"
 
 namespace arolib {
 namespace io {

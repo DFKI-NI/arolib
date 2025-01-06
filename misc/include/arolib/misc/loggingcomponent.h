@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,6 @@
  
 #ifndef AROLIBLOGGINGCOMPONENT_H
 #define AROLIBLOGGINGCOMPONENT_H
-
-#include <vector>
-#include <memory>
 
 #include "logger.h"
 #include "container_helper.h"
@@ -89,7 +86,30 @@ protected:
      * @brief Copy constructor
      * @param other Other logging component from which to copy the attributes
      */
-    LoggingComponent(const LoggingComponent& other);
+    LoggingComponent(const LoggingComponent& other) = default;
+
+    /**
+     * @brief Move constructor
+     * @param other Other logging component from which to move the attributes
+     */
+    LoggingComponent(LoggingComponent&& other) = default;
+
+    /**
+     * @brief Copy assignment
+     * @param other Other logging component from which to copy the attributes
+     */
+    LoggingComponent& operator=(const LoggingComponent& other) = default;
+
+    /**
+     * @brief Move assignment
+     * @param other Other logging component from which to copy the attributes
+     */
+    LoggingComponent& operator=(LoggingComponent&& other) = default;
+
+    /**
+     * @brief Destructor
+     */
+    virtual ~LoggingComponent() = default;
 
     /**
      * @brief Set one logging component as a (temporal) parent of another logging component (for Logger inheritance)

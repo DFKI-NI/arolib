@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
  
 #include "arolib/geometry/tracksgenerator.h"
 
-#include <chrono>
+#include "arolib/geometry/field_geometry_processing.hpp"
 
 namespace arolib {
 
@@ -394,6 +394,8 @@ AroResp TracksGenerator::generateTracks(const Polygon &boundary,
                  " and direction " + direction.toString() + directionStr);
     }
 
+    double boundaryLength = getGeometryLength(boundary.points);
+
     if(!refLineIsCenter){
         std::vector<Point> ls;
         if(settings.shiftingStrategy == ShiftingStrategy::TRANSLATE_TRACKS)
@@ -401,7 +403,7 @@ AroResp TracksGenerator::generateTracks(const Polygon &boundary,
                                                       refLine,
                                                       0.5 * std::fabs(trackWidths.front()),
                                                       direction,
-                                                      -1,
+                                                      boundaryLength,
                                                       ls);
         else
             aroResp = offesetAndExtendReferenceLine(boundary,
@@ -414,8 +416,6 @@ AroResp TracksGenerator::generateTracks(const Polygon &boundary,
             return AroResp(1, "Error during initial translation/offeset of reference line");
         refLine = ls;
     }
-
-    double boundaryLength = getGeometryLength(boundary.points);
     int side = 0;
     size_t distInd = 0;
     double distTotal = 0;
@@ -587,13 +587,15 @@ AroResp TracksGenerator::translateAndExtendReferenceLine(const Polygon &boundary
     if(intersects(refLineTmp))
         return AroResp(1, "Reference line self intersects");
 
-    distExtension = std::fabs(distExtension);
     if (distExtension > 1e-6){
         if(!extend_linestring(refLineTmp, distExtension, 0, false))
             return AroResp(1, "Error extending linestring (1)");
         removeLinestringPointsToFitBoundaries({&boundary}, refLineTmp, true);
-        if(refLineTmp.size() < 2)
-            return AroResp(1, "Error adjusting extended linestring (1)");
+        if(refLineTmp.size() < 2){
+            //return AroResp(1, "Error adjusting extended linestring (1)");
+            refLineTmp = refLine;
+            unsample_linestring(refLineTmp);
+        }
 
         if(!extend_linestring(refLineTmp, 0, distExtension, false))
             return AroResp(1, "Error extending linestring (2)");

@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,8 +13,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License
 */
- 
+
 #include "arolib/misc/datetime.hpp"
+
+#include <cmath>
+#include <iomanip>
+#include <algorithm>
+#include <sstream>
+//#include <iostream>
 
 namespace{
 std::string double2string(double n){
@@ -63,6 +69,12 @@ bool DateTime::fromISO8601(const std::string &dt_iso)
 
     m_us = extractMicroSeconds(tmp);
 
+    int extraSecs = (int)(m_us/1e6);
+    if(extraSecs > 0){
+        m_time += extraSecs;
+        m_us = 1e6 * extraSecs;
+    }
+
     return true;
 
 }
@@ -93,6 +105,11 @@ DateTime DateTime::operator+(double sec) const
     int iSec = sec;
     ret.m_time += iSec;
     ret.m_us = m_us + (sec-iSec)*1e6;
+    int extraSecs = (int)(ret.m_us/1e6);
+    if(extraSecs > 0){
+        ret.m_time += extraSecs;
+        ret.m_us -= 1e6 * extraSecs;
+    }
     return ret;
 }
 
@@ -102,9 +119,10 @@ DateTime DateTime::operator-(double sec) const
     int iSec = sec;
     ret.m_time -= iSec;
     ret.m_us = m_us - (sec-iSec)*1e6;
-    if(ret.m_us < 0){
-        ret.m_time -= 1;
-        ret.m_us += 1e6;
+    int extraSecs = (int)(ret.m_us/-1e6);
+    if(extraSecs > 0){
+        ret.m_time -= extraSecs;
+        ret.m_us += 1e6 * extraSecs;
     }
     return ret;
 }
@@ -304,7 +322,7 @@ std::string DateTime::usTofracSec(double us)
 {
     if(us < 1e-6)
         return "";
-    if(us > 1e7)
+    if(us >= 1e6)
         return ".999999";
 
     std::string ret = std::to_string((int)us);

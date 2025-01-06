@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,19 @@
 */
  
 #include "arolib/types/coordtransformer.hpp"
+
+
+
+#ifdef AROLIB_COORDTRANSFORMER___BOOST_OK
+    #include <boost/geometry/geometry.hpp>
+    #include <boost/geometry/core/cs.hpp>
+    #include <boost/geometry/srs/epsg.hpp>
+    #include <boost/geometry/srs/projection.hpp>
+#endif
+
+
+#include <gdal/ogr_spatialref.h>
+#include <gdal/ogr_geometry.h>
 
 namespace arolib {
 

@@ -1,6 +1,6 @@
 # Add new test suites to this list
 ##################################
-set(test_suits test_mock test_mappable_parameters test_basicconversions)
+set(test_suits test_mock test_mappable_parameters test_basicconversions, test_filesystem)
 ##################################
 
 set(test_module unittest_${AROLIB_LIB_NAME})

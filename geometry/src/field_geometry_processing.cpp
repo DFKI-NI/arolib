@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,8 @@
 */
 
 #include "arolib/geometry/field_geometry_processing.hpp"
+
+#include "arolib/geometry/geometry_helper.hpp"
 
 namespace arolib{
 
@@ -556,11 +558,7 @@ std::vector<size_t> getInfieldExtremaTracksIndexes(const Subfield &sf,
     std::vector< std::vector<double> > adjAngles( sf.tracks.size() );
 
     for(size_t i = 0 ; i+1 < sf.tracks.size() ; ++i){
-        if(excludeTrackIndexes.find(i) != excludeTrackIndexes.end())
-            continue;
         for(size_t j = i+1 ; j < sf.tracks.size() ; ++j){
-            if(excludeTrackIndexes.find(j) != excludeTrackIndexes.end())
-                continue;
             if(areTracksAdjacent(sf.tracks.at(i), sf.tracks.at(j))){
                 auto dir1 = getDirectionBetweenTracks( sf.tracks.at(i).points, sf.tracks.at(j).points );
                 auto dir2 = rotate( Point(0,0), dir1, M_PI );

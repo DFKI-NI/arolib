@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,15 +17,10 @@
 #ifndef AROLIB_DRIVENMASSAREAMANAGER_H
 #define AROLIB_DRIVENMASSAREAMANAGER_H
 
-#include <map>
-
-#include "arolib/misc/basic_responses.h"
-#include "arolib/misc/loggingcomponent.h"
-#include "arolib/types/field.hpp"
-#include "arolib/types/machine.hpp"
 #include "arolib/cartography/common.hpp"
 #include "arolib/cartography/sharedgridsmanager.hpp"
-#include "arolib/geometry/geometry_helper.hpp"
+#include "arolib/misc/basic_responses.h"
+#include "arolib/types/field.hpp"
 
 namespace arolib {
 
@@ -35,6 +30,20 @@ namespace arolib {
 class DrivenMassAreaManager : public LoggingComponent
 {
 public:
+    using GridType = gridmap::SharedGridsManager::GridType;
+    using GridPtr = gridmap::SharedGridsManager::GridPtr;
+    using ConstGridPtr = gridmap::SharedGridsManager::ConstGridPtr;
+
+
+    /**
+     * @brief Precision option
+     */
+    enum PrecisionOption{
+        LOW_PRECISION,
+        MEDIUM_PRECISION,
+        HIGH_PRECISION
+    };
+
     /**
      * @brief Constructor.
      * @param logLevel Log level
@@ -110,75 +119,162 @@ public:
     bool setMachineGPSFrontDisplacement(MachineId_t machineId, float val);
 
     /**
+     * @brief Set the distance threshold used to forget previously driven cells.
+     * @param dist Distance threshold
+     */
+    void setCellDistanceThreshold(float dist = 2);
+
+    /**
      * @brief Set the option to use edge polygon intersection (true) or cells analysys (false) for repeating areas between previous edge and new edge.
-     * @param usePolygonIntersection Use edge polygon intersection (true, recommended) or cells analysys (false) for repeating areas between previous edge and new edge.
+     *
+     * Only for MEDIUM_PRECISION and HIGH_PRECISION
+     *
+     * @param usePolygonIntersection Use edge polygon intersection (true) or cells analysys (false, recommended) for repeating areas between previous edge and new edge.
      */
     void setUsePolygonIntersection(bool usePolygonIntersection);
+
+    /**
+     * @brief Set the part/percentage of the machine length [0, 1] used for the machine/edge projections.
+     * @param k [0, 1]
+     */
+    void setProjMachineLength(float k = 1.0);
 
     /**
      * @brief Updates the grid/map with the given location, machine mass and machine bunke mass (using the edge from the last location, if existent).
      * @param machine Driving machine
      * @param pt New location
      * @param bunker_mass Bunker mass
-     * @param be_precise Perform map/grid operations precisely
      * @return AroResp with error id (0:=OK) and message
      */
-    AroResp addData(const Machine &machine, const Point& pt, double bunker_mass, bool be_precise = true);
+    AroResp addData(const Machine &machine, Point pt, double bunker_mass);
 
 
     /**
      * @brief Get the current remaining-area map (if not ready, it is not allocated).
      * @return Current remaining-area map
      */
-    gridmap::SharedGridsManager::ConstGridPtr getDrivenMassAreaMap() const;
+    ConstGridPtr getDrivenMassAreaMap() const;
+
+
+    /**
+     * @brief Get the projection of an edge.
+     * @param machine Driving machine
+     * @param pBack Previous point
+     * @param pFront New point
+     * @param width Edge width (if <0 -> machine.width)
+     * @param [out] pBackEd Back point of the projection
+     * @param [out] pBackEd Front point of the projection
+     * @return Projection
+     */
+    Polygon getEdgeProjection(const Machine& machine, Point pBack, Point pFront, double width = -1, Point* pBackEd = nullptr, Point* pFrontEd = nullptr);
+
+    /**
+     * @brief Get the projection of a machine.
+     * @param machine Driving machine
+     * @param pBack Previous point
+     * @param pFront New point
+     * @param width Edge width (if <0 -> machine.width)
+     * @param [out] pBackEd Back point of the projection
+     * @param [out] pBackEd Front point of the projection
+     * @return Projection
+     */
+    Polygon getMachineProjection(const Machine& machine, Point pBack, Point pFront, double width = -1, Point* pBackEd = nullptr, Point* pFrontEd = nullptr);
+
+    /**
+     * @brief Filter the current gridmap with a RemainingAreaMap.
+     * @param ram RemainingAreaMap
+     * @param threshold Filter threshold (0, 1) for the ram values
+     * @return True on success
+     */
+    bool filterWithRemainingAreaMap(const ArolibGrid_t& ram, float threshold, bool be_precise);
+
+    /**
+     * @brief Filter the current gridmap with a RemainingAreaMap.
+     * @param ram RemainingAreaMap
+     * @param threshold Filter threshold (0, 1) for the ram values
+     * @return True on success
+     */
+    bool filterWithRemainingAreaMap(std::shared_ptr<const ArolibGrid_t> ram, float threshold, bool be_precise);
 
 protected:
-    using GridCellsInfoMap_t = std::map<int, std::map<int, float>>;
 
+    /**
+     * @brief Struct holding the important data for a cell
+     */
+    struct CellData{
+        float mass = 0; /**< mass */
+        std::vector<std::shared_ptr<Polygon>> machineProj; /**< Machine projections that caused an overlap in the cell */
+        std::map<std::string, double> overlappedMiniCells; /**< (mini) cells (and respective mass) overlapped in the cell */
+    };
 
     /**
      * @brief Struct holding the important data for the map update
      */
     struct Data{
         std::vector<Point> points; /**< Previous driven edge */
-        GridCellsInfoMap_t cellsInfoMass; /**< Driven cells info of the previous edge <machineId, <x, y, mass> */
-        GridCellsInfoMap_t cellsInfoOverlap; /**< Driven cells info of the previous edge <machineId, <x, y, overlap> */
+        std::map<std::string, CellData> cellsData; /**< Driven cells data of the previous edges */
         Polygon machineProj; /**< Previous machine projection */
-        double massTotal = 0; /**< Previous machine projection */
+        float massTotal = 0; /**< Total mass driven over */
     };
+
+    /**
+     * @brief Get the key of a cell from its x,y
+     * @param x x index
+     * @param y y index
+     * @return Cell string key
+     */
+    std::string toCellKey(size_t x, size_t y);
+
+    /**
+     * @brief Get the x,y of a cell from its string key
+     * @param key Cell string key
+     * @param [out] x x index
+     * @param [out] y y index
+     */
+    void toCellCoords(const std::string& key, size_t& x, size_t& y);
+
+    /**
+     * @brief Get the (mini) layout of a given cell
+     * @param x x index
+     * @param y y index
+     * @param be_precise Generate the layout with a higher resolution for better precision?
+     * @return Layout
+     */
+    gridmap::GridmapLayout getCellMiniLayout(size_t& x, size_t& y, bool be_precise = true);
 
     /**
      * @brief Get the initialized DrivenMassAreaMap.
      * @return Initialized DrivenMassAreaMap
      */
-    gridmap::SharedGridsManager::GridPtr initDrivenMassAreaMap();
+    GridPtr initDrivenMassAreaMap();
 
 
     /**
      * @brief Convect a vector of GridCellOverlap into a map < x , < y , overlap > >.
      * @return Converted map
      */
-    GridCellsInfoMap_t cellsInfoVecToMap(const std::vector<gridmap::GridmapLayout::GridCellOverlap>& vec);
+    std::map<std::string, float> cellsInfoVecToMap(const std::vector<gridmap::GridmapLayout::GridCellOverlap>& vec);
 
-
-    /**
-     * @brief Get the value from a GridCellsInfoMap_t corresponding to a given x, y.
-     * @param cellsInfoMap cellsInfoMap
-     * @param x x
-     * @param y y
-     * @param [out] val Value for the given x, y
-     * @return True on success
-     */
-    bool cellsInfoMapGetValue(const GridCellsInfoMap_t& cellsInfoMap, int x, int y, float& val);
+    bool isCellCloseToMachine(const std::string& cell, const CellData &cellData, const Polygon &machineProj);
 
     /**
-     * @brief Remove the value from a GridCellsInfoMap_t corresponding to a given x, y.
-     * @param [in/out] cellsInfoMap cellsInfoMap to be updated
-     * @param x x
-     * @param y y
-     * @param [out] val Value for the given x, y
+     * @brief Add new data with low precision.
+     * @param machine Driving machine
+     * @param pt New location
+     * @param bunker_mass Bunker mass
+     * @return AroResp with error id (0:=OK) and message
      */
-    void removeCellsInfoFromMap(GridCellsInfoMap_t& cellsInfoMap, int x, int y);
+    AroResp addData_simple(const Machine &machine, const Point& pt, double bunker_mass);
+
+    /**
+     * @brief Add new data based on the polygon (machine projection) intersection.
+     * @param machine Driving machine
+     * @param pt New location
+     * @param bunker_mass Bunker mass
+     * @param be_precise Perform map/grid operations precisely
+     * @return AroResp with error id (0:=OK) and message
+     */
+    AroResp addData_cellsAnalysis(const Machine &machine, const Point& pt, double bunker_mass, bool be_precise = true);
 
     /**
      * @brief Add new data based on the polygon (machine projection) intersection.
@@ -190,28 +286,29 @@ protected:
      */
     AroResp addData_polygonIntersection(const Machine &machine, const Point& pt, double bunker_mass, bool be_precise = true);
 
-
     /**
-     * @brief Add new data based on cells analysis.
+     * @brief Add new data based on the polygon (machine projection) intersection.
      * @param machine Driving machine
      * @param pt New location
-     * @param bunker_mass Bunker mass
-     * @param be_precise Perform map/grid operations precisely
-     * @return AroResp with error id (0:=OK) and message
+     * @return Filtered point
      */
-    AroResp addData_cellsAnalysis(const Machine &machine, const Point& pt, double bunker_mass, bool be_precise = true);
+    Point getFilteredPoint(const Machine &machine, const Point& pt);
 
 protected:
 
     bool m_ready = false; /**< Is the manager ready? */
     Field m_field; /**< Field */
-    gridmap::SharedGridsManager::GridPtr m_drivenMassAreaMap = nullptr; /**< Remaining area map */
+    GridPtr m_drivenMassAreaMap = nullptr; /**< Driven-mass map map */
     gridmap::SharedGridsManager m_gridsManager; /**< Shared grids manager >*/
     std::map<MachineId_t, Data> m_prevData; /**< Previous data per machine */
-    float m_defaultGPSFrontDisplacement = 0.05; /**< Default value of the location of the GPS w.r.t. the machine length from the fron of the machine >*/
+    float m_defaultGPSFrontDisplacement = 0.05; /**< Default value of the location of the GPS w.r.t. the machine length from the front of the machine >*/
     std::map<MachineId_t, float> m_GPSFrontDisplacements; /**< Default value of the location of the GPS w.r.t. the machine length from the fron of the machine >*/
-    bool m_usePolygonIntersection = true; /**< Use edge polygon intersection (true, recommended) or cells analysys (false) for repeating areas between previous edge and new edge >*/
+    float m_cellDistanceThreshold = 2; /**< Distance used to remove previous cells from memory >*/
+    bool m_usePolygonIntersection = false; /**< Use edge polygon intersection (true) or cells analysys (false, recommended) for repeating areas between previous edge and new edge >*/
+    float m_projMachineLength = 1.0;  /**< Part of the machine length [0, 1] used for the machine/edge projections >*/
+    PrecisionOption m_precision = PrecisionOption::MEDIUM_PRECISION; /**< Precision option >*/
     static const std::string DrivenMassAreaMapName; /**< Remainingg-are grid-map name >*/
+    bool m_filterAng = true; /**< Filter points based on angle */
 
 
 };

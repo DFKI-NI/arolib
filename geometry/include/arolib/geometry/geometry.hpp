@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,11 +19,11 @@
 
 // A general file for simple including of arolib geometry stuff
 
-#include "geometry_helper.hpp"
+#include "boost_geometries_wrapper.hpp"
 #include "curves_helper.hpp"
 #include "field_geometry_processing.hpp"
-#include "tracksgenerator.h"
+#include "geometry_helper.hpp"
 #include "pathsmoother.hpp"
-#include "boost_geometries_wrapper.hpp"
+#include "tracksgenerator.h"
 
 #endif // AROLIB_GEOMETRY_GEOMETRY_HPP

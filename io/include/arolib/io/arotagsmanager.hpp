@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,26 +17,8 @@
 #ifndef AROLIB_IO_XMLDOCUMENT_HPP
 #define AROLIB_IO_XMLDOCUMENT_HPP
 
-#include <ostream>
-#include <fstream>
-#include <sstream>
-#include <iterator>
-#include <stdlib.h>
-#include <typeinfo>
+#include <map>
 #include <typeindex>
-#include <type_traits>
-
-#include "arolib/types/coordtransformer.hpp"
-#include "arolib/types/machine.hpp"
-#include "arolib/types/subfield.hpp"
-#include "arolib/types/field.hpp"
-#include "arolib/types/fieldaccesspoint.hpp"
-#include "arolib/types/resourcepoint.hpp"
-#include "arolib/types/outfieldinfo.hpp"
-#include "arolib/types/machinedynamicinfo.hpp"
-#include "arolib/types/route.hpp"
-#include "arolib/cartography/common.hpp"
-#include "arolib/planning/path_search/directedgraph.hpp"
 
 namespace arolib {
 namespace io {

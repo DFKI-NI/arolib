@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,8 +18,16 @@
 #ifndef _AROLIB_GRIDMAP_NUMERIC_TCC_
 #define _AROLIB_GRIDMAP_NUMERIC_TCC_
 
-
 #include "arolib/cartography/gridmap_numeric.hpp"
+#include "arolib/misc/filesystem_helper.h"
+
+#include <fstream>
+
+#include <gdal/gdal_priv.h>
+//#include <gdal/ogr_spatialref.h>
+//#include <gdal/gdalwarper.h>
+
+#include <png++/image.hpp>
 
 namespace arolib {
 namespace gridmap {
@@ -73,22 +81,13 @@ NumericGridmap<T>::NumericGridmap(const NumericGridmap<T> &other)
 }
 
 /**
- * Destructor.
+ * Move constructor.
  */
 template<typename T>
-NumericGridmap<T>::~NumericGridmap()
+NumericGridmap<T>::NumericGridmap(NumericGridmap<T> &&other)
+    : Gridmap<T>(other)
 {
-}
-
-//------------------------------------
-//--------------OPERATORS-------------
-//------------------------------------
-
-// copy assignment
-template<typename T>
-NumericGridmap<T>& NumericGridmap<T>::operator=(const NumericGridmap<T>& other){
-    Gridmap<T>::operator =(other);
-    return *this;
+    this->logger().setBaseName(__FUNCTION__);
 }
 
 
@@ -2101,14 +2100,21 @@ long double NumericGridmap<T>::getPolygonComputedValue(const Polygon& _poly,
     return getCellsComputedValue(cells, value_type, area, checkForRepeatedCells, _error_);
 
 }
-
-
-/**
- * Get the data(values) of the cells in the list
- */
 template<typename T>
 template<typename K, typename>
 long double NumericGridmap<T>::getCellsComputedValue(const std::vector<K>& cells,
+                                                     ComputedValueType value_type,
+                                                     double area,
+                                                     bool checkForRepeatedCells,
+                                                     bool* _error_) const
+{
+    return getCellsComputedValue(cells, 0, value_type, area, checkForRepeatedCells, _error_);
+}
+
+template<typename T>
+template<typename K, typename>
+long double NumericGridmap<T>::getCellsComputedValue(const std::vector<K>& cells,
+                                                     double valInvalidUnset,
                                                      ComputedValueType value_type,
                                                      double area,
                                                      bool checkForRepeatedCells,
@@ -2157,7 +2163,11 @@ long double NumericGridmap<T>::getCellsComputedValue(const std::vector<K>& cells
                 value += ( cellValue * mult );
                 multSumSet += mult;
             }
+            else
+                value += valInvalidUnset;
         }
+        else
+            value += valInvalidUnset;
     }
 
     if (value_type == ComputedValueType::AVERAGE_TOTAL ){
@@ -2165,9 +2175,9 @@ long double NumericGridmap<T>::getCellsComputedValue(const std::vector<K>& cells
             area = std::max(area, areaCell * multSum);//in case the computation of the cells list is not precise
             return value * areaCell/area;
         }
-        if (areaTotal == 0)
+        if (multSum == 0)
             return 0;
-        return ( value * areaCell/areaTotal );
+        return ( value / multSum );
     }
 
     if (value_type == ComputedValueType::AVERAGE_VALID){
@@ -2175,15 +2185,15 @@ long double NumericGridmap<T>::getCellsComputedValue(const std::vector<K>& cells
             area = std::max(area, areaCell * multSumValid);//in case the computation of the cells list is not precise
             return value * areaCell/area;
         }
-        if (areaValid == 0)
+        if (multSumValid == 0)
             return 0;
-        return ( value * areaCell/areaValid );
+        return ( value / multSumValid );
     }
 
     if (value_type == ComputedValueType::AVERAGE_VALID_AND_SET){
-        if (areaSet == 0)
+        if (multSumSet == 0)
             return 0;
-        return ( value * areaCell/areaSet );
+        return ( value / multSumSet );
     }
 
     return value ;
@@ -3128,7 +3138,7 @@ bool NumericGridmap<T>::readGridFromGeoTiff(const std::string& filename) {
 
 //                if(std::isnan(pafScanline[x]))
 //                     std::cout << "[" << x << "," << y << "] = "
-//                               << pafScanline[x] << " :: " << value << " :: " << (float)m_grid[x][y] << std::endl;
+//                               << pafScanline[x] << " :: " << value << " :: " << (float)m_grid[x][y] << "\n";
 
         }
 
@@ -3152,14 +3162,14 @@ bool NumericGridmap<T>::readGridFromGeoTiffString(const std::string& data, bool 
 
     if(isInWGS){
         int ret;
-        std::string fileNameIn = "/tmp/__tiffdata__" + std::to_string( (long)this ) + "_in.tif";
+        std::string fileNameIn = io::create_path(io::get_temp_dir(), "__tiffdata__" + std::to_string( (long)this ) + "_in.tif");
         std::ofstream fileIn(fileNameIn, std::ofstream::binary);
         if(!fileIn.is_open())
             return false;
         fileIn.write(data.c_str(), data.size());
         fileIn.close();
 
-        std::string fileNameOut = "/tmp/__tiffdata__" + std::to_string( (long)this ) + "_out.tif";
+        std::string fileNameOut = io::create_path(io::get_temp_dir(), "__tiffdata__" + std::to_string( (long)this ) + "_out.tif" );
         std::string command = "gdalwarp -t_srs '+proj=utm +zone=32U +datum=WGS84' -overwrite " + fileNameIn + " " + fileNameOut;
         ret = system(command.c_str());
 
@@ -3243,10 +3253,10 @@ bool NumericGridmap<T>::saveGridAsPPM(const std::string& filename) const  {
     long double maxValue = std::numeric_limits<TPPM>::max();
     long double deltaVal = stats.max - stats.min;
 
-    out << "P3" << std::endl
-        << "# creator: AroLib" << std::endl
-        << this->getSizeX() << " " << this->getSizeY() << std::endl
-        << std::numeric_limits<TPPM>::max() << std::endl;
+    out << "P3" << "\n"
+        << "# creator: AroLib\n"
+        << this->getSizeX() << " " << this->getSizeY() << "\n"
+        << std::numeric_limits<TPPM>::max() << "\n";
 
     for (unsigned int y=this->getSizeY()-1; y+1 > 0 ; y--) {
         for (unsigned int x=0; x < this->getSizeX(); x++) {
@@ -3262,7 +3272,7 @@ bool NumericGridmap<T>::saveGridAsPPM(const std::string& filename) const  {
             }
             out << valueOut << " " << valueOut << " " << valueOut << " ";
         }
-        out << std::endl;
+        out << "\n";
     }
     out.close();
     out.clear();
@@ -3439,7 +3449,7 @@ bool NumericGridmap<T>::saveValuesInCSV(const std::string& _filename, const std:
         size_t yRev = this->getSizeY() - y - 1;
         double yFrom = this->m_layout.getMinPointY() + yRev * this->getCellsize();
         double yTo = yFrom + this->getCellsize();
-        fileout << std::endl << "y=" << yRev << " (" << yFrom << "~" << yTo << ")";
+        fileout << "\ny=" << yRev << " (" << yFrom << "~" << yTo << ")";
         for (unsigned int x=0; x < this->getSizeX(); ++x) {
             if( !this->hasValue(x, yRev, &errorTmp) || errorTmp )
                 fileout << sep;

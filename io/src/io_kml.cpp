@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,14 @@
 */
  
 #include "arolib/io/io_kml.hpp"
+
+#include <fstream>
+
+#include <boost/property_tree/xml_parser.hpp>
+#include <boost/foreach.hpp>
+
+#include "arolib/geometry/geometry_helper.hpp"
+#include "arolib/types/coordtransformer.hpp"
 
 namespace arolib {
 namespace io {
@@ -244,7 +252,7 @@ bool read_field_kml_best_guess(const std::string& filename, std::vector<arolib::
                 else std::cout << "     ressource points:" << std::endl;
                 for (size_t i=0; i < resource_points.size(); i++){
                     resource_points.at(i).id = i; //@TODO: temporary workaround. should be read from the file as well, together with the other resource point parameters
-                    std::cout << "       " << resource_points[i] << std::endl;
+                    std::cout << "       " << resource_points[i] << "\n";
                 }
                 std::cout << std::endl;
 
@@ -375,7 +383,7 @@ bool read_field_kml_best_guess__ed(const std::string &filename, std::vector<Fiel
                 if (resource_points.size() == 0) std::cout << "     no ressource points found" << std::endl;
                 else std::cout << "     ressource points:" << std::endl;
                 for (size_t i=0; i < resource_points.size(); i++)
-                    std::cout << "       " << resource_points[i] << std::endl;
+                    std::cout << "       " << resource_points[i] << "\n";
                 std::cout << std::endl;
 
                 s.resource_points = resource_points;

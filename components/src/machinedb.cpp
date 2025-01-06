@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,14 @@
 */
  
 #include "arolib/components/machinedb.h"
+
+#include <fstream>
+#include <dirent.h>
+
+#include <boost/tokenizer.hpp>
+#include <boost/algorithm/string.hpp>
+
+#include "arolib/io/io_xml.hpp"
 
 namespace arolib {
 
@@ -206,14 +214,14 @@ AroResp MachineDB::getAllMachines(std::vector<Machine> &machines)
 
 void MachineDB::printList()
 {
-    std::cout << std::endl << "*************** MACHINES ***************" << std::endl;
+    std::cout << "\n*************** MACHINES ***************\n";
     for (auto it1 : m_machineDB) {
-        std::cout << "  " << it1.first << std::endl;
+        std::cout << "  " << it1.first << "\n";
         for (auto it2 : it1.second ) {
-            std::cout << "  ::  " << it2.first << std::endl;
+            std::cout << "  ::  " << it2.first << "\n";
         }
     }
-    std::cout << "*************** MACHINES ***************" << std::endl << std::endl;
+    std::cout << "*************** MACHINES ***************\n" << std::endl;
 
 }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,10 @@
 */
  
 #include "arolib/io/arokmloutdocument.hpp"
+
+#include "arolib/misc/basicconversions.hpp"
+#include "arolib/misc/filesystem_helper.h"
+#include "arolib/types/coordtransformer.hpp"
 
 namespace arolib {
 namespace io {
@@ -89,7 +93,7 @@ bool AroKMLOutDocument::add(const Point &pt, const std::string &name, const std:
         logger().printOut(LogLevel::ERROR, __FUNCTION__, "Exception cought. point = " + pt.toString(10));
         ok = false;
     }
-    *m_os << std::endl;
+    *m_os << "\n";
 
     closeTag();
     closeTag();
@@ -145,7 +149,7 @@ bool AroKMLOutDocument::add(const std::vector<Point> &pts, const std::string &na
             ok = false;
         }
     }
-    *m_os << std::endl;
+    *m_os << "\n";
 
     closeTag();
     closeTag();
@@ -194,7 +198,7 @@ bool AroKMLOutDocument::add(const Linestring &ls, const std::string &name, const
             ok = false;
         }
     }
-    *m_os << std::endl;
+    *m_os << "\n";
 
     closeTag();
     closeTag();
@@ -255,7 +259,7 @@ bool AroKMLOutDocument::add(const Polygon &poly, const std::string &name, const 
             ok = false;
         }
     }
-    *m_os << std::endl;
+    *m_os << "\n";
 
     closeTag();
     closeTag();
@@ -918,7 +922,8 @@ std::string AroKMLOutDocument::getDescription(const ResourcePoint &pt)
     return    "id=" + std::to_string(pt.id) + "\n"
             + getTag(pt.resourceTypes) + "=" + resourceTypes + "\n"
             + "defaultUnloadingTime=" + double2string(pt.defaultUnloadingTime) + "\n"
-            + "defaultUnloadingTimePerKg=" + double2string(pt.defaultUnloadingTimePerKg);
+            + "defaultUnloadingTimePerKg=" + double2string(pt.defaultUnloadingTimePerKg) + "\n"
+            + "massCapacity=" + double2string(pt.massCapacity);
 
 }
 

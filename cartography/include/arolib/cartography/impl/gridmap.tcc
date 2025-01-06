@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,10 @@
 
 #include "arolib/cartography/gridmap.hpp"
 
+#include <future>
+
+#include "arolib/geometry/geometry_helper.hpp"
+
 namespace arolib {
 namespace gridmap {
 
@@ -32,8 +36,7 @@ namespace gridmap {
 template<typename T>
 Gridmap<T>::Gridmap(const GridmapLayout &lo, LogLevel logLevel):
     LoggingComponent(logLevel, __FUNCTION__),
-    m_layout(lo),
-    m_allocated(false)
+    m_layout(lo)
 {
     m_layout.logger().setParent(loggerPtr());
 
@@ -52,8 +55,8 @@ Gridmap<T>::Gridmap(const GridmapLayout &lo, LogLevel logLevel):
  */
 template<typename T>
 Gridmap<T>::Gridmap(LogLevel logLevel):
-  LoggingComponent(logLevel, __FUNCTION__),
-  m_allocated(false) {
+  LoggingComponent(logLevel, __FUNCTION__)
+{
     m_layout.logger().setParent(loggerPtr());
 }
 
@@ -62,8 +65,7 @@ Gridmap<T>::Gridmap(LogLevel logLevel):
  */
 template<typename T>
 Gridmap<T>::Gridmap(const Gridmap<T>& other):
-      LoggingComponent(other),
-      m_allocated(false)
+      LoggingComponent(other)
 {
     m_layout = other.m_layout;
     m_layout.logger().setParent(loggerPtr());
@@ -90,6 +92,23 @@ Gridmap<T>::Gridmap(const Gridmap<T>& other):
 }
 
 /**
+ * Move constructor.
+ */
+template<typename T>
+Gridmap<T>::Gridmap(Gridmap<T>&& other):
+      LoggingComponent( other ),
+      m_layout( other.m_layout ),
+      m_grid( other.m_grid )
+{
+    other.m_grid = nullptr;
+
+    //m_layout.logger().setParent(loggerPtr());
+
+    m_units = other.m_units;
+    m_computeInMultiThread = other.m_computeInMultiThread;
+}
+
+/**
  * Destructor.
  */
 template<typename T>
@@ -106,6 +125,20 @@ Gridmap<T>::~Gridmap()
 template<typename T>
 Gridmap<T>& Gridmap<T>::operator=(const Gridmap<T>& other){
     copyFrom(other, false);
+    return *this;
+}
+
+// move assignment
+template<typename T>
+Gridmap<T>& Gridmap<T>::operator=(Gridmap<T>&& other){
+
+    m_layout = std::move(other.m_layout);
+    m_grid = other.m_grid;
+    m_units = other.m_units;
+    m_computeInMultiThread = other.m_computeInMultiThread;
+
+    other.m_grid = nullptr;
+
     return *this;
 }
 
@@ -155,14 +188,13 @@ bool Gridmap<T>::equalGeometry(const Gridmap<T>& other) const{
 template<typename T>
 void Gridmap<T>::destroy()
 {
-    if (!m_allocated)
+    if (!m_grid)
         return;
 
     for(unsigned int x = 0; x < m_layout.getSizeX(); ++x)
         delete[] m_grid[x];
     delete[] m_grid;
-
-    m_allocated = false;
+    m_grid = nullptr;
 }
 
 /**
@@ -1209,7 +1241,7 @@ bool Gridmap<T>::intersect(const Polygon& _poly, const T *valueOut, float overla
  * @return True if the grid is allocated
  */
 template<typename T>
-bool Gridmap<T>::isAllocated() const { return m_allocated; }
+bool Gridmap<T>::isAllocated() const { return m_grid != nullptr; }
 
 /**
  * Get geometric layout.
@@ -1611,13 +1643,13 @@ bool Gridmap<T>::allocate()
         return false;
     }
 
-    m_allocated = true;//set it here in case we need to destroy
-
     for (unsigned int x=0; x < m_layout.getSizeX(); x++) {
         m_grid[x] = new TStore[ m_layout.getSizeY() ];
         if (!m_grid[x]) {
+            auto prevSizeX = m_layout.getSizeX();
             m_layout.setSize(x, m_layout.getSizeY());
             destroy();
+            m_layout.setSize(prevSizeX, m_layout.getSizeY());
             return false;
         }
 

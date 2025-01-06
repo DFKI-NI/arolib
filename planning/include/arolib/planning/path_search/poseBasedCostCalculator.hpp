@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,14 +19,9 @@
 
 #include <functional>
 
-#include "arolib/geometry/geometry_helper.hpp"
-#include "arolib/geometry/curves_helper.hpp"
-#include "arolib/misc/container_helper.h"
-#include "arolib/misc/logger.h"
-#include "arolib/cartography/common.hpp"
-#include "arolib/cartography/gridcellsinfomanager.hpp"
 #include "arolib/planning/path_search/poseBasedGraph.hpp"
 #include "arolib/planning/visit_period.hpp"
+#include "arolib/cartography/gridmap.hpp"
 
 namespace arolib{
 

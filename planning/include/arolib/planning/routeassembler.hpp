@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,28 +17,11 @@
 #ifndef AROLIB_ROUTEASSEMBLER_HPP
 #define AROLIB_ROUTEASSEMBLER_HPP
 
-#include <vector>
-#include <algorithm>
-#include <stdexcept>
-#include <ctime>
-
-#include "arolib/planning/planningworkspace.h"
-#include "arolib/planning/aro_functions.hpp"
 #include "arolib/planning/edge_calculators/edgeMassCalculator.hpp"
 #include "arolib/planning/edge_calculators/edgeSpeedCalculator.hpp"
 #include "arolib/planning/track_connectors/infieldtracksconnectordef.hpp"
 #include "arolib/planning/track_sequencing/tracksequencer.hpp"
 #include "arolib/types/route.hpp"
-#include "arolib/types/linestring.hpp"
-#include "arolib/types/route_point.hpp"
-#include "arolib/types/machine.hpp"
-#include "arolib/geometry/geometry_helper.hpp"
-#include "arolib/geometry/field_geometry_processing.hpp"
-#include "arolib/cartography/common.hpp"
-#include "arolib/misc/loggingcomponent.h"
-#include "arolib/misc/logger.h"
-#include "arolib/misc/container_helper.h"
-#include "arolib/geometry/curves_helper.hpp"
 
 namespace arolib{
 
@@ -46,7 +29,7 @@ namespace arolib{
  * @brief Class used to assemble/create primary-machine routes for inner-field working
  * @sa HeadlandRouteAssembler
  */
-class RouteAssembler : public LoggingComponent, protected PlanningWorkspaceAccessor
+class RouteAssembler : public LoggingComponent
 {
 
 public:
@@ -161,7 +144,7 @@ public:
      * @brief Set the tracks connections map
      * @param conns tracks connections map
      */
-    void setTracksConnectionsMap(ITrackSequencer::PathsMapConstPtr_t conns);
+    void setTracksConnectionsMapManager(geometry::PathsMapManagerPtr_t pmm);
 
 protected:
 
@@ -197,7 +180,7 @@ protected:
     std::shared_ptr<IEdgeSpeedCalculator> m_workingSpeedCalculator = std::make_shared<EdgeWorkingSpeedCalculatorDef>(); /**< Speed calculator for the tracks */
     std::shared_ptr<IEdgeSpeedCalculator> m_transitSpeedCalculator = std::make_shared<EdgeTransitSpeedCalculatorDef>(); /**< Speed calculator for the tracks' connection */
 
-    ITrackSequencer::PathsMapConstPtr_t m_tracksConnectionsMap = nullptr;
+    geometry::PathsMapManagerConstPtr_t m_tracksConnectionsMap = nullptr; /**< Paths-Map manager */
 };
 
 }

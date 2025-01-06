@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH and Universität Osnabrück
+ * Copyright 2021-2025 DFKI GmbH and Universität Osnabrück
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,12 +15,11 @@
 */
  
 #include "arolib/io/io_hdf5.hpp"
-#include "arolib/types/coordtransformer.hpp"
-#include "arolib/io/io_common.hpp"
-#include <highfive/H5Easy.hpp>
 
-#include <iostream>
-#include <functional>
+#include <boost/multi_array.hpp>
+
+//#include <hdf5_hl.h>
+//#include <highfive/H5DataSpace.hpp>
 
 namespace arolib {
 namespace io {
@@ -34,17 +33,26 @@ namespace
     template<typename ... Args>
     std::string string_format( const std::string& format, Args ... args );
 
+    template<typename T>
+    T load_optional(const HighFive::File& file, const std::string& path, const T& defautVal);
 
-    void toLineString(boost::multi_array<double,2>& array_in, size_t& id, arolib::Linestring& linestring_out);
-    void toPointVec(boost::multi_array<double,2>& array_in, std::vector<arolib::Point>& points_out);
-    void toPointVec(boost::multi_array<double,2>& array_in, Polygon &poly_out);
+    Point load_point(const HighFive::File& file, const std::string& path, const Point *defautVal = nullptr);
+
+    void toLineString(const boost::multi_array<double, 2> &array_in, int &id, arolib::Linestring& linestring_out);
+    void toPointVec(const boost::multi_array<double,2>& array_in, std::vector<arolib::Point>& points_out);
+    void toPointVec(const boost::multi_array<double, 2> &array_in, Polygon &poly_out);
     boost::multi_array<double,2> readMatrix(HighFive::File& file, std::string path);
-    arolib::Linestring toLineStringNew(boost::multi_array<double,2>& array_in, size_t& id);
+    arolib::Linestring toLineStringNew(const boost::multi_array<double,2>& array_in, int& id);
 
     arolib::Subfield readSubField(HighFive::File &file, HighFive::Group& group);
     std::vector<arolib::Track> readTracks(HighFive::File &file, HighFive::Group& group);
 
-    void writePointsAsMatrix(const std::vector<arolib::Point>& points, std::string path, HighFive::File &file, H5Easy::DumpOptions &opt);
+    template< typename T,
+              typename = typename std::enable_if< std::is_base_of<Point, T>::value, void >::type >
+    void writePointsAsMatrix(const std::vector<T> &points, std::string path, HighFive::File &file, H5Easy::DumpOptions &opt);
+
+    void writePointAsMatrix(const Point &point, std::string path, HighFive::File &file, H5Easy::DumpOptions &opt);
+
     void writeTracks(const std::vector<arolib::Track>& tracks, std::string path, HighFive::File &file, H5Easy::DumpOptions &opt);
 
     std::vector<std::string> listNodes(std::string file_path, std::string node_path);
@@ -58,20 +66,22 @@ namespace
         size_t found = subfield_group.getPath().find_last_of("/\\");
         std::string group_path = subfield_group.getPath().substr(0,found);
         std::string group_name = subfield_group.getPath().substr(found+1);
-        subfield.id = std::stoi(group_name);
+
+        subfield.id = load_optional<int>(file, subfield_group.getPath() + "/id", subfield.working_direction);
+
         std::string current_node_str = "access_points";
         if(subfield_group.exist(current_node_str))
         {
             auto group = subfield_group.getGroup(current_node_str);
             std::vector<std::string> child_list = group.listObjectNames();
+            subfield.access_points.reserve(child_list.size());
             for(auto&& child : child_list)
             {
-                auto point = H5Easy::load<boost::multi_array<double, 2>>(file,group.getPath() + "/" + child  + "/position");
-                int type = H5Easy::load<int>(file,group.getPath() + "/" + child  + "/type");
-                // convert to arolib objects
-                size_t child_id = std::stoi(child);
-                subfield.access_points.emplace_back(arolib::Point(point[0][0],point[0][1],point[0][2]), child_id,
-                                                    FieldAccessPoint::intToAccessPointType(type));
+                arolib::FieldAccessPoint fap;
+                fap.point() = load_point(file, group.getPath() + "/" + child  + "/position");
+                fap.accessType = FieldAccessPoint::intToAccessPointType( load_optional<int>(file, group.getPath() + "/" + child  + "/type", fap.accessType) );
+                fap.id = load_optional<int>(file, group.getPath() + "/" + child + "/id", std::stoi(child));
+                subfield.access_points.emplace_back(fap);
             }
         }
         // -----------------------------
@@ -80,8 +90,7 @@ namespace
         current_node_str = "boundary_inner";
         if(subfield_group.exist(current_node_str))
         {
-            auto points = readMatrix(file,subfield_group.getPath() + "/" + current_node_str);
-            toPointVec(points,subfield.boundary_inner);
+            toPointVec( readMatrix(file, subfield_group.getPath() + "/" + current_node_str), subfield.boundary_inner );
         }
         // -----------------------------
         // Boundary Outer
@@ -89,8 +98,7 @@ namespace
         current_node_str = "boundary_outer";
         if(subfield_group.exist(current_node_str))
         {
-            auto points = readMatrix(file,subfield_group.getPath() + "/" + current_node_str);
-            toPointVec(points,subfield.boundary_outer);
+            toPointVec( readMatrix(file, subfield_group.getPath() + "/" + current_node_str), subfield.boundary_outer );
         }
 
         // -----------------------------
@@ -107,23 +115,21 @@ namespace
             if(group.exist(current_node_str2))
             {
                 auto sub_group = group.getGroup(current_node_str2);
+
                 // -----------------------------
                 // Headlands/Complete
                 // -----------------------------
-                subfield.headlands.complete.headlandWidth = H5Easy::load<double>(file,sub_group.getPath() + "/width");
-                auto middle_track_points = readMatrix(file,sub_group.getPath() + "/middle_track");
-                toPointVec(middle_track_points,subfield.headlands.complete.middle_track.points);
+                subfield.headlands.complete.headlandWidth = load_optional<double>(file, sub_group.getPath() + "/width", subfield.headlands.complete.headlandWidth);
+                toPointVec( readMatrix(file, sub_group.getPath() + "/middle_track"), subfield.headlands.complete.middle_track.points );
+
                 // -----------------------------
                 // Headlands/Complete/Tracks
                 // -----------------------------
-                subfield.headlands.complete.tracks = readTracks(file,sub_group);
-
-
-                auto boundary_points = readMatrix(file,sub_group.getPath() + "/boundary_out");
-                toPointVec(boundary_points,subfield.headlands.complete.boundaries.first);
-                boundary_points = readMatrix(file,sub_group.getPath() + "/boundary_in");
-                toPointVec(boundary_points,subfield.headlands.complete.boundaries.second);
+                subfield.headlands.complete.tracks = readTracks(file, sub_group);
+                toPointVec( readMatrix(file, sub_group.getPath() + "/boundary_out"), subfield.headlands.complete.boundaries.first );
+                toPointVec( readMatrix(file, sub_group.getPath() + "/boundary_in"), subfield.headlands.complete.boundaries.second);
             }
+
             // -----------------------------
             // Headlands/Partials
             // -----------------------------
@@ -132,16 +138,15 @@ namespace
             {
                 auto sub_group = group.getGroup(current_node_str2);
                 std::vector<std::string> child_list = sub_group.listObjectNames();
+                subfield.headlands.partial.reserve(child_list.size());
                 for(auto&& child : child_list)
                 {
                     arolib::PartialHeadland partial;
-                    size_t child_id = std::stoi(child);
-                    partial.id = child_id;
-                    auto boundary_points = readMatrix(file, sub_group.getPath() + "/" + child  + "/boundary");
-                    toPointVec(boundary_points, partial.boundary);
+                    partial.id = load_optional<int>(file, sub_group.getPath() + "/" + child  + "/id", std::stoi(child));
+                    toPointVec( readMatrix(file, sub_group.getPath() + "/" + child  + "/boundary"), partial.boundary );
 
-                    int connectingHeadlandId1 = H5Easy::load<int>(file,sub_group.getPath() + "/" + child  + "/connectingHeadlandId1");
-                    int connectingHeadlandId2 = H5Easy::load<int>(file,sub_group.getPath() + "/" + child  + "/connectingHeadlandId2");
+                    int connectingHeadlandId1 = load_optional<int>(file, sub_group.getPath() + "/" + child  + "/connectingHeadlandId1", partial.connectingHeadlandIds.first);
+                    int connectingHeadlandId2 = load_optional<int>(file, sub_group.getPath() + "/" + child  + "/connectingHeadlandId2", partial.connectingHeadlandIds.second);
                     partial.connectingHeadlandIds = std::make_pair(connectingHeadlandId1, connectingHeadlandId2);
 
                     // -----------------------------
@@ -154,6 +159,7 @@ namespace
             }
 
         }
+
         // -----------------------------
         // Obstacles
         // -----------------------------
@@ -162,21 +168,21 @@ namespace
         {
             auto group = subfield_group.getGroup(current_node_str);
             std::vector<std::string> child_list = group.listObjectNames();
+            subfield.obstacles.reserve(child_list.size());
             for(auto&& child : child_list)
             {
-                size_t child_id = std::stoi(child);
                 Obstacle obs;
-                obs.type = Obstacle::intToObstacleType(H5Easy::load<int>(file,group.getPath() + "/" + child  + "/type"));
-                obs.type_description = H5Easy::load<std::string>(file,group.getPath() + "/" + child  + "/description");
-                auto points = readMatrix(file,group.getPath() + "/" + child  + "/boundary");
-                toPointVec(points,obs.boundary);
+                obs.type = Obstacle::intToObstacleType( load_optional<int>(file, group.getPath() + "/" + child  + "/type", obs.type) );
+                obs.type_description = load_optional<std::string>(file, group.getPath() + "/" + child  + "/description", obs.type_description);
+                toPointVec( readMatrix(file, group.getPath() + "/" + child  + "/boundary"), obs.boundary );
                 subfield.obstacles.push_back(obs);
             }
         }
+
         // -----------------------------
         // Tracks
         // -----------------------------
-        subfield.tracks = readTracks(file,subfield_group);
+        subfield.tracks = readTracks(file, subfield_group);
 
 
         // -----------------------------
@@ -187,26 +193,23 @@ namespace
         {
             auto group = subfield_group.getGroup(current_node_str);
             std::vector<std::string> child_list = group.listObjectNames();
+            subfield.resource_points.reserve(child_list.size());
             for(auto&& child : child_list)
             {
-                size_t child_id = std::stoi(child);
-
                 ResourcePoint rp;
-                rp.id = child_id;
-                auto point = H5Easy::load<boost::multi_array<double, 2>>(file,group.getPath() + "/" + child  + "/position");
-                rp.x = point[0][0];
-                rp.y = point[0][1];
-                rp.z = point[0][2];
-                auto types = H5Easy::load<std::vector<int>>(file,group.getPath() + "/" + child  + "/types");
+                rp.id = load_optional<int>(file, group.getPath() + "/" + child  + "/id", std::stoi(child));
+                rp.point() = load_point(file, group.getPath() + "/" + child  + "/position");
+                auto types = load_optional<std::vector<int>>(file, group.getPath() + "/" + child  + "/types", {});
                 for(auto type : types)
                 {
                     rp.resourceTypes.insert(ResourcePoint::intToResourceType(type));
                 }
-                auto points = readMatrix(file,group.getPath() + "/" + child  + "/geometry");
-                toPointVec(points,rp.geometry.points);
+                toPointVec( readMatrix(file, group.getPath() + "/" + child  + "/geometry"), rp.geometry.points );
 
-                rp.defaultUnloadingTime = H5Easy::load<double>(file,group.getPath() + "/" + child  + "/defaultUnloadingTime");
-                rp.defaultUnloadingTimePerKg = H5Easy::load<double>(file,group.getPath() + "/" + child  + "/defaultUnloadingTimePerKg");
+                rp.defaultUnloadingTime = load_optional<double>(file, group.getPath() + "/" + child  + "/defaultUnloadingTime", rp.defaultUnloadingTime);
+                rp.defaultUnloadingTimePerKg = load_optional<double>(file, group.getPath() + "/" + child  + "/defaultUnloadingTimePerKg", rp.defaultUnloadingTimePerKg);
+                rp.massCapacity = load_optional<double>(file, group.getPath() + "/" + child  + "/massCapacity", rp.massCapacity);
+                rp.volumeCapacity = load_optional<double>(file, group.getPath() + "/" + child  + "/volumeCapacity", rp.volumeCapacity);
                 subfield.resource_points.push_back(rp);
             }
         }
@@ -221,19 +224,22 @@ namespace
         {
             auto group = subfield_group.getGroup(current_node_str);
             std::vector<std::string> child_list = group.listObjectNames();
+            subfield.reference_lines.reserve(child_list.size());
             for(auto&& child : child_list)
             {
-                size_t child_id = std::stoi(child);
-                auto points = readMatrix(file,group.getPath() + "/" + child  + "/coordinates");
-                subfield.reference_lines.push_back(toLineStringNew(points,child_id));
+                int child_id = load_optional<int>(file, group.getPath() + "/" + child  + "/id", std::stoi(child) );
+                auto points = readMatrix(file, group.getPath() + "/" + child  + "/coordinates");
+                subfield.reference_lines.push_back(toLineStringNew(points, child_id));
             }
         }
+
         // -----------------------------
         // working_direction
         // -----------------------------
-        subfield.working_direction = H5Easy::load<double>(file,subfield_group.getPath() + "/working_direction");
+        subfield.working_direction = load_optional<double>(file, subfield_group.getPath() + "/working_direction", subfield.working_direction);
         return subfield;
     }
+
     std::vector<std::string> listNodes(std::string file_path, std::string node_path)
     {
         std::vector<std::string> names;
@@ -252,15 +258,17 @@ namespace
         }
         return names;
     }
+
     void writeTracks(const std::vector<arolib::Track>& tracks, std::string path, HighFive::File &file, H5Easy::DumpOptions &opt)
     {
         for(size_t i = 0 ; i < tracks.size(); i++)
         {
-            auto group_path = path + "/" + string_format("tracks/%05u",tracks[i].id);
-            H5Easy::dump(file, group_path + "/type",(int)tracks[i].type,opt);
-            H5Easy::dump(file, group_path + "/width",tracks[i].width,opt);
-            writePointsAsMatrix(tracks[i].points,group_path + "/points",file,opt);
-            writePointsAsMatrix(tracks[i].boundary.points,group_path + "/boundary",file,opt);
+            auto group_path = path + "/" + string_format("tracks/%05u", i);
+            H5Easy::dump(file, group_path + "/id", tracks[i].id, opt);
+            H5Easy::dump(file, group_path + "/type", (int)tracks[i].type, opt);
+            H5Easy::dump(file, group_path + "/width", tracks[i].width, opt);
+            writePointsAsMatrix(tracks[i].points, group_path + "/points", file, opt);
+            writePointsAsMatrix(tracks[i].boundary.points, group_path + "/boundary", file, opt);
         }
     }
 
@@ -275,20 +283,16 @@ namespace
         {
             auto group = track_group.getGroup(current_node_str);
             std::vector<std::string> child_list = group.listObjectNames();
+            tracks.reserve(child_list.size());
             for(auto&& child : child_list)
             {
                 arolib::Track track;
-                auto points = readMatrix(file,group.getPath() + "/" + child  + "/points");
-                auto boundary_points = readMatrix(file,group.getPath() + "/" + child + "/boundary");
-                track.type = Track::intToTrackType(H5Easy::load<int>(file,group.getPath() + "/" + child + "/type"));
-                track.width = H5Easy::load<double>(file,group.getPath() + "/" + child + "/width");
-                // convert to arolib objects
-                size_t child_id = std::stoi(child);
-                track.id = child_id;
-                toPointVec(points,track.points);
-                toPointVec(boundary_points,track.boundary);
+                track.id = load_optional<int>(file, group.getPath() + "/" + child + "/id", std::stoi(child));
+                track.type = Track::intToTrackType( load_optional<int>(file, group.getPath() + "/" + child + "/type", track.type) );
+                track.width = load_optional<double>(file, group.getPath() + "/" + child + "/width", track.width);
+                toPointVec( readMatrix(file, group.getPath() + "/" + child  + "/points"), track.points );
+                toPointVec( readMatrix(file, group.getPath() + "/" + child + "/boundary"), track.boundary );
                 tracks.push_back(track);
-
             }
         }
         return tracks;
@@ -306,47 +310,84 @@ namespace
         return std::string( buf.get(), buf.get() + size - 1 ); // We don't want the '\0' inside
     }
 
+    template<typename T>
+    T load_optional(const HighFive::File& file, const std::string& path, const T &defautVal){
+        if(file.exist(path))
+            return H5Easy::load<T>(file, path);
+        return defautVal;
+    }
 
-    void toPointVec(boost::multi_array<double,2>& array_in, std::vector<arolib::Point>& points_out)
+    Point load_point(const HighFive::File& file, const std::string& path, const Point* defautVal)
+    {
+        try{
+            auto coords = H5Easy::load<boost::multi_array<double, 2>>(file, path);
+
+            auto dim = coords.shape()[1];
+            if(dim != 2 && dim != 3){
+                throw( std::out_of_range("Invalid number of coordinates dimension for point") );
+            }
+
+            Point pt;
+            pt.x = coords[0][0];
+            pt.y = coords[0][1];
+            if(dim > 2)
+                pt.z = coords[0][2];
+            return pt;
+        }
+        catch(HighFive::Exception& e){
+            if(defautVal)
+                return *defautVal;
+            throw(e);
+        }
+    }
+
+
+    void toPointVec(const boost::multi_array<double, 2> &array_in, std::vector<arolib::Point>& points_out)
     {
         auto num_points = array_in.shape()[0];
         auto dim        = array_in.shape()[1];
-        // points should be 3d
-        if(dim != 3) return;
+        // points should be 2d/3d
+        if(dim != 2 && dim != 3) return;
         // make sure linestring is empty
         points_out.clear();
         for(size_t i = 0 ; i < num_points ; i++)
         {
-            points_out.emplace_back(array_in[i][0],array_in[i][1],array_in[i][2]);
+            if(dim == 2)
+                points_out.emplace_back(array_in[i][0], array_in[i][1], array_in[i][2]);
+            else
+                points_out.emplace_back(array_in[i][0], array_in[i][1]);
         }
     }
 
-    void toPointVec(boost::multi_array<double,2>& array_in, arolib::Polygon& poly_out)
+    void toPointVec(const boost::multi_array<double,2>& array_in, arolib::Polygon& poly_out)
     {
         auto num_points = array_in.shape()[0];
         auto dim        = array_in.shape()[1];
-        // points should be 3d
-        if(dim != 3) return;
+        // points should be 2d/3d
+        if(dim != 2 && dim != 3) return;
         // make sure linestring is empty
         poly_out.points.clear();
         for(size_t i = 0 ; i < num_points ; i++)
         {
-            poly_out.points.emplace_back(array_in[i][0],array_in[i][1],array_in[i][2]);
+            if(dim == 2)
+                poly_out.points.emplace_back(array_in[i][0], array_in[i][1]);
+            else
+                poly_out.points.emplace_back(array_in[i][0], array_in[i][1], array_in[i][2]);
         }
         arolib::geometry::correct_polygon(poly_out);
     }
 
 
-    void toLineString(boost::multi_array<double,2>& array_in, size_t& id, arolib::Linestring& linestring_out)
+    void toLineString(const boost::multi_array<double, 2> &array_in, int& id, arolib::Linestring& linestring_out)
     {
         linestring_out.id = id;
-        toPointVec(array_in,linestring_out.points);
+        toPointVec(array_in, linestring_out.points);
     }
 
-    arolib::Linestring toLineStringNew(boost::multi_array<double,2>& array_in, size_t& id)
+    arolib::Linestring toLineStringNew(const boost::multi_array<double,2>& array_in, int& id)
     {
         arolib::Linestring ls;
-        toLineString(array_in,id,ls);
+        toLineString(array_in, id, ls);
         return ls;
     }
 
@@ -355,13 +396,14 @@ namespace
         boost::multi_array<double,2> mat;
         if(file.exist(path))
         {
-            auto nmat = H5Easy::load<boost::multi_array<double, 2>>(file,path);
+            auto nmat = H5Easy::load<boost::multi_array<double, 2>>(file, path);
             return nmat;
         }
         return mat;
     }
 
-    void writePointsAsMatrix(const std::vector<arolib::Point>& points, std::string path, HighFive::File &file, H5Easy::DumpOptions &opt)
+    template< typename T, typename >
+    void writePointsAsMatrix(const std::vector<T>& points, std::string path, HighFive::File &file, H5Easy::DumpOptions &opt)
     {
         if(points.empty()) return;
         size_t num_points = points.size();
@@ -393,9 +435,11 @@ namespace
             HighFive::Group g  = file.getGroup(group_path);
             auto dataset = g.createDataSet<double>(dataset_name, HighFive::DataSpace::From(matrix));
             dataset.write(matrix);
-
-
         }
+    }
+
+    void writePointAsMatrix(const Point &point, std::string path, HighFive::File &file, H5Easy::DumpOptions &opt){
+        writePointsAsMatrix(PointVec{point.point()}, path, file, opt);
     }
 
     bool areValuesEqual(double a, double b){
@@ -414,7 +458,7 @@ bool read_field_hdf5(const std::string& file_path, const std::string& field_name
         // throws exception if field not found and function returns false
         auto field_group = hdf5_file.getGroup("/field_geometries/" + field_name);
 
-        f.id = H5Easy::load<int>(hdf5_file,field_group.getPath() + "/id");
+        f.id = load_optional<int>(hdf5_file,field_group.getPath() + "/id", f.id);
 
         // -----------------------------
         // External roads
@@ -424,12 +468,11 @@ bool read_field_hdf5(const std::string& file_path, const std::string& field_name
         {
             auto group = field_group.getGroup(current_node_str);
             std::vector<std::string> child_list = group.listObjectNames();
+            f.external_roads.reserve(child_list.size());
             for(auto&& child : child_list)
             {
-                auto points = readMatrix(hdf5_file,group.getPath() + "/" + child + "/coordinates");
-                // convert to arolib objects
-                size_t child_id = std::stoi(child);
-                f.external_roads.push_back(toLineStringNew(points,child_id));
+                int child_id = load_optional<int>(hdf5_file, group.getPath() + "/" + child + "/id", std::stoi(child));
+                f.external_roads.emplace_back( toLineStringNew( readMatrix(hdf5_file, group.getPath() + "/" + child + "/coordinates"), child_id) );
             }
         }
 
@@ -439,8 +482,7 @@ bool read_field_hdf5(const std::string& file_path, const std::string& field_name
         current_node_str = "boundary_outer";
         if(field_group.exist(current_node_str))
         {
-            auto points = readMatrix(hdf5_file,field_group.getPath() + "/" + current_node_str);
-            toPointVec(points,f.outer_boundary);
+            toPointVec(readMatrix(hdf5_file,field_group.getPath() + "/" + current_node_str), f.outer_boundary);
         }
 
         // -----------------------------
@@ -453,12 +495,12 @@ bool read_field_hdf5(const std::string& file_path, const std::string& field_name
             auto group = field_group.getGroup(current_node_str);
             std::vector<std::string> child_list = group.listObjectNames();
             f.subfields.clear();
+            f.subfields.reserve(child_list.size());
             for(auto&& child : child_list)
             {
                 // convert to arolib objects
                 auto subgroup = group.getGroup(child);
-                Subfield s = readSubField(hdf5_file, subgroup);
-                f.subfields.push_back(s);
+                f.subfields.emplace_back( readSubField(hdf5_file, subgroup) );
             }
         }
 
@@ -469,6 +511,11 @@ bool read_field_hdf5(const std::string& file_path, const std::string& field_name
 
     }
     catch(HighFive::Exception& e)
+    {
+        std::cerr << e.what() << '\n';
+        return false;
+    }
+    catch(std::exception& e)
     {
         std::cerr << e.what() << '\n';
         return false;
@@ -494,16 +541,17 @@ bool write_field_hdf5(const std::string& file_path, const std::string& field_nam
          {
              field_group.unlink(field_name);
 
-             g_logger.printWarning(__FUNCTION__, "Field " + field_name + "' already exists. It will be overwritten.");
+             g_logger.printWarning(__FUNCTION__, "Field '" + field_name + "' already exists. It will be overwritten.");
              file.flush();
          }
          H5Easy::DumpOptions dump_ops(H5Easy::Compression(), H5Easy::DumpMode::Overwrite);
 
+         auto write_points = std::bind(&writePointsAsMatrix<Point>,std::placeholders::_1,std::placeholders::_2, file, dump_ops);
+
+
          std::string base_path = "field_geometries/" + field_name;
 
-         auto write_points = std::bind(&writePointsAsMatrix,std::placeholders::_1,std::placeholders::_2, file, dump_ops);
-
-         H5Easy::dump(file, base_path + "/id",f.id,dump_ops);
+         H5Easy::dump(file, base_path + "/id", f.id, dump_ops);
 
          // -----------------------------
          // external_roads
@@ -511,14 +559,15 @@ bool write_field_hdf5(const std::string& file_path, const std::string& field_nam
          for(size_t i = 0 ; i < f.external_roads.size(); i++)
          {
             auto&& road = f.external_roads[i];
-            std::string write_path = base_path + "/" + string_format("external_roads/%05u/coordinates",road.id);
-            write_points(road.points, write_path);
+            auto group_path = base_path + "/" + string_format("external_roads/%05u", i);
+            H5Easy::dump(file, group_path + "/id", road.id);
+            write_points(road.points, group_path + "/coordinates");
          }
 
          // -----------------------------
          // boundary_outer
          // -----------------------------
-         write_points(f.outer_boundary.points, base_path + "/boundary_outer");
+         writePointsAsMatrix(f.outer_boundary.points, base_path + "/boundary_outer", file, dump_ops);
 
          // -----------------------------
          // subfields
@@ -526,38 +575,43 @@ bool write_field_hdf5(const std::string& file_path, const std::string& field_nam
          for(size_t i = 0 ; i < f.subfields.size(); i++)
          {
              auto&& subfield = f.subfields[i];
+
+             int key = i;
+
+             H5Easy::dump(file, base_path + "/" + string_format("subfields/%05u/id", key), subfield.id, dump_ops);
+
              // -----------------------------
              // subfields/access_points
              // -----------------------------
              for(size_t j = 0 ; j < subfield.access_points.size(); j++)
              {
                  auto && access_point = subfield.access_points[j];
-                 auto group_path = base_path + "/" + string_format("subfields/%05u/access_points/%05u",subfield.id,access_point.id);
-                 std::vector<arolib::Point> ptvec;
-                 ptvec.push_back(access_point.point());
-                 write_points(ptvec, group_path + "/position" );
-                 H5Easy::dump(file, group_path + "/type",(int)access_point.accessType,dump_ops);
+                 auto group_path = base_path + "/" + string_format("subfields/%05u/access_points/%05u", key, j);
+                 H5Easy::dump(file, group_path + "/id", access_point.id, dump_ops);
+                 H5Easy::dump(file, group_path + "/type", (int)access_point.accessType, dump_ops);
+                 writePointAsMatrix(access_point, group_path + "/position", file, dump_ops);
              }
+
              // -----------------------------
              // subfields/boundary_outer
              // -----------------------------
-             write_points(subfield.boundary_outer.points, base_path + "/" + string_format("subfields/%05u/boundary_outer",subfield.id));
+             writePointsAsMatrix(subfield.boundary_outer.points, base_path + "/" + string_format("subfields/%05u/boundary_outer", key), file, dump_ops);
 
              // -----------------------------
              // subfields/boundary_innter
              // -----------------------------
-             write_points(subfield.boundary_inner.points, base_path + "/" + string_format("subfields/%05u/boundary_inner",subfield.id));
+             writePointsAsMatrix(subfield.boundary_inner.points, base_path + "/" + string_format("subfields/%05u/boundary_inner", key), file, dump_ops);
 
              // -----------------------------
              // subfields/headlands/complete
              // -----------------------------
              {
-                 auto group_path = base_path + "/" + string_format("subfields/%05u/headlands/complete",subfield.id);
-                 H5Easy::dump(file, group_path + "/width",subfield.headlands.complete.headlandWidth,dump_ops);
-                 write_points(subfield.headlands.complete.middle_track.points,group_path + "/middle_track");
+                 auto group_path = base_path + "/" + string_format("subfields/%05u/headlands/complete", key);
+                 H5Easy::dump(file, group_path + "/width", subfield.headlands.complete.headlandWidth, dump_ops);
+                 writePointsAsMatrix(subfield.headlands.complete.middle_track.points,group_path + "/middle_track", file, dump_ops);
                  writeTracks(subfield.headlands.complete.tracks,group_path,file,dump_ops);
-                 write_points(subfield.headlands.complete.boundaries.first.points,group_path + "/boundary_out");
-                 write_points(subfield.headlands.complete.boundaries.second.points,group_path + "/boundary_in");
+                 writePointsAsMatrix(subfield.headlands.complete.boundaries.first.points,group_path + "/boundary_out", file, dump_ops);
+                 writePointsAsMatrix(subfield.headlands.complete.boundaries.second.points,group_path + "/boundary_in", file, dump_ops);
              }
              // -----------------------------
              // subfields/headlands/partials
@@ -565,11 +619,12 @@ bool write_field_hdf5(const std::string& file_path, const std::string& field_nam
              for(size_t j = 0 ; j < subfield.headlands.partial.size(); j++)
              {
                  auto&& partial = subfield.headlands.partial[j];
-                 auto group_path = base_path + "/" + string_format("subfields/%05u/headlands/partial/%05u",subfield.id, partial.id);
-                 write_points(partial.boundary.points, group_path + "/boundary");
-                 writeTracks(partial.tracks,group_path, file, dump_ops);
+                 auto group_path = base_path + "/" + string_format("subfields/%05u/headlands/partial/%05u", key, j);
+                 H5Easy::dump(file, group_path + "/id", partial.id, dump_ops);
                  H5Easy::dump(file, group_path + "/connectingHeadlandId1", partial.connectingHeadlandIds.first, dump_ops);
                  H5Easy::dump(file, group_path + "/connectingHeadlandId2", partial.connectingHeadlandIds.second, dump_ops);
+                 writePointsAsMatrix(partial.boundary.points, group_path + "/boundary", file, dump_ops);
+                 writeTracks(partial.tracks,group_path, file, dump_ops);
              }
              // -----------------------------
              // subfields/obstacles
@@ -577,15 +632,15 @@ bool write_field_hdf5(const std::string& file_path, const std::string& field_nam
              for(size_t j = 0; j < subfield.obstacles.size(); j++)
              {
                  auto&& obs = subfield.obstacles[j];
-                 auto group_path = base_path + "/" + string_format("subfields/%05u/obstacles/%05u",subfield.id, j);
+                 auto group_path = base_path + "/" + string_format("subfields/%05u/obstacles/%05u", key, j);
                  H5Easy::dump(file, group_path + "/type",(int)obs.type,dump_ops);
                  H5Easy::dump(file, group_path + "/description",obs.type_description,dump_ops);
-                 write_points(obs.boundary.points,group_path + "/boundary");
+                 writePointsAsMatrix(obs.boundary.points,group_path + "/boundary", file, dump_ops);
              }
              // -----------------------------
              // subfields/tracks
              // -----------------------------
-             writeTracks(subfield.tracks,base_path + "/" + string_format("subfields/%05u",subfield.id),file,dump_ops);
+             writeTracks(subfield.tracks,base_path + "/" + string_format("subfields/%05u", key), file, dump_ops);
 
              // -----------------------------
              // subfields/resource_points
@@ -593,19 +648,20 @@ bool write_field_hdf5(const std::string& file_path, const std::string& field_nam
              for(size_t j = 0; j < subfield.resource_points.size(); j++)
              {
                  auto&& rp = subfield.resource_points[j];
-                 auto group_path = base_path + "/" + string_format("subfields/%05u/resource_points/%05u",subfield.id, rp.id);
-                 std::vector<arolib::Point> ptvec;
-                 ptvec.push_back(rp.point());
-                 write_points(ptvec, group_path + "/position" );
+                 auto group_path = base_path + "/" + string_format("subfields/%05u/resource_points/%05u", key, j);
+                 H5Easy::dump(file, group_path + "/id", rp.id, dump_ops);
+                 H5Easy::dump(file, group_path + "/defaultUnloadingTime", rp.defaultUnloadingTime, dump_ops);
+                 H5Easy::dump(file, group_path + "/defaultUnloadingTimePerKg", rp.defaultUnloadingTimePerKg, dump_ops);
+                 H5Easy::dump(file, group_path + "/massCapacity", rp.massCapacity, dump_ops);
+                 H5Easy::dump(file, group_path + "/volumeCapacity", rp.volumeCapacity, dump_ops);
+                 writePointAsMatrix(rp, group_path + "/position", file, dump_ops);
+                 writePointsAsMatrix(rp.geometry.points,group_path + "/geometry", file, dump_ops);
                  std::vector<int> resource_types;
                  for(auto&& r : rp.resourceTypes)
                  {
                      resource_types.push_back((int)r);
                  }
-                 H5Easy::dump(file, group_path + "/types",resource_types,dump_ops);
-                 write_points(rp.geometry.points,group_path + "/geometry");
-                 H5Easy::dump(file, group_path + "/defaultUnloadingTime",rp.defaultUnloadingTime,dump_ops);
-                 H5Easy::dump(file, group_path + "/defaultUnloadingTimePerKg",rp.defaultUnloadingTimePerKg,dump_ops);
+                 H5Easy::dump(file, group_path + "/types", resource_types, dump_ops);
              }
 
              // -----------------------------
@@ -613,12 +669,11 @@ bool write_field_hdf5(const std::string& file_path, const std::string& field_nam
              // -----------------------------
              for(size_t j = 0; j < subfield.access_points.size(); j++)
              {
-                 auto&& rp = subfield.access_points[j];
-                 auto group_path = base_path + "/" + string_format("subfields/%05u/access_points/%05u",subfield.id, rp.id);
-                 std::vector<arolib::Point> ptvec;
-                 ptvec.push_back(rp.point());
-                 write_points(ptvec, group_path + "/position" );
-                 H5Easy::dump(file, group_path + "/type",(int)rp.accessType,dump_ops);
+                 auto&& fap = subfield.access_points[j];
+                 auto group_path = base_path + "/" + string_format("subfields/%05u/access_points/%05u", key, j);
+                 H5Easy::dump(file, group_path + "/id", fap.id, dump_ops);
+                 H5Easy::dump(file, group_path + "/type", (int)fap.accessType, dump_ops);
+                 writePointAsMatrix(fap, group_path + "/position", file, dump_ops);
              }
 
              // -----------------------------
@@ -627,13 +682,14 @@ bool write_field_hdf5(const std::string& file_path, const std::string& field_nam
              for(size_t j = 0; j < subfield.reference_lines.size(); j++)
              {
                  auto&& line = subfield.reference_lines[j];
-                 auto group_path = base_path + "/" + string_format("subfields/%05u/reference_lines/%05u",subfield.id, line.id);
-                 write_points(line.points, group_path + "/coordinates" );
+                 auto group_path = base_path + "/" + string_format("subfields/%05u/reference_lines/%05u", key, j);
+                 H5Easy::dump(file, group_path + "/id", line.id, dump_ops);
+                 writePointsAsMatrix(line.points, group_path + "/coordinates", file, dump_ops);
              }
              // -----------------------------
              // subfields/working_direction
              // -----------------------------
-             H5Easy::dump(file, base_path + "/" + string_format("subfields/%05u/working_direction",subfield.id),subfield.working_direction,dump_ops);
+             H5Easy::dump(file, base_path + "/" + string_format("subfields/%05u/working_direction", key), subfield.working_direction, dump_ops);
          }
          return true;
 
@@ -684,10 +740,10 @@ bool read_grid_hdf5(const std::string& file_path, const std::string& grid_type, 
         double cell_size = H5Easy::loadAttribute<double>(file, path, "cell_size");
         double no_value = H5Easy::loadAttribute<float>(file, path, "none_value");
 
-        auto h5shape = H5Easy::getShape(file,path);
+        auto h5shape = H5Easy::getShape(file, path);
         if(h5shape.size()==2)
         {
-            auto grid_array = H5Easy::load<boost::multi_array<double, 2>>(file,path);
+            auto grid_array = H5Easy::load<boost::multi_array<double, 2>>(file, path);
             size_t size_x = grid_array.shape()[0];
             size_t size_y = grid_array.shape()[1];
 
@@ -710,7 +766,7 @@ bool read_grid_hdf5(const std::string& file_path, const std::string& grid_type, 
         }
         else if(h5shape.size()==3)
         {
-            auto grid_array = H5Easy::load<boost::multi_array<double, 3>>(file,path);
+            auto grid_array = H5Easy::load<boost::multi_array<double, 3>>(file, path);
             size_t size_x = grid_array.shape()[0];
             size_t size_y = grid_array.shape()[1];
             size_t max_dim = grid_array.shape()[2];
@@ -746,6 +802,10 @@ bool read_grid_hdf5(const std::string& file_path, const std::string& grid_type, 
         std::cerr << "HDF Exception" << e.what() << std::endl;
         return false;
     }
+    catch (std::exception &e) {
+        std::cerr << "HDF Exception" << e.what() << std::endl;
+        return false;
+    }
 }
 
 
@@ -757,7 +817,7 @@ bool read_grid_hdf5(const std::string& file_path, const std::string& grid_type, 
          std::string path = "/maps/" + grid_type + "/" + grid_name + "/map";
          if(!file.exist(path)) return false;
 
-         auto grid_array = H5Easy::load<boost::multi_array<double, 2>>(file,path);
+         auto grid_array = H5Easy::load<boost::multi_array<double, 2>>(file, path);
          size_t size_x = grid_array.shape()[0];
          size_t size_y = grid_array.shape()[1];
          double min_x = H5Easy::loadAttribute<double>(file, path, "min_x");
@@ -787,6 +847,10 @@ bool read_grid_hdf5(const std::string& file_path, const std::string& grid_type, 
          std::cerr << "HDF Exception" << e.what() << std::endl;
          return false;
      }
+    catch (std::exception &e) {
+        std::cerr << "HDF Exception" << e.what() << std::endl;
+        return false;
+    }
 }
 
 

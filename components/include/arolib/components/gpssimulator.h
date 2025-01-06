@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,20 +17,13 @@
 #ifndef AROLIB_GPSSIMULATOR_H
 #define AROLIB_GPSSIMULATOR_H
 
-#include <fstream>
-#include <vector>
-#include <set>
-#include <thread>
-#include <functional>
 #include <mutex>
-#include <random>
-#include <boost/tokenizer.hpp>
+#include <functional>
 
-#include "arolib/types/machine.hpp"
-#include "arolib/types/route.hpp"
-#include "arolib/geometry/geometry_helper.hpp"
 #include "arolib/misc/loggingcomponent.h"
 #include "arolib/misc/basic_responses.h"
+#include "arolib/types/machine.hpp"
+#include "arolib/types/route.hpp"
 
 namespace arolib {
 

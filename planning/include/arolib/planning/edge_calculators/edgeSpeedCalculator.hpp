@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,17 +17,11 @@
 #ifndef ARO_EDGESPEEDCALCULATOR_HPP
 #define ARO_EDGESPEEDCALCULATOR_HPP
 
-#include <ctime>
-#include <memory>
 #include <functional>
 
-#include "arolib/planning/aro_functions.hpp"
-#include "arolib/types/point.hpp"
-#include "arolib/types/machine.hpp"
-#include "arolib/planning/planningworkspace.h"
-#include "arolib/planning/edge_calculators/edgeMassCalculator.hpp"
 #include "arolib/misc/loggingcomponent.h"
-#include "arolib/geometry/curves_helper.hpp"
+#include "arolib/planning/edge_calculators/edgeMassCalculator.hpp"
+
 
 namespace arolib{
 
@@ -93,6 +87,18 @@ public:
     virtual double calcTurningTime (double angle, double bunker_mass, const Machine& machine) = 0;
 
     /**
+     * @brief Check if the calculations depend on the machine.
+     * @return True if the calculations depend on the machine.
+     */
+    virtual bool dependsOnMachine() const = 0;
+
+    /**
+     * @brief Check if the calculations depend on the load.
+     * @return True if the calculations depend on the load.
+     */
+    virtual bool dependsOnLoad() const = 0;
+
+    /**
      * @brief Check if a calculator if of a given type T.
      * @return True if the same type.
      */
@@ -127,9 +133,16 @@ public:
     /**
      * @brief Constructor.
      * @param _calcSpeed Function to be called when IEdgeMassCalculator::calcSpeed is called
+     * @param _calcTurningTime Function to be called when IEdgeMassCalculator::calcTurningTime is called
+     * @param dependsOnMachine True if the calculations depend on the machine
+     * @param dependsOnLoad True if the calculations depend on the load
      * @param logLevel Log level
      */
-    explicit CustomEdgeSpeedCalculator(const CalcSpeedFunc& _calcSpeed, const CalcTurningTimeFunc& _calcTurningTime, const LogLevel& logLevel = LogLevel::INFO);
+    explicit CustomEdgeSpeedCalculator(const CalcSpeedFunc& _calcSpeed,
+                                       const CalcTurningTimeFunc& _calcTurningTime,
+                                       bool dependsOnMachine,
+                                       bool dependsOnLoad,
+                                       const LogLevel& logLevel = LogLevel::INFO);
 
     /**
      * @brief Compute the edge speed.
@@ -143,9 +156,23 @@ public:
      */
     virtual double calcTurningTime (double angle, double bunker_mass, const Machine& machine) override;
 
+    /**
+     * @brief Check if the calculations depend on the machine.
+     * @return True if the calculations depend on the machine.
+     */
+    virtual bool dependsOnMachine() const override { return m_dependsOnMachine; }
+
+    /**
+     * @brief Check if the calculations depend on the load.
+     * @return True if the calculations depend on the load.
+     */
+    virtual bool dependsOnLoad() const override { return m_dependsOnLoad; }
+
 protected:
-    CalcSpeedFunc m_calcSpeed;/**< Function to be called when IEdgeMassCalculator::calcSpeed is called >*/
-    CalcTurningTimeFunc m_calcTurningTime;/**< Function to be called when IEdgeMassCalculator::calcTurningTime is called >*/
+    CalcSpeedFunc m_calcSpeed; /**< Function to be called when IEdgeMassCalculator::calcSpeed is called >*/
+    CalcTurningTimeFunc m_calcTurningTime; /**< Function to be called when IEdgeMassCalculator::calcTurningTime is called >*/
+    bool m_dependsOnMachine; /**< True if the calculations depend on the machine >*/
+    bool m_dependsOnLoad; /**< True if the calculations depend on the load >*/
 
 };
 
@@ -175,6 +202,18 @@ public:
      * @sa ICalcEdgeSpeedFunction::calcTurningTime
      */
     virtual double calcTurningTime (double angle, double bunker_mass, const Machine& machine) override;
+
+    /**
+     * @brief Check if the calculations depend on the machine.
+     * @return True if the calculations depend on the machine.
+     */
+    virtual bool dependsOnMachine() const override { return true; }
+
+    /**
+     * @brief Check if the calculations depend on the load.
+     * @return True if the calculations depend on the load.
+     */
+    virtual bool dependsOnLoad() const override { return true; }
 };
 
 //----------------------------------------------EdgeTransitSpeedCalculatorDef----------------------------------------------------
@@ -203,6 +242,18 @@ public:
      * @sa ICalcEdgeSpeedFunction::calcTurningTime
      */
     virtual double calcTurningTime (double angle, double bunker_mass, const Machine& machine) override;
+
+    /**
+     * @brief Check if the calculations depend on the machine.
+     * @return True if the calculations depend on the machine.
+     */
+    virtual bool dependsOnMachine() const override { return true; }
+
+    /**
+     * @brief Check if the calculations depend on the load.
+     * @return True if the calculations depend on the load.
+     */
+    virtual bool dependsOnLoad() const override { return true; }
 };
 
 
@@ -247,10 +298,22 @@ public:
      */
     virtual void setMassBasedSpeedFunction(const CalcSpeedFunc& calcSpeed);
 
+    /**
+     * @brief Check if the calculations depend on the machine.
+     * @return True if the calculations depend on the machine.
+     */
+    virtual bool dependsOnMachine() const override { return true; }
+
+    /**
+     * @brief Check if the calculations depend on the load.
+     * @return True if the calculations depend on the load.
+     */
+    virtual bool dependsOnLoad() const override { return true; }
+
 protected:
     CalcSpeedFunc DefCalcSpeedFunc = [](const Machine& m, double)->double{
         return m.def_working_speed;
-    };
+    }; /**< Default calc-speed function >*/
 
 
     std::shared_ptr<IEdgeMassCalculator> m_edgeMassCalculator; /**< Mass calculator used to obtain the amount of mass under the edge/rectangle >*/

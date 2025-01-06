@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,23 +16,35 @@
  
 #include "arolib/planning/track_sequencing/tracksequencerclosestnext.hpp"
 
-#include <stdexcept>
-#include <algorithm>
+#include <future>
+
+#include "arolib/planning/track_connectors/infieldtracksconnectordef.hpp"
+#include "arolib/geometry/geometry_helper.hpp"
+#include "arolib/geometry/field_geometry_processing.hpp"
 
 namespace arolib{
 
-TrackSequencerClosestNext::TrackSequencerClosestNext(LogLevel logLevel) :
-    ITrackSequencer(__FUNCTION__, logLevel)
+TrackSequencerClosestNext::TrackSequencerClosestNext(bool useConnOverBoundaryAsReference, LogLevel logLevel) :
+    ITrackSequencer(__FUNCTION__, logLevel),
+    m_useConnOverBoundaryAsReference(useConnOverBoundaryAsReference)
 {
+    m_saveAllComputedPaths = true;
+    m_saveConnectingPaths = true;
 //    m_tracksConnector = std::make_shared<InfieldTracksConnectorDef>();
 //    m_tracksConnector->logger().setParent(loggerPtr());
+}
+
+TrackSequencerClosestNext::TrackSequencerClosestNext(LogLevel logLevel, bool useConnOverBoundaryAsReference)
+    :TrackSequencerClosestNext(useConnOverBoundaryAsReference, logLevel)
+{
+
 }
 
 AroResp TrackSequencerClosestNext::computeSequences(const Subfield &subfield,
                                                     const std::vector<Machine> &machines,
                                                     const TrackSequencerSettings& settings,
-                                                    std::map<MachineId_t, std::vector<TrackInfo> > &sequences,
-                                                    const Pose2D* initRefPose,
+                                                    Sequences_t &sequences,
+                                                    const std::map<MachineId_t, Pose2D> &initRefPoses,
                                                     const std::set<size_t> &excludeTrackIndexes)
 {
 
@@ -65,6 +77,17 @@ AroResp TrackSequencerClosestNext::computeSequences(const Subfield &subfield,
         extremaTrackInds = geometry::getInfieldExtremaTracksIndexes(subfield, excludeTrackIndexes);
 
     auto& trackIndsStart = ( extremaTrackInds.empty() ? trackInds : extremaTrackInds );
+
+
+    //workarround until several ref poses are supported
+    const Pose2D* initRefPose = nullptr;
+    for(auto& m : machines){
+        auto it_m = initRefPoses.find(m.id);
+        if(it_m != initRefPoses.end() && it_m->second.isValid()){
+            initRefPose = &( it_m->second );
+            break;
+        }
+    }
 
 
     auto nextTrackIndexes = getFirstTracksIndexes(subfield, initRefPose, trackIndsStart, machines.size());  // holds indexes corresponding to trackInds, not the the track index in the tracks vectors
@@ -118,8 +141,16 @@ AroResp TrackSequencerClosestNext::computeSequences(const Subfield &subfield,
         }
     }
 
+    std::chrono::steady_clock::time_point time_start = std::chrono::steady_clock::now();
     int indMachine = 0;
     while(assignedTrackIndexes.size() < trackInds.size()){
+
+        if(settings.maxSequencePlanningTime > 1e-6){
+            double duration = 0.001 * std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - time_start).count();
+            if(duration > settings.maxSequencePlanningTime)
+                return AroResp(1, "Planning timeout");
+        }
+
         auto machine = machines.at(indMachine);
         size_t indPrevTrack = nextTrackIndexes.at(indMachine).first;
         bool prevTrackInReverse = nextTrackIndexes.at(indMachine).second == ITrackSequencer::REVERSE;
@@ -160,7 +191,8 @@ AroResp TrackSequencerClosestNext::computeSequences(const Subfield &subfield,
         for(auto& it : sequences){
             logger().printDebug("", "\t Machine id : " + std::to_string(it.first) + ":");
             for(TrackInfo& info : it.second)
-                logger().printDebug("", "\t\t" + std::to_string(info.trackIndex) + "("  + std::to_string(info.trackPointsDirection) + ")");
+                logger().printDebug("", "\t\t" + std::to_string(info.trackIndex) + ( info.trackPointsDirection == TrackPointsDirection::UNDEF ? "(?)" :
+                                                                                     ( info.trackPointsDirection == TrackPointsDirection::FORWARD ? "(FW)" : "(RV)" ) ) );
         }
         logger().printDebug(__FUNCTION__, "Resulting IF tracks sequences (end)");
     }
@@ -762,11 +794,12 @@ std::pair<double, bool> TrackSequencerClosestNext::computeConnectionDistances(st
         poseFrom.angle = geometry::get_angle( r_at(trackFromPts, 1), trackFromPts.back() );
     }
 
-    double turningRad = withTurningRad ? -1 : 0;
+    double turningRad = IInfieldTracksConnector::getTurningRad(machine, withTurningRad ? -1 : 0);
 
+    Pose2D poseNext0;
     if(computeForTrackStart){
-        Pose2D poseNext0( trackNextPts.front(), geometry::get_angle( trackNextPts.front(), trackNextPts.at(1) ) );
-        path0 = getPathFromMap(poseFrom, poseNext0, turningRad, true);
+        poseNext0 = Pose2D( trackNextPts.front(), geometry::get_angle( trackNextPts.front(), trackNextPts.at(1) ) );
+        path0 = getPathsMapManager()->getPathFromMap(poseFrom, poseNext0, turningRad, true);
         if(path0.empty()){
             path0 = connector->getConnection( machine,
                                               poseFrom,
@@ -779,8 +812,8 @@ std::pair<double, bool> TrackSequencerClosestNext::computeConnectionDistances(st
                                               -1,
                                               maxDist );
 
-            if( !path0.empty() ){
-                addPathToMap(poseFrom, poseNext0, turningRad, path0);
+            if( !path0.empty() && m_saveAllComputedPaths ){
+                m_pathsMapManager->addPathToMap(poseFrom, poseNext0, turningRad, path0);
             }
         }
 
@@ -791,9 +824,10 @@ std::pair<double, bool> TrackSequencerClosestNext::computeConnectionDistances(st
         }
     }
 
+    Pose2D poseNextn;
     if(computeForTrackEnd){
-        Pose2D poseNextn( trackNextPts.back(), geometry::get_angle( trackNextPts.back(), r_at(trackNextPts, 1) ) );
-        pathn = getPathFromMap(m_pathsMap, poseFrom, poseNextn, turningRad, true);
+        poseNextn = Pose2D( trackNextPts.back(), geometry::get_angle( trackNextPts.back(), r_at(trackNextPts, 1) ) );
+        pathn = getPathsMapManager()->getPathFromMap(m_pathsMapManager, poseFrom, poseNextn, turningRad, true);
         if(pathn.empty()){
             pathn = connector->getConnection( machine,
                                               poseFrom,
@@ -806,8 +840,8 @@ std::pair<double, bool> TrackSequencerClosestNext::computeConnectionDistances(st
                                               -1,
                                               maxDist );
 
-            if( !pathn.empty() ){
-                addPathToMap(poseFrom, poseNextn, turningRad, pathn);
+            if( !pathn.empty() && m_saveAllComputedPaths ){
+                m_pathsMapManager->addPathToMap(poseFrom, poseNextn, turningRad, pathn);
             }
         }
         if( !pathn.empty() ){
@@ -818,11 +852,17 @@ std::pair<double, bool> TrackSequencerClosestNext::computeConnectionDistances(st
     if(path0.empty() && pathn.empty())
         return std::make_pair(-1, false);
 
-    if(path0.empty())
+    if(path0.empty()){
+        if( !m_saveAllComputedPaths && m_saveConnectingPaths )
+            m_pathsMapManager->addPathToMap(poseFrom, poseNext0, turningRad, path0);
         return std::make_pair(lengthToNextn, true);
+    }
 
-    if(pathn.empty())
+    if(pathn.empty()){
+        if( !m_saveAllComputedPaths && m_saveConnectingPaths )
+            m_pathsMapManager->addPathToMap(poseFrom, poseNextn, turningRad, pathn);
         return std::make_pair(lengthToNext0, false);
+    }
 
     return std::make_pair(std::min(lengthToNext0, lengthToNextn), lengthToNext0 > lengthToNextn);
 }
@@ -837,7 +877,7 @@ std::vector<std::pair<size_t, ITrackSequencer::TrackPointsDirection>> TrackSeque
         std::vector<std::pair<size_t, ITrackSequencer::TrackPointsDirection>> ret;
         size_t countMachines = 0;
         for(size_t i = 0 ; countMachines < numMachines && i < trackInds.size() ; i++, countMachines++)
-            ret.push_back( std::make_pair(i, ITrackSequencer::UNDEF) );
+            ret.push_back( std::make_pair(i, ITrackSequencer::FORWARD) );
         return ret;
     };
 

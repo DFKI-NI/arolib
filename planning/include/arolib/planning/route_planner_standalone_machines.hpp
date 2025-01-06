@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,19 +17,12 @@
 #ifndef AROLIB_ROUTE_PLANNER_STANDALONE_MACHINES_HPP
 #define AROLIB_ROUTE_PLANNER_STANDALONE_MACHINES_HPP
 
-#include <ctime>
-#include <sys/stat.h>
-
-#include "arolib/planning/path_search/directedgraph.hpp"
-#include "arolib/types/route.hpp"
-#include "arolib/types/machine.hpp"
+#include "arolib/types/machinedynamicinfo.hpp"
+#include "arolib/types/resourcepointstate.hpp"
 #include "arolib/types/materialFlowType.hpp"
 #include "arolib/planning/roundtripplanner.hpp"
 #include "arolib/planning/activitiesswitchingplanner.hpp"
 #include "arolib/planning/transit_restrictions.hpp"
-#include "arolib/misc/loggingcomponent.h"
-#include "arolib/misc/logger.h"
-#include "arolib/misc/filesystem_helper.h"
 
 namespace arolib{
 
@@ -52,14 +45,18 @@ public:
         struct WorkingWindowInfo{
             size_t indStart; /**< Index of the route-point where the windows starts */
             size_t indFinish; /**< Index of the route-point where the windows finishes */
+            float nextMinRequiredCapacityMass = 0; /**< Required mass capacity for the next working window */
+            float nextMinRequiredCapacityVol = 0; /**< Required volume capacity for the next working window  */
         };
 
         DirectedGraph::Graph graph; /**< Updated graph */
         std::vector<Route> routes; /**< Map holding all planned routes (including transportation to resource points) */
         std::vector<double> planCosts; /**< Plan costs for each route */
         std::map<size_t, std::vector<WorkingWindowInfo>> workingWindows;  /**< Map containing the information of the working windows for each route (key := route index) */
+        std::map<size_t, WorkingWindowInfo> nextWorkingWindows;  /**< Map containing the information of the next working windows for each route (key := route index) */
         double planOverallCost = 0; /**< Overall plan cost (for all harvester routes) */
         bool planOK = false; /**< Flag to know if the plan is OK */
+
     protected:
 
         /**
@@ -74,24 +71,23 @@ public:
          * @brief Cumpute and update the overall plan cost (for all routes) using the plan costs for each one of the routes
          */
         void updateOverallCost();
-
-        /**
-         * @brief Updates the working windows information by adding a delta value to their indexes
-         * @param indRoute Index of the routes whose working windows will be updated
-         * @param indRef only the windows with indStart >= indRef are updated
-         * @param deltaInd Delta value
-         */
-        void updateWorkingWindows(size_t indRoute, size_t indRef, int deltaInd);
-
-        /**
-         * @brief Updates the working windows information by adding a delta value to their indexes
-         * @param workingWindows Working windows to be updated
-         * @param indRoute Index of the routes whose harvesting windows will be updated
-         * @param indRef only the windows with indStart >= indRef are updated
-         * @param deltaInd Delta value
-         */
-        static void updateWorkingWindows(std::map<size_t, std::vector<WorkingWindowInfo>> &workingWindows, size_t indRoute, size_t indRef, int deltaInd);
     };
+
+    /**
+     * @brief Enum holding the options for the last location of the machies after finishing working
+     */
+    enum FinishPointOption{
+        FINISH_AT_FIELD_EXIT = 0, /**< Send the machine to a field exit when it finished working */
+        FINISH_AT_RESOURCE_POINT, /**< Send the machine to a resource point when it finished working */
+        FINISH_IN_FIELD /**< Leave the machine in the field at the last working point */
+    };
+
+    /**
+      * @brief Get the FinishPoint (enum) from its int value
+      * @brief value Int value
+      * @return FinishPoint
+      */
+    static FinishPointOption intToFinishPointOption(int value);
 
     /**
      * @brief Planner settings
@@ -101,7 +97,7 @@ public:
      */
     struct PlannerSettings : public virtual RoundtripPlanner::PlannerSettings, public virtual ASP_GeneralSettings{
         double maxPlanningTime = 60;/**< planning timeout [s] */
-        bool finishAtResourcePoint = true;  /**< Should the last machine working the field be sent to the rosource point even if the bunker is not at the limit (full/empty)? */
+        FinishPointOption finishPointOption = FinishPointOption::FINISH_AT_RESOURCE_POINT;  /**< Should the last machine working the field be sent an exit point, a rosource point, or stay at the location of the last working point? */
 
         /**
          * @brief Parse the parameters from a string map, starting from a default PlannerSettings
@@ -128,6 +124,7 @@ public:
      * @param baseRoutes (processed) base routes without transportation (must have increasingly monotonic timestamps)
      * @param machines Machines
      * @param machineCurrentStates Map containing the current states of the machines (inc. current location, bunker mass, etc.)
+     * @param resourcePointCurrentStates Current states of the resource points (inc. current capacities)
      * @param settings Planner parameters/settings
      * @param edgeCostCalculator Edge Cost Calculator. Temporary: if = nullptr, uses internal astar functions
      * @param outputFolder Folder where the planning (search) information will be stored (if empty-string, no data will be saved)
@@ -137,6 +134,7 @@ public:
                                             const std::vector<Route> &baseRoutes,
                                             const std::vector<Machine> &machines,
                                             const std::map<MachineId_t, MachineDynamicInfo> &machineCurrentStates,
+                                            const std::map<ResourcePointId_t, ResourcePointState> &resourcePointCurrentStates,
                                             const Polygon& boundary,
                                             const PlannerSettings& settings,
                                             std::shared_ptr<IEdgeCostCalculator> edgeCostCalculator,
@@ -172,18 +170,25 @@ public:
 protected:
 
     /**
-     * @brief Add edge overruns for the routes
-     * @return Map of the machines (working group)
+     * @brief Compute the next working window
+     * @param materialFlowType Material-flow type
+     * @param route Route
+     * @param indPtFrom Index of the route point from where to start checking
+     * @param bunker_mass Current bunker mass
+     * @param bunker_vol Current bunker volume
+     * @param [out] workingWindow Resulting working window (iff finished == false)
+     * @param [out] finished True if no working window was computed
+     * @return Error message (ok := empty string)
      */
-    void addOverruns( size_t routeIndex, size_t ind0, size_t ind1);
+    std::string getNextWorkingWindow(MaterialFlowType materialFlowType, const Route &route, size_t indPtFrom, double bunker_mass, double bunker_vol, PlanData::WorkingWindowInfo& workingWindow, bool &finished);
 
     /**
-     * @brief Compute the information of the working windows for all routes
+     * @brief Compute the information of the initial working windows for all routes
      * @param materialFlowType Material-flow type
      * @param plan Plan holding the routes and working windows
      * @return Error message (ok := empty string)
      */
-    std::string calcWorkingWindows(MaterialFlowType materialFlowType, PlanData& plan);
+    std::string initWorkingWindows(MaterialFlowType materialFlowType, PlanData& plan);
 
     /**
      * @brief Initializes some the route points bunker masses
@@ -197,10 +202,10 @@ protected:
     std::string initRoutesBunkerMasses(PlanData& plan, MaterialFlowType materialFlowType);
 
     /**
-     * @brief Add edge overruns for the routes
+     * @brief Add edge overruns for the routes until the first working windows
      * @param plan Plan holding the routes and working windows
      */
-    void addOverruns(PlanData& plan);
+    void addInitialOverruns(PlanData& plan);
 
     /**
      * @brief Add edge overruns for the routes (segments)
@@ -219,14 +224,6 @@ protected:
      * @param plan Plan holding the routes and working windows
      */
     void addInitialVisitPeriods(PlanData& plan);
-
-    /**
-     * @brief Add the final visit periods of the routes
-     *
-     * Adds the visit periods from routes after working the field.
-     * @param plan Plan holding the routes and working windows
-     */
-    void addFinalVisitPeriods(PlanData& plan);
 
     /**
      * @brief Add the visit periods of the route segment
@@ -262,12 +259,11 @@ protected:
     /**
      * @brief Plan initial trips from the initial location to the first route point (via resource point if necessary)
      * @param workingWindows[in/out] Working windows
-     * @param resource_vts Resource point vertices
+     * @param resourcePointMassCapacities Map holding the resource point vertices and their current capacities <mass, volume>
      * @return Error message (ok := empty string)
      */
     std::string planInitialTrips(PlanData& plan,
-                                  std::map<size_t, std::vector<PlanData::WorkingWindowInfo>> &workingWindows,
-                                  const std::vector<DirectedGraph::vertex_t>& resource_vts,
+                                  std::map<DirectedGraph::vertex_t, std::pair<double, double>>& resourcePointCapacities,
                                   MaterialFlowType materialFlowType,
                                   TransitRestriction transitRestriction);
 
@@ -285,13 +281,13 @@ protected:
     /**
      * @brief Plan initial trips from the initial location to the first route point via resource point
      * @param indRoutes Index of the routes to be connected
-     * @param resource_vts Resource point vertices
+     * @param resourcePointCapacities Map holding the resource point vertices and their current capacities <mass, volume>
      * @param initRoutes [out] Planned route segments
      * @return Error message (ok := empty string)
      */
     std::string planInitialSegmentViaResource(PlanData& plan,
                                               const std::multimap<double, size_t>& indRoutes,
-                                              const std::vector<DirectedGraph::vertex_t>& resource_vts,
+                                              std::map<DirectedGraph::vertex_t, std::pair<double, double>>& resourcePointCapacities,
                                               MaterialFlowType materialFlowType,
                                               TransitRestriction transitRestriction,
                                               std::map<size_t, AstarPlan>& initPlans);
@@ -307,27 +303,33 @@ protected:
     /**
      * @brief Gets the information about the next transportation planning to be done
      * @param plan Plan holding the routes
-     * @param workingWindows Map of working windows to be used in the analysis
-     * @param indRoute[out] Index of the route for which we have to plan.
-     * @param indRP[out] Index of the route point corresponding to the moment of transportation.
-     * @param machine[out] Machine of the corresponding route.
+     * @param materialFlowType Material flow type
+     * @param [out] indRouteIndex of the route for which we have to plan.
+     * @param [out] indRPIndex of the route point corresponding to the end of transportation.
+     * @param [out] machine Machine of the corresponding route.
+     * @param [out] currentWorkingWindow Current working window.
      * @return True if there is something to plan
      */
-    bool getNextTransportationInfo(const PlanData& plan,
-                                   const std::map<size_t, std::vector<PlanData::WorkingWindowInfo>> &workingWindows,
-                                   size_t& indRoute, size_t& indRP, size_t& indRP_ret, Machine& machine);
+    bool getNextTransportationInfo(const PlanData& plan, MaterialFlowType materialFlowType,
+                                   size_t& indRoute, size_t& indRP, size_t& indRP_ret, Machine& machine,
+                                   PlanData::WorkingWindowInfo &nextWorkingWindow);
+
 
     /**
      * @brief Gets the bunker state for a machine after visiting the resource point
      * @param machine Machine
      * @param materialFlowType Material flow type
+     * @param resourcePointMassCapacity Mass capacity of the resource point
+     * @param resourcePointVolumeCapacity Mass capacity of the resource point
      * @param remainingMass Mass remaining to be worked in the field
      * @param remainingVol Volume remaining to be worked in the field
-     * @param [out] bunker_mass Mass remaining to be worked in the field
-     * @param [out] bunker_volume Volume remaining to be worked in the field
+     * @param [in, out] bunker_mass Current bunker mass (updated to the resulting one)
+     * @param [in, out] bunker_volume Current bunker volume (updated to the resulting one)
+     * @return Reuturn the percentage [0, 1] of the requested capacity (e.g., if == 1, all requested capacity was supplied by the resource point)
      */
-    static void getMachineBunkerStateAfterResourcePoint(const Machine& machine,
+    static float getMachineBunkerStateAfterResourcePoint(const Machine& machine,
                                                         MaterialFlowType materialFlowType,
+                                                        double resourcePointMassCapacity, double resourcePointVolumeCapacity,
                                                         double remainingMass, double remainingVol,
                                                         double &bunker_mass, double &bunker_volume);
 
@@ -337,6 +339,7 @@ protected:
     std::vector<Route> m_baseRoutes; /**< Base (initial) routes (with no transportation) */
     std::map<MachineId_t, Machine> m_machines; /**< Machines */
     std::map<MachineId_t, MachineDynamicInfo> m_machineInitialStates; /**< Map containing the current states of the machines (inc. current location, bunker mass, etc.) */
+    std::map<ResourcePointId_t, ResourcePointState> m_resourcePointCurrentStates; /**< Map containing the current states of the resource points (inc. capacities) */
     Polygon m_boundary; /**< Field boundary */
     PlannerSettings m_settings; /**< Planner parameters/settings */
     std::shared_ptr<IEdgeCostCalculator> m_edgeCostCalculator = nullptr; /**< Edge cost calculator */

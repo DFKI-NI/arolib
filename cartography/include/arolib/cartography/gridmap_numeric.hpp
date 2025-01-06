@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,38 +18,12 @@
 #define _AROLIB_GRIDMAP_NUMERIC_H_
 
 #include <type_traits>
-#include <memory>
-#include <string>
-#include <sys/stat.h>
-#include <math.h>
-#include <limits>
-#include <iostream>
-#include <fstream>
-#include <sstream>
-#include <chrono>
-#include <future>
 
-#include <boost/geometry/geometry.hpp>
-#include <boost/geometry/geometries/point_xy.hpp>
-#include <boost/geometry/geometries/polygon.hpp>
-#include <boost/algorithm/string.hpp>
-
-#include "cellsrange.hpp"
-#include "cellsrangeset.hpp"
 #include "gridmap.hpp"
+#include "cellsrange.hpp"
 #include "arolib/types/units.hpp"
-#include "arolib/types/field.hpp"
-#include "arolib/types/coordtransformer.hpp"
-#include "arolib/geometry/geometry_helper.hpp"
-#include "arolib/misc/loggingcomponent.h"
 #include "arolib/misc/color_helper.hpp"
 
-#include <gdal/gdal_priv.h>
-#include <gdal/ogr_spatialref.h>
-#include <gdal/gdalwarper.h>
-
-#include <png++/image.hpp>
-#include <png++/rgb_pixel.hpp>
 
 namespace arolib {
 namespace gridmap {
@@ -117,19 +91,31 @@ public:
     NumericGridmap(const NumericGridmap<T>& other);
 
     /**
+     * Move constructor.
+     * @param other Other gridmap.
+     */
+    NumericGridmap(NumericGridmap<T>&& other);
+
+    /**
      * Destructor.
      */
-    virtual ~NumericGridmap();
+    virtual ~NumericGridmap() = default;
 
     //------------------------------------
     //--------------OPERATORS-------------
     //------------------------------------
 
     /**
+    * Move assignment
+    * @param other Other grid.
+    */
+    virtual NumericGridmap<T>& operator=(const NumericGridmap<T>& other) = default;
+
+    /**
     * Copy assignment
     * @param other Other grid.
     */
-    virtual NumericGridmap<T>& operator=(const NumericGridmap<T>& other);
+    virtual NumericGridmap<T>& operator=(NumericGridmap<T>&& other) = default;
 
 
     //------------------------------------
@@ -534,17 +520,23 @@ public:
                                       bool *_error_ = nullptr) const;
 
     /**
-     * Get the sum of the values of the cells in the list
+     * Get the data(values) of the cells in the list
      * The value [0...1] in the GridCellInfo is taken as a multiplier to the value in the corresponding grid cell (e.g. if the cell value is 0.4 and the GridCellInfo (multiplier)value is 0.25, the calculated value for that cell will be 0.1)
+     * If the (multiplier) value in the GridCellInfo does not lie within [0...1], that cell will be considered invalid
      * @param cells List of cells and (multiplier)values to be used
      * @param _error_ (output) Indicates if there was an error in the calculation (e.g. index/point out of range).
+     * @param value_type Type of desired return value
+     * @param area Area used for value_type AVERAGE_TOTAL and AVERAGE_VALID (AVERAGE_VALID_AND_SET depends on the valid and set cells). if area <= 0, AVERAGE_TOTAL and AVERAGE_VALID will depend on the given cells)
      * @param checkForRepeatedCells If set to true, if will check if there are repeated cells in the list, so that the value is calculated only once per cell. If a cell is repeated, the (multiplier)value of the first cell (with valid multiplier-value) in the vector will be used
      * @return Value of the cells in the list
      */
     template<typename K = GridmapLayout::GridCellOverlap, typename = typename std::enable_if< std::is_base_of<GridmapLayout::GridCellOverlap, K>::value, void >::type>
-    long double getCellsValueSum(const std::vector<K>& cells,
-                                 bool checkForRepeatedCells = false,
-                                 bool* _error_ = nullptr) const;
+    long double getCellsComputedValue(const std::vector<K>& cells,
+                                      double valInvalidUnset,
+                                      ComputedValueType value_type = ComputedValueType::AVERAGE_TOTAL,
+                                      double area = 0,
+                                      bool checkForRepeatedCells = false,
+                                      bool *_error_ = nullptr) const;
 
 
     /**
@@ -557,6 +549,19 @@ public:
     virtual long double getCellsComputedValue(const CellsRangeList& cells,
                                               bool average = true,
                                               bool *_error_ = nullptr) const;
+
+    /**
+     * Get the sum of the values of the cells in the list
+     * The value [0...1] in the GridCellInfo is taken as a multiplier to the value in the corresponding grid cell (e.g. if the cell value is 0.4 and the GridCellInfo (multiplier)value is 0.25, the calculated value for that cell will be 0.1)
+     * @param cells List of cells and (multiplier)values to be used
+     * @param _error_ (output) Indicates if there was an error in the calculation (e.g. index/point out of range).
+     * @param checkForRepeatedCells If set to true, if will check if there are repeated cells in the list, so that the value is calculated only once per cell. If a cell is repeated, the (multiplier)value of the first cell (with valid multiplier-value) in the vector will be used
+     * @return Value of the cells in the list
+     */
+    template<typename K = GridmapLayout::GridCellOverlap, typename = typename std::enable_if< std::is_base_of<GridmapLayout::GridCellOverlap, K>::value, void >::type>
+    long double getCellsValueSum(const std::vector<K>& cells,
+                                 bool checkForRepeatedCells = false,
+                                 bool* _error_ = nullptr) const;
 
 
     virtual bool getStatistics(GridStatistics& stats) const;

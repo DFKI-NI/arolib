@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,18 +16,23 @@
  
 #include "arolib/planning/track_sequencing/tracksequencer.hpp"
 
+#include "arolib/misc/basicconversions.hpp"
+
 namespace arolib{
 
 bool ITrackSequencer::TrackSequencerSettings::parseFromStringMap(TrackSequencerSettings &params, const std::map<std::string, std::string> &map, bool strict)
 {
     TrackSequencerSettings tmp;
 
+    std::map<std::string, double*> dMap = { {"maxSequencePlanningTime" , &tmp.maxSequencePlanningTime} };
     std::map<std::string, bool*> bMap = { {"limitStartToExtremaTracks" , &tmp.limitStartToExtremaTracks},
-                                          {"useMachineTurningRad" , &tmp.useMachineTurningRad} };
+                                          {"useMachineTurningRad" , &tmp.useMachineTurningRad},
+                                          {"considerFieldExit" , &tmp.considerFieldExit} };
 
 
 
-    if( !setValuesFromStringMap( map, bMap, strict) )
+    if( !setValuesFromStringMap( map, dMap, strict)
+            || !setValuesFromStringMap( map, bMap, strict) )
         return false;
 
     params = tmp;
@@ -38,23 +43,19 @@ bool ITrackSequencer::TrackSequencerSettings::parseFromStringMap(TrackSequencerS
 std::map<std::string, std::string> ITrackSequencer::TrackSequencerSettings::parseToStringMap(const TrackSequencerSettings &params)
 {
     std::map<std::string, std::string> ret;
+    ret["maxSequencePlanningTime"] = double2string( params.maxSequencePlanningTime );
     ret["limitStartToExtremaTracks"] = std::to_string( params.limitStartToExtremaTracks );
     ret["useMachineTurningRad"] = std::to_string( params.useMachineTurningRad );
+    ret["considerFieldExit"] = std::to_string( params.considerFieldExit );
 
     return ret;
 }
 
-ITrackSequencer::ITrackSequencer(const std::string childName, const LogLevel &logLevel):
+
+ITrackSequencer::ITrackSequencer(const std::string & childName, const LogLevel &logLevel):
     LoggingComponent(logLevel, childName)
 {
 
-}
-
-void ITrackSequencer::addPathToMap(const Pose2D &pose1, const Pose2D &pose2, double turningRad, const PointVec& path)
-{
-    std::lock_guard<std::mutex> guard(m_mutex_pathsMap);
-    int iRad = ( turningRad < 1e-9 ? -1 : turningRad * 100);
-    (*m_pathsMap)[pose1][pose2][iRad] = path;
 }
 
 ITrackSequencer::TrackInfo::TrackInfo(size_t ind, TrackPointsDirection dir)
@@ -68,43 +69,69 @@ void ITrackSequencer::setInfieldTrackConnector(std::shared_ptr<IInfieldTracksCon
         m_tracksConnector = connector;
 }
 
-ITrackSequencer::PathsMapConstPtr_t ITrackSequencer::getPathsMap() const { return m_pathsMap; }
-
-PointVec ITrackSequencer::getPathFromMap(PathsMapConstPtr_t map, const Pose2D &pose1, const Pose2D &pose2, double turningRad, bool checkBidirectional)
+void ITrackSequencer::setPathsMapManager(geometry::PathsMapManagerPtr_t pmm)
 {
-    if(!map)
-        return {};
-    int iRad = ( turningRad < 1e-9 ? -1 : turningRad * 100);
-    auto it1 = map->find(pose1);
-    if(it1 != map->end()){
-        auto it2 = it1->second.find(pose2);
-        if(it2 != it1->second.end()){
-            auto it3 = it2->second.find(iRad);
-            if(it3 != it2->second.end()){
-                return it3->second;
+    if(pmm)
+        m_pathsMapManager = pmm;
+    else
+        m_pathsMapManager = std::make_shared<geometry::PathsMapManager>();
+}
+
+geometry::PathsMapManagerPtr_t ITrackSequencer::getPathsMapManager()
+{
+    return m_pathsMapManager;
+}
+
+geometry::PathsMapManagerConstPtr_t ITrackSequencer::getPathsMapManager() const
+{
+    return m_pathsMapManager;
+}
+
+void ITrackSequencer::setSaveAllComputedPaths(bool saveThem)
+{
+    m_saveAllComputedPaths = saveThem;
+}
+
+bool ITrackSequencer::getSaveAllComputedPaths() const
+{
+    return m_saveAllComputedPaths;
+}
+
+void ITrackSequencer::setSaveConnectingPaths(bool saveThem)
+{
+    m_saveConnectingPaths = saveThem;
+}
+
+bool ITrackSequencer::getSaveConnectingPaths() const
+{
+    return m_saveConnectingPaths;
+}
+
+ITrackSequencer::Sequences_t ITrackSequencer::removeTracksFromSequence(const Sequences_t &sequences,
+                                                                       const std::set<size_t> &trackInds,
+                                                                       bool removeGivenTracks)
+{
+    Sequences_t ret;
+    for(auto& it_m : sequences){
+        ret[it_m.first] = {};
+        auto& seq = ret[it_m.first];
+        seq.reserve( it_m.second.size() );
+        if(removeGivenTracks){
+            for(const TrackInfo & ti : it_m.second){
+                if( trackInds.find(ti.trackIndex) == trackInds.end() )
+                    seq.emplace_back(ti);
+            }
+        }
+        else{
+            for(const TrackInfo & ti : it_m.second){
+                if( trackInds.find(ti.trackIndex) != trackInds.end() )
+                    seq.emplace_back(ti);
             }
         }
     }
-    if(checkBidirectional){
-        auto it1 = map->find(pose2);
-        if(it1 != map->end()){
-            auto it2 = it1->second.find(pose1);
-            if(it2 != it1->second.end()){
-                auto it3 = it2->second.find(iRad);
-                if(it3 != it2->second.end()){
-                    return it3->second;
-                }
-            }
-        }
-    }
-    return {};
+    return ret;
 }
 
-PointVec ITrackSequencer::getPathFromMap(const Pose2D &pose1, const Pose2D &pose2, double turningRad, bool checkBidirectional)
-{
-    std::lock_guard<std::mutex> guard(m_mutex_pathsMap);
-    return getPathFromMap(m_pathsMap, pose1, pose2, turningRad, checkBidirectional);
-}
 
 
 } // namespace arolib

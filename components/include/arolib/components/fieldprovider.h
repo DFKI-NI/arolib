@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,19 +17,11 @@
 #ifndef AROLIB_FIELDPROVIDER_H
 #define AROLIB_FIELDPROVIDER_H
 
-#include <unistd.h>
-#include <iostream>
-#include <math.h>
-#include <string>
-#include <dirent.h>
-#include "arolib/geometry/geometry_helper.hpp"
-#include "arolib/io/io_kml.hpp"
-#include "arolib/io/io_xml.hpp"
-#include "arolib/io/io_hdf5.hpp"
-#include "arolib/misc/loggingcomponent.h"
-#include "arolib/misc/logger.h"
 
+#include "arolib/misc/loggingcomponent.h"
 #include "arolib/misc/basic_responses.h"
+#include "arolib/types/field.hpp"
+#include "arolib/cartography/common.hpp"
 
 namespace arolib {
 

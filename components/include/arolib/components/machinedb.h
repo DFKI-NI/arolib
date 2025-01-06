@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,19 +16,10 @@
  
 #ifndef AROLIB_MACHINEDB_H
 #define AROLIB_MACHINEDB_H
-#include <fstream>
-#include <vector>
-#include <map>
-#include <dirent.h>
-#include <boost/tokenizer.hpp>
-#include <boost/algorithm/string.hpp>
 
-#include "arolib/misc/loggingcomponent.h"
-#include "arolib/misc/logger.h"
-#include "arolib/types/machine.hpp"
-#include "arolib/io/io_xml.hpp"
-#include "arolib/io/io_common.hpp"
 #include "arolib/misc/basic_responses.h"
+#include "arolib/misc/loggingcomponent.h"
+#include "arolib/types/machine.hpp"
 
 namespace arolib {
 

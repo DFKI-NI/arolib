@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,24 +17,8 @@
 #ifndef AROLIB_IO_XML_HPP
 #define AROLIB_IO_XML_HPP
 
-#include <string>
-#include <iostream>
-#include <fstream>
-#include <map>
-#include <ctime>
-
 #include "arolib/io/aroxmloutdocument.hpp"
 #include "arolib/io/aroxmlindocument.hpp"
-
-#include "arolib/types/machine.hpp"
-#include "arolib/types/subfield.hpp"
-#include "arolib/types/field.hpp"
-#include "arolib/types/fieldaccesspoint.hpp"
-#include "arolib/types/resourcepoint.hpp"
-#include "arolib/types/outfieldinfo.hpp"
-#include "arolib/types/machinedynamicinfo.hpp"
-#include "arolib/types/route.hpp"
-#include "arolib/planning/path_search/directedgraph.hpp"
 
 namespace arolib {
 namespace io {
@@ -169,6 +153,7 @@ bool readResourcePoints(const std::string& filename,
  * @param configParameters Configuration parameters (given as string map) to be written
  * @param OutFieldInfo OutFieldInfo to be written
  * @param machinesDynamicInfo MachineDynamicInfo-map to be written
+ * @param resourcePointStates States of the resource points to be written
  * @param coordinatesType_in Projection type of the coordinates in the source
  * @param coordinatesType_out Projection type of the coordinates in the target (file)
  * @return True on success
@@ -179,6 +164,7 @@ bool writePlanParametersXML(const std::string& filename,
                             const std::map<std::string, std::map<std::string, std::string> > &configParameters,
                             const OutFieldInfo &outFieldInfo = OutFieldInfo(),
                             const std::map<MachineId_t, MachineDynamicInfo>& machinesDynamicInfo = {},
+                            const std::map<ResourcePointId_t, ResourcePointState> &resourcePointStates = {},
                             const std::map<std::string, const ArolibGrid_t*> gridmaps = {},
                             Point::ProjectionType coordinatesType_in = Point::UTM,
                             Point::ProjectionType coordinatesType_out = Point::WGS);
@@ -191,6 +177,7 @@ bool writePlanParametersXML(const std::string& filename,
  * @param configParameters Configuration parameters (given as string map) to be written
  * @param OutFieldInfo OutFieldInfo to be written
  * @param machinesDynamicInfo MachineDynamicInfo-map to be written
+ * @param resourcePointStates States of the resource points to be written
  * @param coordinatesType_in Projection type of the coordinates in the source
  * @param coordinatesType_out Projection type of the coordinates in the target (file)
  * @return True on success
@@ -200,36 +187,10 @@ bool writePlanParametersXML(const std::string& filename,
                             const std::map<std::string, std::map<std::string, std::string> > &configParameters,
                             const OutFieldInfo &outFieldInfo = OutFieldInfo(),
                             const std::map<MachineId_t, MachineDynamicInfo>& machinesDynamicInfo = {},
+                            const std::map<ResourcePointId_t, ResourcePointState> &resourcePointStates = {},
                             const std::map<std::string, const ArolibGrid_t*> gridmaps = {},
                             Point::ProjectionType coordinatesType_in = Point::UTM,
                             Point::ProjectionType coordinatesType_out = Point::WGS);
-
-/**
- * @brief Save plan parameters in a XML file
- * @param filename Filename
- * @param workingGroup Working group (machines) to be written
- * @param configParameters Configuration parameters (given as string map) to be written
- * @param OutFieldInfo OutFieldInfo to be written
- * @param machinesDynamicInfo MachineDynamicInfo-map to be written
- * @param yieldmap_tifBase64 Yield-map (base64-encoded) to be written (disregarded if empty)
- * @param drynessmap_tifBase64 Dryness-map (base64-encoded) to be written (disregarded if empty)
- * @param soilmap_tifBase64 Soil-map (base64-encoded) to be written (disregarded if empty)
- * @param remainingAreaMap_tifBase64 Remaining-area-map (base64-encoded) to be written (disregarded if empty)
- * @param coordinatesType_in Projection type of the coordinates in the source
- * @param coordinatesType_out Projection type of the coordinates in the target (file)
- * @return True on success
- */
-bool writePlanParametersXML(const std::string& filename,
-                          const std::vector<Machine>& workingGroup,
-                          const std::map<std::string, std::map<std::string, std::string> > &configParameters,
-                          const OutFieldInfo &outFieldInfo = OutFieldInfo(),
-                          const std::map<MachineId_t, MachineDynamicInfo>& machinesDynamicInfo = {},
-                          const std::string &yieldmap_tifBase64 = "",
-                          const std::string &drynessmap_tifBase64 = "",
-                          const std::string &soilmap_tifBase64 = "",
-                          const std::string &remainingAreaMap_tifBase64 = "",
-                          Point::ProjectionType coordinatesType_in = Point::UTM,
-                          Point::ProjectionType coordinatesType_out = Point::WGS);
 
 /**
  * @brief Read plan parameters from a (Arolib-formatted) XML file.
@@ -239,6 +200,7 @@ bool writePlanParametersXML(const std::string& filename,
  * @param [out] configParameters Read configuration parameters (as string map)
  * @param [out] outFieldInfo Read OutFieldInfo
  * @param [out] machinesDynamicInfo Read MachineDynamicInfo
+ * @param [out] resourcePointStates Read Resource-point states
  * @param [out] gridmaps Read gridmaps
  * @param coordinatesType_out Projection type for the target coordinates
  * @param parentTags Parent tags to reach the location of the data to be read
@@ -251,6 +213,7 @@ bool readPlanParametersXML(const std::string& filename,
                            std::map<std::string, std::map<std::string, std::string> > &configParameters,
                            OutFieldInfo &outFieldInfo,
                            std::map<MachineId_t, MachineDynamicInfo>& machinesDynamicInfo,
+                           std::map<ResourcePointId_t, ResourcePointState>& resourcePointStates,
                            std::map<std::string, ArolibGrid_t> &gridmaps,
                            Point::ProjectionType coordinatesType_out = Point::UTM);
 
@@ -261,6 +224,7 @@ bool readPlanParametersXML(const std::string& filename,
  * @param [out] configParameters Read configuration parameters (as string map)
  * @param [out] outFieldInfo Read OutFieldInfo
  * @param [out] machinesDynamicInfo Read MachineDynamicInfo
+ * @param [out] resourcePointStates Read Resource-point states
  * @param [out] gridmaps Read gridmaps
  * @param coordinatesType_out Projection type for the target coordinates
  * @param parentTags Parent tags to reach the location of the data to be read
@@ -272,64 +236,9 @@ bool readPlanParametersXML(const std::string& filename,
                            std::map<std::string, std::map<std::string, std::string> > &configParameters,
                            OutFieldInfo &outFieldInfo,
                            std::map<MachineId_t, MachineDynamicInfo>& machinesDynamicInfo,
+                           std::map<ResourcePointId_t, ResourcePointState>& resourcePointStates,
                            std::map<std::string, ArolibGrid_t> &gridmaps,
                            Point::ProjectionType coordinatesType_out = Point::UTM);
-
-/**
- * @brief Read plan parameters from a (Arolib-formatted) XML file.
- * @param filename Filename
- * @param [out] field Read field
- * @param [out] workingGroup Read working group (machines)
- * @param [out] configParameters Read configuration parameters (as string map)
- * @param [out] outFieldInfo Read OutFieldInfo
- * @param [out] machinesDynamicInfo Read MachineDynamicInfo
- * @param [out] yieldmap_tifBase64 Read yieldmap (base64-encoded)
- * @param [out] drynessmap_tifBase64 Read drynessmap (base64-encoded)
- * @param [out] soilmap_tifBase64 Read soilmap (base64-encoded)
- * @param [out] remainingAreaMap_tifBase64 Read remaining-area map (base64-encoded)
- * @param coordinatesType_out Projection type for the target coordinates
- * @param parentTags Parent tags to reach the location of the data to be read
- * @param logLevel Log level
- * @return True on success
- */
-bool readPlanParametersXML(const std::string& filename,
-                          Field& field,
-                          std::vector<Machine>& workingGroup,
-                          std::map<std::string, std::map<std::string, std::string> > &configParameters,
-                          OutFieldInfo &outFieldInfo,
-                          std::map<MachineId_t, MachineDynamicInfo>& machinesDynamicInfo,
-                          std::string &yieldmap_tifBase64,
-                          std::string &drynessmap_tifBase64,
-                          std::string &soilmap_tifBase64,
-                          std::string &remainingAreaMap_tifBase64,
-                         Point::ProjectionType coordinatesType_out = Point::UTM);
-
-/**
- * @brief Read plan parameters from a (Arolib-formatted) XML file.
- * @param filename Filename
- * @param [out] workingGroup Read working group (machines)
- * @param [out] configParameters Read configuration parameters (as string map)
- * @param [out] outFieldInfo Read OutFieldInfo
- * @param [out] machinesDynamicInfo Read MachineDynamicInfo
- * @param [out] yieldmap_tifBase64 Read yieldmap (base64-encoded)
- * @param [out] drynessmap_tifBase64 Read drynessmap (base64-encoded)
- * @param [out] soilmap_tifBase64 Read soilmap (base64-encoded)
- * @param [out] remainingAreaMap_tifBase64 Read remaining-area map (base64-encoded)
- * @param coordinatesType_out Projection type for the target coordinates
- * @param parentTags Parent tags to reach the location of the data to be read
- * @param logLevel Log level
- * @return True on success
- */
-bool readPlanParametersXML( const std::string& filename,
-                          std::vector<Machine>& workingGroup,
-                          std::map<std::string, std::map<std::string, std::string> > &configParameters,
-                          OutFieldInfo &outFieldInfo,
-                          std::map<MachineId_t, MachineDynamicInfo>& machinesDynamicInfo,
-                          std::string &yieldmap_tifBase64,
-                          std::string &drynessmap_tifBase64,
-                          std::string &soilmap_tifBase64,
-                          std::string &remainingAreaMap_tifBase64,
-                          Point::ProjectionType coordinatesType_out = Point::UTM);
 
 /**
  * @brief Save routes in a XML file
@@ -457,31 +366,6 @@ bool readPlanXML( const std::string &filename,
                 std::map<int, std::vector<Route> > &routes,
                 bool syncRoutes = true,
                 Point::ProjectionType coordinatesType_out = Point::UTM);
-
-/**
- * @brief Read plan data from a (Arolib-formatted) XML file.
- * @param filename Filename
- * @param [out] field Read field
- * @param [out] workingGroup Read working group (machines)
- * @param [out] routes Read routes
- * @param [out] yieldmap_tifBase64 Read yieldmap (base64-encoded)
- * @param [out] drynessmap_tifBase64 Read drynessmap (base64-encoded)
- * @param [out] soilmap_tifBase64 Read soilmap (base64-encoded)
- * @param [out] remainingAreaMap_tifBase64 Read remaining-area map (base64-encoded)
- * @param syncRoutes Should the routes's base timestamp be synchronized so that all have the same one?
- * @param coordinatesType_out Projection type for the target coordinates
- * @return True on success
- */
-bool readPlanXML( const std::string &filename,
-                Field& field,
-                std::vector<Machine>& workingGroup,
-                std::map<int, std::vector<Route> > &routes,
-                std::string &yieldmap_tifBase64,
-                std::string &drynessmap_tifBase64,
-                std::string &soilmap_tifBase64,
-                std::string &remainingAreaMap_tifBase64,
-                bool syncRoutes = true,
-                Point::ProjectionType coordinatesType_out = Point::UTM );
 
 /**
  * @brief Read plan data from a (Arolib-formatted) XML file.

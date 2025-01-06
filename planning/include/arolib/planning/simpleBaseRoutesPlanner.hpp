@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,15 +17,10 @@
 #ifndef AROLIB_SIMPLEHARVESTERPLANNER_H
 #define AROLIB_SIMPLEHARVESTERPLANNER_H
 
-#include "arolib/types/route.hpp"
 #include "track_sequencing/simpletracksequencer.hpp"
-#include "arolib/types/field.hpp"
-#include "arolib/types/machine.hpp"
-#include "arolib/cartography/common.hpp"
-#include "arolib/planning/planningworkspace.h"
-#include "arolib/planning/routeassembler.hpp"
-#include "arolib/misc/loggingcomponent.h"
-#include "arolib/misc/logger.h"
+#include "edge_calculators/edgeSpeedCalculator.hpp"
+#include "arolib/types/route.hpp"
+#include "arolib/types/machinedynamicinfo.hpp"
 
 namespace arolib{
 
@@ -57,6 +52,14 @@ public:
     AroResp addMachine(const Machine& machine);
 
     /**
+     * @brief Set the Infield TracksConnector to be used.
+     * @param connector Infield TracksConnector to be used (if nullptr, it will use the default one of the route assembler)
+     */
+    inline void setInfieldTrackConnector(std::shared_ptr<IInfieldTracksConnector> connector){
+        m_tracks_connector = connector;
+    }
+
+    /**
      * @brief Set the Infield TrackSequencer to be used.
      * @param track_sequencer Infield TrackSequencer to be used.
      */
@@ -70,22 +73,6 @@ public:
      */
     inline void setInfieldTrackSequencerSettings(const ITrackSequencer::TrackSequencerSettings& settings) {
         m_track_sequencer_settings = settings;
-    }
-
-    /**
-     * @brief Set whether the thacks should be processed in inverse order or not (related to the order they are saved in the subfield's track vector).
-     * @param inverse Flag stating inverse order
-     */
-    inline void setInverseTrackOrder(bool inverse) {
-        m_tracks_in_reverse = inverse;
-    }
-
-    /**
-     * @brief Set whether the first track should be worrked in inverse (points) order.
-     * @param inverse Flag stating inverse order
-     */
-    inline void setFirstTrackInversePointOrder(bool inverse) {
-        m_first_track_inverse = inverse;
     }
 
     /**
@@ -103,9 +90,19 @@ public:
      * If set, inverse flags InverseTrackOrder and FirstTrackInversePointOrder might be disregarded
      * @param pose initial reference pose (disregarded if invalid)
      */
-    inline void setInitRefPose(const Pose2D& pose ) {
-        m_initRefPose = pose;
+    inline void setInitRefPoses(const std::map<MachineId_t, Pose2D>& poses ) {
+        m_initRefPoses = poses;
     }
+
+
+    /**
+     * @brief Set the flag to reuse the the track connection paths saved in the sequencer (if available) instead of recomputing them with the tracks connector.
+     * @param enable If true, it will reuse the track connection paths saved in the sequencer (if available) instead of recomputing them with the tracks connector.
+     */
+    inline void setReuseSequencerConnections(bool enable) {
+        m_reuse_sequencer_connections = enable;
+    }
+
 
     /**
      * @brief Get the planned route of a given machine
@@ -137,8 +134,6 @@ private:
                  std::shared_ptr<IEdgeSpeedCalculator> edgeSpeedCalculator,
                  std::shared_ptr<IEdgeSpeedCalculator> edgeSpeedCalculatorTransit);
 
-    Pose2D getInitRefPoseForSequencer();
-
 protected:
 
    std::shared_ptr<ITrackSequencer> m_track_sequencer; /**< Inner-field track sequencer. */
@@ -147,13 +142,14 @@ protected:
    std::map<MachineId_t, Machine> m_machinesMap; /**< Working group. */
    std::vector<Machine> m_machines; /**< Working group. */
    std::map<MachineId_t, Route> m_machines_routes; /**< Planned routes. <machine id, route> */
-   bool m_tracks_in_reverse = false; /**< Flag stating whether the tracks shoud start from the front (false) or back (true). */
-   bool m_first_track_inverse = false; /**< Flag stating whether the tracks shoud start with inverse point order. */
    std::set<size_t> m_excludeTrackIndexes; /**< Indexes of the tracks that will be disregarded. */
-   Pose2D m_initRefPose = Pose2D(Point::invalidPoint(), 0); /**< Initial reference pose. */
+   std::map<MachineId_t, Pose2D> m_initRefPoses = {}; /**< Initial reference poses per machine. */
+   std::shared_ptr<IInfieldTracksConnector> m_tracks_connector = nullptr; /**< Infield tracks' connector */
 
    bool m_has_subfield; /**< Was the subfield already set?. */
    bool m_has_machine; /**< There exists at least one machine in the working group. */
+
+   bool m_reuse_sequencer_connections = true; /**< If true, it will reuse the track connection paths saved in the sequencer (if available) instead of recomputing them with the tracks connector. */
 
 };
 

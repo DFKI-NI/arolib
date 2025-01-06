@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,9 @@
  
 
 #include "arolib/planning/edge_calculators/edgeCostCalculator.hpp"
+
+#include "arolib/geometry/geometry_helper.hpp"
+
 
 namespace arolib{
 
@@ -96,20 +99,24 @@ std::map<std::string, std::string> IEdgeCostCalculator::parseToStringMap() const
 
 CustomEdgeCostCalculator::CustomEdgeCostCalculator(const CalcCostFunc1 &_calcCost1,
                                                    const CalcCostFunc2 &_calcCost2,
-                                                   const CalcHeuristicFunc &_calcHeuristic, const GenInternalParamsFun &_genInternalParams,
+                                                   const CalcHeuristicFunc &_calcHeuristic, const GenInternalParamsFun &_genInternalParams, bool dependsOnMachine, bool dependsOnLoad, bool dependsOnTime, bool dependsOnDistance,
                                                    const LogLevel &logLevel):
     IEdgeCostCalculator(__FUNCTION__, logLevel)
   , m_calcCost1(_calcCost1)
   , m_calcCost2(_calcCost2)
   , m_calcHeuristic(_calcHeuristic)
   , m_genInternalParams(_genInternalParams)
+  , m_dependsOnMachine(dependsOnMachine)
+  , m_dependsOnLoad(dependsOnLoad)
+  , m_dependsOnTime(dependsOnTime)
+  , m_dependsOnDistance(dependsOnDistance)
 {
 
 }
 
-void CustomEdgeCostCalculator::generateInternalParameters(DirectedGraph::Graph& graph)
+void CustomEdgeCostCalculator::generateInternalParameters(DirectedGraph::Graph& graph, const std::vector<Machine> &machines)
 {
-    m_genInternalParams(graph);
+    m_genInternalParams(graph, machines);
 }
 
 double CustomEdgeCostCalculator::calcCost(const Machine &machine, const Point &p1, const Point &p2, double time, double waitingTime, double bunkerMass, const std::vector<DirectedGraph::overroll_property> &overruns)
@@ -139,7 +146,7 @@ ECC_timeOptimization::ECC_timeOptimization(const LogLevel &logLevel):
     m_general.boundaryCrossCostMult = 50;
 }
 
-void ECC_timeOptimization::generateInternalParameters(DirectedGraph::Graph& graph)
+void ECC_timeOptimization::generateInternalParameters(DirectedGraph::Graph&, const std::vector<Machine> &)
 {
 
 }
@@ -239,7 +246,7 @@ ECC_distanceOptimization::ECC_distanceOptimization(const LogLevel &logLevel) :
     m_general.boundaryCrossCostMult = 50;
 }
 
-void ECC_distanceOptimization::generateInternalParameters(DirectedGraph::Graph& graph)
+void ECC_distanceOptimization::generateInternalParameters(DirectedGraph::Graph&, const std::vector<Machine> &)
 {
 
 }

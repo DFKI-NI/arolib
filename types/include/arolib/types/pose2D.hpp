@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -54,6 +54,14 @@ public:
     explicit Pose2D( const Point & point, double _angle = 0);
 
     /**
+      * @brief Constructor with location arguments
+      * @param point Location
+      * @param pointNext Point used to obtain the angle
+      * @param reverseDir If true, the angle will be computed from pointNext to point
+      */
+    explicit Pose2D( const Point & point, const Point & pointNext, bool reverseDir = false);
+
+    /**
       * @brief Check if 2 poses are equal (with a very small tolerance)
       *
       * @param p Other pose to be compared
@@ -89,7 +97,7 @@ public:
 
 
 public:
-    double angle = 0;
+    double angle = 0; /**< Angle */
 };
 
 inline bool operator==(const Pose2D& lhs, const Pose2D& rhs) {

@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,14 +17,14 @@
 #ifndef AROLIB_IO_AROXMLOUTDOCUMENT_HPP
 #define AROLIB_IO_AROXMLOUTDOCUMENT_HPP
 
-#include <ostream>
-#include <fstream>
-#include <sstream>
-
 #include "xmloutdocument.hpp"
-#include "io_common.hpp"
-#include "arolib/types/coordtransformer.hpp"
-#include "arolib/misc/base64Utility.hpp"
+#include "arolib/types/field.hpp"
+#include "arolib/types/outfieldinfo.hpp"
+#include "arolib/types/machinedynamicinfo.hpp"
+#include "arolib/types/resourcepointstate.hpp"
+#include "arolib/types/route.hpp"
+#include "arolib/cartography/common.hpp"
+#include "arolib/planning/path_search/directedgraph.hpp"
 
 namespace arolib {
 namespace io {
@@ -387,6 +387,24 @@ public:
     bool add(const std::map<MachineId_t, MachineDynamicInfo>& dynamicInfo,
              std::string tag = "");
 
+    /**
+     * @brief Add/write state for a resource point with a given name and tag.
+     * @param states <Resource point id, ResourcePointState>-pair to be written
+     * @param tag Tag (if empty, no XML-tag will be opened)
+     * @return True on success
+     */
+    bool add(const std::pair<ResourcePointId_t, ResourcePointState> &state,
+             std::string tag = "");
+
+    /**
+     * @brief Add/write a map of  states for different resource points with a given name and tag.
+     * @param state <Resource point id, ResourcePointState>-map to be written
+     * @param tag Tag (if empty, no XML-tag will be opened)
+     * @return True on success
+     */
+    bool add(const std::map<ResourcePointId_t, ResourcePointState>& states,
+             std::string tag = "");
+
 
     /**
      * @brief Add/write OutFieldInfo with a given name and tag.
@@ -604,6 +622,7 @@ public:
      * @param configParameters Configuration parameters (given as string map) to be written
      * @param OutFieldInfo OutFieldInfo to be written
      * @param machinesDynamicInfo MachineDynamicInfo-map to be written
+     * @param resourcePointStates States of the resource points to be written
      * @param coordinatesType_in Projection type of the coordinates in the source
      * @param coordinatesType_out Projection type of the coordinates in the target (file)
      * @return True on success
@@ -614,6 +633,7 @@ public:
                                     const std::map<std::string, std::map<std::string, std::string> > &configParameters,
                                     const OutFieldInfo &outFieldInfo = OutFieldInfo(),
                                     const std::map<MachineId_t, MachineDynamicInfo>& machinesDynamicInfo = {},
+                                    const std::map<ResourcePointId_t, ResourcePointState> &resourcePointStates = {},
                                     const std::map<std::string, const ArolibGrid_t*> gridmaps = {},
                                     Point::ProjectionType coordinatesType_in = Point::UTM,
                                     Point::ProjectionType coordinatesType_out = Point::WGS );
@@ -625,6 +645,7 @@ public:
      * @param configParameters Configuration parameters (given as string map) to be written
      * @param OutFieldInfo OutFieldInfo to be written
      * @param machinesDynamicInfo MachineDynamicInfo-map to be written
+     * @param resourcePointStates States of the resource points to be written
      * @param coordinatesType_in Projection type of the coordinates in the source
      * @param coordinatesType_out Projection type of the coordinates in the target (file)
      * @return True on success
@@ -634,37 +655,10 @@ public:
                                     const std::map<std::string, std::map<std::string, std::string> > &configParameters,
                                     const OutFieldInfo &outFieldInfo = OutFieldInfo(),
                                     const std::map<MachineId_t, MachineDynamicInfo>& machinesDynamicInfo = {},
-                                    const std::map<std::string, const ArolibGrid_t*> gridmaps = {},
+                                    const std::map<ResourcePointId_t, ResourcePointState> &resourcePointStates = {},
+                                    const std::map<std::string, const ArolibGrid_t*>& gridmaps = {},
                                     Point::ProjectionType coordinatesType_in = Point::UTM,
                                     Point::ProjectionType coordinatesType_out = Point::WGS );
-
-    /**
-     * @brief Save plan parameters in a XML file
-     * @param filename Filename
-     * @param field Field to be written
-     * @param workingGroup Working group (machines) to be written
-     * @param configParameters Configuration parameters (given as string map) to be written
-     * @param OutFieldInfo OutFieldInfo to be written
-     * @param machinesDynamicInfo MachineDynamicInfo-map to be written
-     * @param yieldmap_tifBase64 Yield-map (base64-encoded) to be written (disregarded if empty)
-     * @param drynessmap_tifBase64 Dryness-map (base64-encoded) to be written (disregarded if empty)
-     * @param soilmap_tifBase64 Soil-map (base64-encoded) to be written (disregarded if empty)
-     * @param remainingAreaMap_tifBase64 Remaining-area-map (base64-encoded) to be written (disregarded if empty)
-     * @param coordinatesType_in Projection type of the coordinates in the source
-     * @param coordinatesType_out Projection type of the coordinates in the target (file)
-     * @return True on success
-     */
-    static bool savePlanParameters( const std::string& filename,
-                                    const std::vector<Machine>& workingGroup,
-                                    const std::map<std::string, std::map<std::string, std::string> > &configParameters,
-                                    const OutFieldInfo &outFieldInfo = OutFieldInfo(),
-                                    const std::map<MachineId_t, MachineDynamicInfo>& machinesDynamicInfo = {},
-                                    const std::string &yieldmap_tifBase64 = "",
-                                    const std::string &drynessmap_tifBase64 = "",
-                                    const std::string &soilmap_tifBase64 = "",
-                                    const std::string &remainingAreaMap_tifBase64 = "",
-                                    Point::ProjectionType coordinatesType_in = Point::UTM,
-                                    Point::ProjectionType coordinatesType_out = Point::WGS);
 
     /**
      * @brief Save routes in a XML file

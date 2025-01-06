@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,39 +18,13 @@
 #ifndef _AROLIB_GRIDMAP_LAYOUT_HPP_
 #define _AROLIB_GRIDMAP_LAYOUT_HPP_
 
-#include <type_traits>
-#include <string>
-#include <sys/stat.h>
-#include <math.h>
-#include <limits>
-#include <iostream>
-#include <fstream>
-#include <sstream>
-#include <memory>
-#include <future>
-#include <unordered_map>
+
 #include <unordered_set>
 
-#include <boost/geometry/geometry.hpp>
-#include <boost/geometry/geometries/point_xy.hpp>
-#include <boost/geometry/geometries/polygon.hpp>
-#include <boost/algorithm/string.hpp>
-
-#include "cellsrange.hpp"
-#include "cellsrangeset.hpp"
-#include "arolib/types/units.hpp"
-#include "arolib/types/field.hpp"
-#include "arolib/types/coordtransformer.hpp"
-#include "arolib/geometry/geometry_helper.hpp"
+#include "arolib/types/polygon.hpp"
 #include "arolib/misc/loggingcomponent.h"
-#include "arolib/misc/color_helper.hpp"
+#include "cellsrange.hpp"
 
-#include <gdal/gdal_priv.h>
-#include <gdal/ogr_spatialref.h>
-#include <gdal/gdalwarper.h>
-
-#include <png++/image.hpp>
-#include <png++/rgb_pixel.hpp>
 
 namespace arolib {
 
@@ -145,16 +119,6 @@ public:
      */
     explicit GridmapLayout(LogLevel logLevel = LogLevel::INFO);
 
-    /**
-     * Copy constructor.
-     * @param other Other layout to copy from.
-     */
-    GridmapLayout(const GridmapLayout& other);
-
-    /**
-     * Destructor.
-     */
-    virtual ~GridmapLayout();
 
     //------------------------------------
     //--------------OPERATORS-------------
@@ -667,6 +631,8 @@ protected:
     unsigned int m_sizeY = 0;  /**< Number of rows of the grid's matrix */
 
     double m_limitTolerance = 0.5;  /**< Tolerance (in real world coordinates) to accept a value out of the X- and Y- axis range */
+
+    // size_t m_factorCellLayout = 5;
 
     bool m_computeInMultiThread = true; /**< Make computations in multiple threads? */
 };

@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,12 @@ A simple example which executes the whole planning process of AroLib
 Harvesting process with one capacitaded harvester OR one non-capacitated harvester and 2 transport vehicles
 */
 
+#include <boost/filesystem.hpp>
 
+#include "arolib/misc/filesystem_helper.h"
+#include "arolib/types/coordtransformer.hpp"
+#include "arolib/io/io_kml.hpp"
+#include "arolib/io/io_xml.hpp"
 #include "arolib/components/machinedb.h"
 #include "arolib/components/fieldgeometryprocessor.h"
 #include "arolib/components/baseroutesplanner.h"
@@ -30,7 +35,6 @@ Harvesting process with one capacitaded harvester OR one non-capacitated harvest
 #include "arolib/planning/track_sequencing/tracksequencerclosestnext.hpp"
 #include "arolib/planning/track_connectors/infieldtracksconnectordubinsorgraphbased.hpp"
 #include "arolib/planning/edge_calculators/edgeCostCalculatorSoil.hpp"
-#include <fstream>
 
 using namespace arolib;
 
@@ -44,6 +48,7 @@ struct WorkSpace{
     std::vector<Machine> workingGroup; //machines participating in the operation
     OutFieldInfo outFieldInfo; //Information related to operations done outside of the field (incl. travel)
     std::map<MachineId_t, MachineDynamicInfo> machineInitialStates; //initial states of the machines
+    std::map<ResourcePointId_t, ResourcePointState> resourcePointInitialStates; //initial states of the resource points
     std::shared_ptr< gridmap::GridCellsInfoManager > cellsInfoManager = std::make_shared<gridmap::GridCellsInfoManager>(gLogLevel);//cells manager used by several components to make computations in gridmaps
     std::shared_ptr<IEdgeSpeedCalculator> speedCalculator = std::make_shared<EdgeWorkingSpeedCalculatorDef>(gLogLevel);//calculator used to compute the harvester speed while harvesting
     std::shared_ptr<IEdgeSpeedCalculator> speedCalculatorTransit = std::make_shared<EdgeTransitSpeedCalculatorDef>(gLogLevel);//calculator used to compute the machine speed during transit
@@ -61,6 +66,7 @@ struct WorkSpace{
 
 bool initTestField( WorkSpace & workSpace );
 bool initGridmaps( WorkSpace & workSpace );
+bool initResourcePointCapacitiesAndStates( WorkSpace & workSpace );
 bool initMassCalculator( WorkSpace & workSpace );
 bool initCostCalculator( WorkSpace & workSpace, size_t operationType );
 bool initWorkingGroup_cHarv( WorkSpace & workSpace );
@@ -87,6 +93,10 @@ int main()
     if( !initGridmaps( workSpace ) )
         return 20;
 
+    // Initialize the capacities and current states of the resource points
+    if( !initResourcePointCapacitiesAndStates( workSpace ) )
+        return 25;
+
     // Initialize the mass calculator
     if( !initMassCalculator( workSpace ) )
         return 30;
@@ -108,21 +118,21 @@ int main()
         }
 
         for(size_t headlandType = 0 ; headlandType < 2 ; ++headlandType){
-            std::cout << std::endl << "----- OPERATION TYPE " << operationType << "  :  HEADLAND TYPE " << headlandType << " -----" << std::endl << std::endl;
+            std::cout << "\n----- OPERATION TYPE " << operationType << "  :  HEADLAND TYPE " << headlandType << " -----\n\n";
 
-            std::cout << std::endl << "-- Working group --" << std::endl;
+            std::cout << "\n-- Working group --\n";
             for(size_t i = 0 ; i < workSpace.workingGroup.size() ; ++i){
                 const auto& machine = workSpace.workingGroup.at(i);
-                std::cout << "   Machine # " << ( i+1 ) << std::endl
-                          << "      id = " << machine.id << std::endl
-                          << "      type = " << Machine::machineTypeToShortString3c(machine.machinetype) << std::endl
-                          << "      manufacturer = " << machine.manufacturer << std::endl
-                          << "      model = " << machine.model << std::endl
-                          << "      width [m] = " << machine.width << std::endl
-                          << "      working width [m] = " << machine.working_width << std::endl
-                          << "      mass [kg] = " << machine.weight << std::endl;
+                std::cout << "   Machine # " << ( i+1 ) << "\n"
+                          << "      id = " << machine.id << "\n"
+                          << "      type = " << Machine::machineTypeToShortString3c(machine.machinetype) << "\n"
+                          << "      manufacturer = " << machine.manufacturer << "\n"
+                          << "      model = " << machine.model << "\n"
+                          << "      width [m] = " << machine.width << "\n"
+                          << "      working width [m] = " << machine.working_width << "\n"
+                          << "      mass [kg] = " << machine.weight << "\n";
             }
-            std::cout << std::endl << "-- Working group --" << std::endl << std::endl;
+            std::cout << "\n-- Working group --\n" << std::endl;
 
             // Initialize the initial states of the machines
             if( !initMachineStates( workSpace ) )
@@ -156,7 +166,7 @@ int main()
             savePlan( workSpace, operationType, headlandType );
 
 
-            std::cout << std::endl << "----- FINISHED PLANNING OPERATION TYPE " << operationType << "  :  HEADLAND TYPE " << headlandType << " -----" << std::endl << std::endl;
+            std::cout << "\n----- FINISHED PLANNING OPERATION TYPE " << operationType << "  :  HEADLAND TYPE " << headlandType << " -----\n" << std::endl;
 
         }
 
@@ -274,6 +284,31 @@ bool initGridmaps( WorkSpace & workSpace ){
 
     return true;
 }
+
+/*
+ * This function update the capacities of the resource points and creates the initial states for the resource points
+ * */
+bool initResourcePointCapacitiesAndStates( WorkSpace & workSpace ){
+    for(auto& sf : workSpace.field.subfields){
+        bool error;
+        double totalMass = workSpace.massMap->getPolygonComputedValue( sf.boundary_outer, ArolibGrid_t::SUM, false, &error );
+        if(error){
+            std::cerr << "-- Error computing total mass in the field from the mass gridmap --" << std::endl;
+            return false;
+        }
+        double area = geometry::calc_area( sf.boundary_outer );
+        totalMass = t_ha2Kg_sqrm(totalMass) * area;
+        for( size_t i = 0 ; i < sf.resource_points.size() ; ++i){
+            auto& resPt = sf.resource_points.at(i);
+            resPt.massCapacity = 1.1 * totalMass;
+            auto& state = workSpace.resourcePointInitialStates[resPt.id];
+            state.capacityMass = resPt.massCapacity * ( i == 0 ? 0.6 : 1.0 );
+        }
+
+    }
+    return true;
+}
+
 
 
 /*
@@ -584,7 +619,7 @@ bool processFieldGeometries( WorkSpace & workSpace, size_t headlandType ){
         }
     }
 
-    std::cout << std::endl << "-- Finished generating field geometries --" << std::endl;
+    std::cout << "\n-- Finished generating field geometries --" << std::endl;
     return true;
 }
 
@@ -593,7 +628,7 @@ bool processFieldGeometries( WorkSpace & workSpace, size_t headlandType ){
  * */
 bool generateGraph( WorkSpace & workSpace ){
 
-    std::cout << std::endl << "-- Creating the graph..... --" << std::endl;
+    std::cout << "\n-- Creating the graph..... --\n";
 
     GraphProcessor::Settings gpSettings;
     gpSettings.incVisitPeriods = false;
@@ -613,7 +648,7 @@ bool generateGraph( WorkSpace & workSpace ){
         return false;
     }
 
-    std::cout << std::endl << "-- Finished creating the graph --" << std::endl;
+    std::cout << "\n-- Finished creating the graph --" << std::endl;
 
     return true;
 
@@ -626,7 +661,7 @@ bool generateGraph( WorkSpace & workSpace ){
  * */
 bool planBaseRoutes( WorkSpace & workSpace ){
 
-    std::cout << std::endl << "-- Planning base-routes for the harvester..... --" << std::endl;
+    std::cout << "\n-- Planning base-routes for the harvester..... --\n";
 
     BaseRoutesPlanner::PlannerParameters plannerParameters;
     plannerParameters.workHeadlandFirst = true;
@@ -671,7 +706,7 @@ bool planBaseRoutes( WorkSpace & workSpace ){
         return false;
     }
 
-    std::cout << std::endl << "-- Finished planning base-routes for the harvester --" << std::endl;
+    std::cout << "\n-- Finished planning base-routes for the harvester --" << std::endl;
     return true;
 }
 
@@ -680,7 +715,7 @@ bool planBaseRoutes( WorkSpace & workSpace ){
  * */
 bool updateGraph( WorkSpace & workSpace ){
 
-    std::cout << std::endl << "-- Updating the graph with base-routes information..... --" << std::endl;
+    std::cout << "\n-- Updating the graph with base-routes information..... --\n";
 
     GraphProcessor graphProcessor(gLogLevel);
     auto aroResp = graphProcessor.addBaseRouteInformationToGraph(workSpace.graph,
@@ -692,7 +727,7 @@ bool updateGraph( WorkSpace & workSpace ){
         return false;
     }
 
-    std::cout << std::endl << "-- Finished updating the graph --" << std::endl;
+    std::cout << "\n-- Finished updating the graph --" << std::endl;
 
     return true;
 
@@ -703,12 +738,13 @@ bool updateGraph( WorkSpace & workSpace ){
  * */
 bool planOperation( WorkSpace & workSpace, size_t operationType ){
 
-    std::cout << std::endl << "-- Planning operation routes..... --" << std::endl;
+    std::cout << "\n-- Planning operation routes..... --\n";
 
     FieldProcessPlanner::PlannerParameters plannerParameters;
     plannerParameters.clearanceTime = 10; // time [s] a machine has to wait for a vertex to be free
     plannerParameters.collisionAvoidanceOption = Astar::COLLISION_AVOIDANCE__OVERALL; //with collition avoidance
-    plannerParameters.finishAtResourcePoint = plannerParameters.sendLastOlvToResourcePoint = true; //capacitated vehicles will finish at the unloading facility
+    plannerParameters.sendLastOlvToResourcePoint = true; //transport vehicles will finish at the unloading facility
+    plannerParameters.finishPointOption = RoutePlannerStandaloneMachines::FINISH_AT_RESOURCE_POINT; //capacitated vehicles will finish at the unloading facility
     plannerParameters.includeWaitInCost = true;
     plannerParameters.maxPlanningTime = plannerParameters.max_planning_time = 0; //do not limit the planning time
 
@@ -734,6 +770,7 @@ bool planOperation( WorkSpace & workSpace, size_t operationType ){
                                          workSpace.workingGroup,
                                          workSpace.outFieldInfo,
                                          workSpace.machineInitialStates,
+                                         workSpace.resourcePointInitialStates,
                                          plannerParameters,
                                          ArolibGrid_t(),
                                          ArolibGrid_t(),
@@ -744,42 +781,38 @@ bool planOperation( WorkSpace & workSpace, size_t operationType ){
         return false;
     }
 
-    std::cout << std::endl << "-- Finished planning operation routes --" << std::endl;
+    std::cout << "\n-- Finished planning operation routes --" << std::endl;
 
     return true;
 
 }
 
 /*
- * This function saves the processed field and planned routes in '/tmp' (if possible)
+ * This function saves the processed field and planned routes in the temp directory
  * */
 bool savePlan( WorkSpace & workSpace, size_t operationType, size_t headlandType ){
-    const std::string baseDir = "/tmp";
-    const std::string outDir = baseDir + "/example_harvesting/operationType_" + std::to_string(operationType) + "__headlandType_" + std::to_string(headlandType) + "/";
 
-    std::cout << std::endl << "-- Saving field and plan in " << outDir << "'..... --" << std::endl;
+    const auto outDir = io::create_path( io::get_temp_dir(), "arolib", "examples", "example_harvesting",
+                                         "operationType_" + std::to_string(operationType) + "__headlandType_" + std::to_string(headlandType) );
 
-    if (!boost::filesystem::exists(baseDir.c_str())){
-        std::cerr << "-- Unable to save plan: base directory '" << baseDir << "' does not exist --" << std::endl;
-        return false;
-    }
+    std::cout << "\n-- Saving field and plan in " << outDir << "'..... --\n";
 
     if (!io::create_directory(outDir)){
         std::cerr << "-- Unable to save plan: error creating output directory '" << outDir << "' --" << std::endl;
         return false;
     }
 
-    if (!io::writeFieldKML(outDir + "processedField.kml", workSpace.field)){
+    if (!io::writeFieldKML( io::create_path(outDir, "processedField.kml"), workSpace.field )){
         std::cerr << "-- Unable to save plan: error saving field in output directory '" << outDir << "' --" << std::endl;
         return false;
     }
 
-    std::cout << std::endl << "-- Field (KML) saved in " << outDir << "' --" << std::endl;
+    std::cout << "\n-- Field (KML) saved in " << outDir << "' --\n";
 
     std::map<std::string, ArolibGrid_t* > gridmaps;
     gridmaps["biomass"] = workSpace.massMap.get();
     gridmaps["soilcost"] = workSpace.soilMap.get();
-    if( !io::writePlanXML( outDir + "plan.xml",
+    if( !io::writePlanXML( io::create_path(outDir, "plan.xml"),
                            workSpace.field,
                            workSpace.workingGroup,
                            {workSpace.plannedRoutes},
@@ -788,7 +821,7 @@ bool savePlan( WorkSpace & workSpace, size_t operationType, size_t headlandType 
         return false;
     }
 
-    std::cout << std::endl << "-- Field and plan saved in " << outDir << "' --" << std::endl;
+    std::cout << "\n-- Field and plan saved in " << outDir << "' --" << std::endl;
 
     return true;
 

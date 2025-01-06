@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,10 +16,20 @@
  
 #include "arolib/components/infieldbaseroutesplanner.h"
 
+#include "arolib/geometry/geometry_helper.hpp"
+#include "arolib/geometry/curves_helper.hpp"
+#include "arolib/planning/track_sequencing/simpletracksequencer.hpp"
+#include "arolib/planning/track_connectors/infieldtracksconnectordef.hpp"
+#include "arolib/planning/simpleBaseRoutesPlanner.hpp"
+
 namespace arolib {
 
 
-const double InfieldBaseRoutesPlanner::m_thresholdIsWorked = 0.5;
+const double InfieldBaseRoutesPlanner::m_unsamplingTolerance = 0.1;
+//const double InfieldBaseRoutesPlanner::m_thresholdIsWorkedLB = 0.4;
+//const double InfieldBaseRoutesPlanner::m_thresholdIsWorkedUB = 0.6;
+const double InfieldBaseRoutesPlanner::m_thresholdIsWorkedLB = 0.3; //0.4;
+const double InfieldBaseRoutesPlanner::m_thresholdIsWorkedUB = 0.7; //0.6;
 
 bool InfieldBaseRoutesPlanner::PlannerParameters::parseFromStringMap(InfieldBaseRoutesPlanner::PlannerParameters &params,
                                                                      const std::map<std::string, std::string> &map, bool strict)
@@ -78,14 +88,14 @@ InfieldBaseRoutesPlanner::InfieldBaseRoutesPlanner(const LogLevel &logLevel):
 }
 
 AroResp InfieldBaseRoutesPlanner::plan(const Subfield &subfield,
-                                       const std::vector<Machine> &workinggroup,
+                                       const std::vector<Machine> &_workinggroup,
                                        const PlannerParameters &plannerParameters,
                                        std::shared_ptr<IEdgeMassCalculator> edgeMassCalculator,
                                        std::shared_ptr<IEdgeSpeedCalculator> edgeSpeedCalculator,
                                        std::shared_ptr<IEdgeSpeedCalculator> edgeSpeedCalculatorTransit,
                                        std::vector<Route> &routes,
                                        const std::map<MachineId_t, MachineDynamicInfo> *machineCurrentStates,
-                                       const Pose2D *initRefPose,
+                                       const std::map<MachineId_t, Pose2D> *_initRefPoses,
                                        std::shared_ptr<const ArolibGrid_t> massFactorMap,
                                        std::shared_ptr<const ArolibGrid_t> remainingAreaMap)
 {
@@ -93,67 +103,79 @@ AroResp InfieldBaseRoutesPlanner::plan(const Subfield &subfield,
     if(!edgeMassCalculator)
         return AroResp::LoggingResp(1, "A mass calculator must be given", m_logger, LogLevel::ERROR, __FUNCTION__);
 
+    std::vector<Machine> workinggroup;
+    for(auto &m : _workinggroup){
+        if (m.isOfWorkingType(true))
+            workinggroup.emplace_back(m);
+    }
+
+    if(workinggroup.empty())
+        return AroResp::LoggingResp(1, "No valid machines given", m_logger, LogLevel::ERROR, __FUNCTION__);
+
     LoggingComponent::LoggersHandler lh(true);//will be reset on destruction
 
     if(remainingAreaMap)
         LoggingComponent::setTemporalLoggersParent(lh, *this, *remainingAreaMap);
 
-    auto initRefPoint = initRefPose;
-    bool inverseFlagsSet = false;
-    bool inverseTrackOrder = plannerParameters.inverseTrackOrder;
-    bool inversePointsOrderStart = plannerParameters.inversePointsOrder;
+    std::map<MachineId_t, Pose2D> initRefPoses;
+    if(_initRefPoses){
+        for(auto& m : workinggroup){
+            auto it_m = _initRefPoses->find( m.id );
+            if(it_m != _initRefPoses->end() && it_m->second.isValid())
+                initRefPoses[m.id] = it_m->second;
+        }
+    }
 
     std::shared_ptr<InternalMassCalculator> edgeMassCalculatorExtended = std::make_shared<InternalMassCalculator>( edgeMassCalculator,
                                                                                                                    massFactorMap,
                                                                                                                    m_cim,
                                                                                                                    plannerParameters.bePreciseWithMatterMap ? gridmap::SharedGridsManager::PRECISE : gridmap::SharedGridsManager::PRECISE_ONLY_IF_AVAILABLE );
 
-    //Get the indexes of the tracks that are completelly worked
-    std::set<size_t> excludeTrackIndexes = getExcludeTrackIndexes(subfield, remainingAreaMap, plannerParameters.bePreciseWithRemainingAreaMap);
 
-    if( ( !initRefPoint || !initRefPoint->isValid() )
-          && remainingAreaMap && remainingAreaMap->isAllocated()){//Get the initial reference point and inverse flags based on the worked area map (and, if necessary, the current locations of the machines)
-        logger().printOut(LogLevel::INFO, __FUNCTION__, "Obtaining inverse flags based on the remaining area map...");
-        inverseFlagsSet = getInverseFlagsBasedOnRemainingArea(subfield,
-                                                              excludeTrackIndexes,
-                                                              workinggroup,
-                                                              plannerParameters,
-                                                              *remainingAreaMap,
-                                                              machineCurrentStates,
-                                                              inverseTrackOrder,
-                                                              inversePointsOrderStart);
+    WorkedAreaAnalyst waa;
+    waa.setWorkedAreaMap(remainingAreaMap, false);
+    waa.setThresholds( m_thresholdIsWorkedLB, m_thresholdIsWorkedUB );
+
+    TracksInfo tracksInfo = initTracksInfo(subfield, waa, plannerParameters.bePreciseWithRemainingAreaMap);
+
+    bool allAssigned = initRefPoses.size() == workinggroup.size();
+
+    auto updateRefPosesFromFirstTracks = [& subfield, &tracksInfo, &workinggroup, &initRefPoses](){
+        for(auto& it_m1 : tracksInfo.indFirstTrack){
+            auto it_m2 = initRefPoses.find(it_m1.first);
+            if(it_m2 != initRefPoses.end()) //already set
+                continue;
+
+            auto& trackPts = subfield.tracks.at(it_m1.second).points;
+            if( tracksInfo.tracksInfo.at(it_m1.second).workingDirection > 0 )
+                initRefPoses[it_m1.first] = Pose2D(trackPts.front(), geometry::get_angle(trackPts.front(), trackPts.at(1)));
+            else
+                initRefPoses[it_m1.first] = Pose2D(trackPts.back(), geometry::get_angle(trackPts.back(), r_at(trackPts, 1)));
+        }
+    };
+
+    if(!allAssigned){
+        allAssigned = updateFirstTrackInfoFromMachinesNearPartiallyWorkedTracks(subfield, tracksInfo, workinggroup,
+                                                                                machineCurrentStates ? *machineCurrentStates : std::map<MachineId_t, MachineDynamicInfo>{},
+                                                                                initRefPoses);
+        updateRefPosesFromFirstTracks();
     }
 
-    if(( !initRefPoint || !initRefPoint->isValid() )
-            && !inverseFlagsSet){//Get the initial reference point and inverse flags based on the the current locations of the machines
-        logger().printOut(LogLevel::INFO, __FUNCTION__, "Obtaining inverse flags based on the machines current location...");
-        inverseFlagsSet = getInverseFlagsBasedOnMachineLocation(subfield,
-                                                                excludeTrackIndexes,
-                                                                workinggroup,
-                                                                plannerParameters,
-                                                                machineCurrentStates,
-                                                                inverseTrackOrder,
-                                                                inversePointsOrderStart);
-    }
+    if(!allAssigned)
+        allAssigned = completeInitRefPosesFromMachinesLocations(subfield, tracksInfo, workinggroup,
+                                                                machineCurrentStates ? *machineCurrentStates : std::map<MachineId_t, MachineDynamicInfo>{},
+                                                                initRefPoses);
 
-    if(initRefPoint && initRefPoint->isValid() && !inverseFlagsSet){
-        logger().printOut(LogLevel::INFO, __FUNCTION__, "Obtaining inverse flags based on the initial reference point...");
-        getInverseFlagsBasedOnReferencePoint(subfield,
-                                             excludeTrackIndexes,
-                                             *initRefPoint,
-                                             workinggroup,
-                                             plannerParameters,
-                                             inverseTrackOrder,
-                                             inversePointsOrderStart);
+    if(!allAssigned){
+        allAssigned = updateFirstTrackFromPartiallyWorkedTracks(subfield, tracksInfo, workinggroup, initRefPoses);
+        updateRefPosesFromFirstTracks();
     }
 
     auto aroResp = generateBaseRoutes(subfield,
-                                      excludeTrackIndexes,
+                                      tracksInfo.excludeTrackIndexes,
                                       workinggroup,
                                       plannerParameters,
-                                      inverseTrackOrder,
-                                      inversePointsOrderStart,
-                                      initRefPoint,
+                                      initRefPoses,
                                       edgeMassCalculatorExtended,
                                       edgeSpeedCalculator,
                                       edgeSpeedCalculatorTransit,
@@ -164,11 +186,45 @@ AroResp InfieldBaseRoutesPlanner::plan(const Subfield &subfield,
                                    subfield,
                                    workinggroup,
                                    edgeMassCalculatorExtended,
-                                   remainingAreaMap,
+                                   waa,
                                    plannerParameters);
 
     return aroResp;
 
+}
+
+AroResp InfieldBaseRoutesPlanner::plan(const Subfield &subfield,
+                                       const std::vector<Machine> &workinggroup,
+                                       const PlannerParameters &plannerParameters,
+                                       std::shared_ptr<IEdgeMassCalculator> edgeMassCalculator,
+                                       std::shared_ptr<IEdgeSpeedCalculator> edgeSpeedCalculator,
+                                       std::shared_ptr<IEdgeSpeedCalculator> edgeSpeedCalculatorTransit,
+                                       std::vector<Route> &routes,
+                                       const std::map<MachineId_t, MachineDynamicInfo> *machineCurrentStates,
+                                       const Pose2D &initRefPose,
+                                       std::shared_ptr<const ArolibGrid_t> massFactorMap,
+                                       std::shared_ptr<const ArolibGrid_t> remainingAreaMap)
+{
+    std::map<MachineId_t, Pose2D> initRefPoses;
+    std::map<MachineId_t, Pose2D>* pInitRefPoses = nullptr;
+
+    if(initRefPose.isValid()){
+        for(auto& m : workinggroup)
+            initRefPoses[m.id] = initRefPose;
+        pInitRefPoses = &initRefPoses;
+    }
+
+    return plan(subfield,
+                workinggroup,
+                plannerParameters,
+                edgeMassCalculator,
+                edgeSpeedCalculator,
+                edgeSpeedCalculatorTransit,
+                routes,
+                machineCurrentStates,
+                pInitRefPoses,
+                massFactorMap,
+                remainingAreaMap);
 }
 
 void InfieldBaseRoutesPlanner::setInfieldTrackSequencer(std::shared_ptr<ITrackSequencer> track_sequencer) {
@@ -187,517 +243,533 @@ void InfieldBaseRoutesPlanner::setGridCellsInfoManager(std::shared_ptr<gridmap::
     m_cim = cim;
 }
 
-std::set<size_t> InfieldBaseRoutesPlanner::getExcludeTrackIndexes(const Subfield &subfield, std::shared_ptr<const ArolibGrid_t> remainingAreaMap, bool bePrecise)
+InfieldBaseRoutesPlanner::TracksInfo InfieldBaseRoutesPlanner::initTracksInfo(const Subfield &subfield, WorkedAreaAnalyst& waa, bool bePrecise)
 {
-    std::set<size_t> ret;
-    if(!remainingAreaMap || !remainingAreaMap->isAllocated())
-        return ret;
+    TracksInfo info(subfield.tracks.size());
+
+    auto remainingArea_map = waa.getWorkedAreaMap();
+    if(!remainingArea_map || !remainingArea_map->isAllocated())
+        return info;
+
+    const Polygon* boundary = subfield.boundary_inner.points.size() > 3 ? &subfield.boundary_inner : &subfield.boundary_outer;
 
     for(size_t i = 0 ; i < subfield.tracks.size() ; ++i){
+
         const auto& track = subfield.tracks.at(i);
         if(track.points.size() < 2){
-            ret.insert(i);
+            info.tracksInfo.at(i).workedState = TRACK_WORKED;
+            info.excludeTrackIndexes.insert(i);
             continue;
         }
-
-        /* //If the map has values between 0 and 1, computing the values for the whole polygon might lead to wrong assumption
-        Polygon trackPoly = track.boundary;
-        if(trackPoly.points.empty()){
-            if(track.width < 1e-5
-                    || !geometry::offsetLinestring(track.points, trackPoly, 0.5*track.width, 0.5*track.width, true, 0)){
-                ret.insert(i);
-                continue;
-            }
-        }
-        std::vector<Polygon> intersectionPolys;
-        if(subfield.boundary_inner.points.empty())
-            intersectionPolys.emplace_back(trackPoly);
-        else
-            intersectionPolys = geometry::get_intersection(subfield.boundary_inner, trackPoly);
-
-        int excludeCount = 0;
-        for(const auto& poly : intersectionPolys){
-            bool errorTmp;
-            double value = remainingArea_map.getPolygonComputedValue(poly,
-                                                                     ArolibGrid_t::AVERAGE_TOTAL,
-                                                                     bePrecise
-                                                                     &errorTmp);
-
-            if(errorTmp || value < 0.01)
-                ++excludeCount;
-        }
-
-        if(excludeCount == intersectionPolys.size())
-            ret.insert(i);
-        */
 
         double resolution = geometry::calc_dist(track.points.front(), track.points.at(1));
         for(size_t j = 1 ; j+1 < track.points.size() ; ++j)
             resolution = std::max(resolution, geometry::calc_dist(track.points.at(j), track.points.at(j+1)) );
 
-        bool worked = false;
-        for(size_t j = 0 ; j+1 < track.points.size() ; ++j){
-            if( (j == 0 || j+2 == track.points.size())
-                    && arolib::geometry::calc_dist(track.points.at(j), track.points.at(j+1)) < 0.5 * resolution)
-                continue;
-            worked = isWorked(track.points.at(j), track.points.at(j+1), track.width, *remainingAreaMap, bePrecise);
-            if(!worked)
-                break;
+        //get the indexes of the first worked and not-worked segment in forward and reverse order
+        int indFirstSegmentWorked = -1, indLastSegmentWorked = -1;
+        int indFirstSegmentNotWorked = -1, indLastSegmentNotWorked = -1;
+        std::vector<std::pair<int, float>> workedPairs(track.points.size()-1);
+        float unknownValuesSum = 0;
+        size_t unknownValuesCount = 0;
+        for(int side = 0 ; side < 2 ; side ++){
+
+            if(side > 0){
+                if( (indFirstSegmentWorked < 0 && indFirstSegmentNotWorked < 0)
+                        /*|| (indFirstSegmentWorked >= 0 && indFirstSegmentNotWorked < 0)
+                        || (indFirstSegmentNotWorked >= 0 && indFirstSegmentWorked < 0)*/ )
+                    break;
+            }
+
+            int &indSegmentWorked = ( side == 0 ? indFirstSegmentWorked : indLastSegmentWorked );
+            int &indSegmentNotWorked = ( side == 0 ? indFirstSegmentNotWorked : indLastSegmentNotWorked );
+            for(size_t j = 0 ; j+1 < track.points.size() ; ++j){
+                size_t indP0 = ( side == 0 ? j : track.points.size()-j-1 );
+                size_t indP1 = ( side == 0 ? j+1 : track.points.size()-j-2 );
+
+                const auto& p0 = track.points.at(indP0);
+                const auto& p1 =  track.points.at(indP1);
+
+                auto workedPair = isSegmentWorked(*boundary, p0, p1, track.width, waa, bePrecise);
+                auto& workedState = workedPair.first;
+                if(workedState == WorkedAreaAnalyst::NOT_WORKED && indSegmentNotWorked < 0)
+                    indSegmentNotWorked = indP0;
+                else if(workedState == WorkedAreaAnalyst::WORKED && indSegmentWorked < 0)
+                    indSegmentWorked = indP0;
+                else if(side == 0 && workedState == WorkedAreaAnalyst::UNKNOWN && !std::isnan(workedPair.second)){
+                    unknownValuesSum += std::min(1.0f, std::max(0.0f, workedPair.second));
+                    ++unknownValuesCount;
+                }
+
+                if(side == 0){
+                    workedPairs.at(j) = workedPair;
+                }
+
+                if(indSegmentNotWorked >= 0 && indSegmentWorked >= 0)
+                    break;
+            }
         }
-        if(worked)
-            ret.insert(i);
+
+        auto getWorkedStateFromUnknowns = [&workedPairs](size_t indFrom, size_t indTo) -> WorkedAreaAnalyst::WorkedState{
+            size_t count = 0;
+            float sum = 0;
+            if(indFrom <= indTo){
+                for(size_t i = indFrom; i < indTo; ++i){
+                    auto& workedPair = workedPairs.at(i);
+                    if( workedPair.first == WorkedAreaAnalyst::UNKNOWN && !std::isnan( workedPair.second ) ){
+                        sum += workedPairs.at(i).second;
+                        ++count;
+                    }
+                }
+            }
+            else{
+                for(size_t i = indFrom; i > indTo; --i){
+                    auto& workedPair = workedPairs.at(i-1);
+                    if( workedPair.first == WorkedAreaAnalyst::UNKNOWN && !std::isnan( workedPair.second ) ){
+                        sum += workedPairs.at(i-1).second;
+                        ++count;
+                    }
+                }
+            }
+            if(count == 0)
+                return WorkedAreaAnalyst::UNKNOWN;
+            float avg = sum / count;
+            return ( avg > 0.5 ? WorkedAreaAnalyst::WORKED : WorkedAreaAnalyst::NOT_WORKED );
+        };
+
+        if(indFirstSegmentWorked < 0 && indFirstSegmentNotWorked < 0){
+            if(unknownValuesCount == 0 || unknownValuesSum / unknownValuesCount > 0.5)
+                info.tracksInfo.at(i).workedState = TRACK_NOT_WORKED;
+            else
+                info.tracksInfo.at(i).workedState = TRACK_WORKED;
+            continue;
+        }
+        else if(indFirstSegmentWorked >= 0 && indFirstSegmentNotWorked < 0){
+
+            WorkedAreaAnalyst::WorkedState workedBefore = WorkedAreaAnalyst::WORKED, workedAfter = WorkedAreaAnalyst::WORKED;
+
+            if(indLastSegmentWorked < 0)
+                indLastSegmentWorked = indLastSegmentWorked+1;
+
+            if(indFirstSegmentWorked > 0)
+                workedBefore = getWorkedStateFromUnknowns(0, indFirstSegmentWorked);
+            if(indFirstSegmentWorked >= indLastSegmentWorked-1){
+                if(indFirstSegmentWorked+2 < track.points.size())
+                    workedAfter = getWorkedStateFromUnknowns(track.points.size()-1, indFirstSegmentWorked+1);
+            }
+            else{
+                if(indLastSegmentWorked+1 < track.points.size())
+                    workedAfter = getWorkedStateFromUnknowns(track.points.size()-1, indLastSegmentWorked);
+            }
+
+            //default for unknown: worked
+            if(workedBefore == WorkedAreaAnalyst::UNKNOWN)
+                workedBefore = WorkedAreaAnalyst::WORKED;
+            if(workedAfter == WorkedAreaAnalyst::UNKNOWN)
+                workedAfter = WorkedAreaAnalyst::WORKED;
+
+            if(workedBefore == WorkedAreaAnalyst::WORKED && workedAfter == WorkedAreaAnalyst::WORKED){
+                info.tracksInfo.at(i).workedState = TRACK_WORKED;
+                info.excludeTrackIndexes.insert(i);
+                continue;
+            }
+            else if(workedBefore == WorkedAreaAnalyst::WORKED && workedAfter == WorkedAreaAnalyst::NOT_WORKED){// it is partially worked from the track start
+                info.tracksInfo.at(i).workedState = TRACK_PARTIALLY_WORKED;
+                info.tracksInfo.at(i).workingDirection = 1;
+                info.tracksInfo.at(i).indFirstWorkingPointFwd = indLastSegmentWorked;
+                info.partiallyWorkedTrackIndexes.insert(i);
+                continue;
+            }
+            else if(workedBefore == WorkedAreaAnalyst::NOT_WORKED && workedAfter == WorkedAreaAnalyst::WORKED){// it is partially worked from the track end
+                info.tracksInfo.at(i).workedState = TRACK_PARTIALLY_WORKED;
+                info.tracksInfo.at(i).workingDirection = -1;
+                info.tracksInfo.at(i).indFirstWorkingPointRev = indFirstSegmentWorked;
+                info.partiallyWorkedTrackIndexes.insert(i);
+                continue;
+            }
+            else{
+                info.tracksInfo.at(i).workedState = TRACK_PARTIALLY_WORKED; // it is partially worked from both sides
+                info.partiallyWorkedTrackIndexes.insert(i);
+                info.tracksInfo.at(i).indFirstWorkingPointFwd = 0;
+                info.tracksInfo.at(i).indFirstWorkingPointRev = track.points.size() - 1;
+                if( geometry::getGeometryLength(track.points, 0, indFirstSegmentWorked) > geometry::getGeometryLength(track.points, indLastSegmentWorked) )
+                    info.tracksInfo.at(i).workingDirection = 2;
+                else
+                    info.tracksInfo.at(i).workingDirection = -2;
+                continue;
+            }
+
+        }
+        else if(indFirstSegmentNotWorked >= 0 && indFirstSegmentWorked < 0){
+
+            WorkedAreaAnalyst::WorkedState workedBefore = WorkedAreaAnalyst::NOT_WORKED, workedAfter = WorkedAreaAnalyst::NOT_WORKED;
+
+            if(indLastSegmentNotWorked < 0)
+                indLastSegmentNotWorked = indLastSegmentNotWorked+1;
+
+            if(indFirstSegmentNotWorked > 0)
+                workedBefore = getWorkedStateFromUnknowns(0, indFirstSegmentNotWorked);
+            if(indFirstSegmentNotWorked >= indLastSegmentNotWorked-1){
+                if(indFirstSegmentNotWorked+2 < track.points.size())
+                    workedAfter = getWorkedStateFromUnknowns(track.points.size()-1, indFirstSegmentNotWorked+1);
+            }
+            else{
+                if(indLastSegmentNotWorked+1 < track.points.size())
+                    workedAfter = getWorkedStateFromUnknowns(track.points.size()-1, indLastSegmentNotWorked);
+            }
+
+            //default for unknown: NOT worked
+            if(workedBefore == WorkedAreaAnalyst::UNKNOWN)
+                workedBefore = WorkedAreaAnalyst::NOT_WORKED;
+            if(workedAfter  == WorkedAreaAnalyst::UNKNOWN)
+                workedAfter = WorkedAreaAnalyst::NOT_WORKED;
+
+            if(workedBefore == 0 && workedAfter == 0){
+                info.tracksInfo.at(i).workedState = TRACK_NOT_WORKED;
+                continue;
+            }
+            else if(workedBefore == WorkedAreaAnalyst::WORKED && workedAfter == WorkedAreaAnalyst::NOT_WORKED){// it is partially worked from the track start
+                info.tracksInfo.at(i).workedState = TRACK_PARTIALLY_WORKED;
+                info.tracksInfo.at(i).workingDirection = 1;
+                info.tracksInfo.at(i).indFirstWorkingPointFwd = indFirstSegmentNotWorked;
+                info.partiallyWorkedTrackIndexes.insert(i);
+                continue;
+            }
+            else if(workedBefore == WorkedAreaAnalyst::NOT_WORKED && workedAfter == WorkedAreaAnalyst::WORKED){// it is partially worked from the track end
+                info.tracksInfo.at(i).workedState = TRACK_PARTIALLY_WORKED;
+                info.tracksInfo.at(i).workingDirection = -1;
+                info.tracksInfo.at(i).indFirstWorkingPointRev = indLastSegmentNotWorked;
+                info.partiallyWorkedTrackIndexes.insert(i);
+                continue;
+            }
+            else{
+                info.tracksInfo.at(i).workedState = TRACK_PARTIALLY_WORKED; // it is partially worked from both sides
+                info.partiallyWorkedTrackIndexes.insert(i);
+                info.tracksInfo.at(i).indFirstWorkingPointFwd = indFirstSegmentNotWorked;
+                info.tracksInfo.at(i).indFirstWorkingPointRev = indLastSegmentNotWorked;
+                if( geometry::getGeometryLength(track.points, 0, indFirstSegmentNotWorked) > geometry::getGeometryLength(track.points, indLastSegmentNotWorked) )
+                    info.tracksInfo.at(i).workingDirection = 2;
+                else
+                    info.tracksInfo.at(i).workingDirection = -2;
+                continue;
+            }
+        }
+        else if(indFirstSegmentNotWorked < indFirstSegmentWorked && indLastSegmentNotWorked > indLastSegmentWorked ){
+            info.tracksInfo.at(i).workedState = TRACK_NOT_WORKED;
+            continue;
+        }
+        else if(indFirstSegmentNotWorked > indFirstSegmentWorked && indLastSegmentNotWorked > indLastSegmentWorked ){ // it is partially worked from the track start
+            info.tracksInfo.at(i).workedState = TRACK_PARTIALLY_WORKED;
+            info.tracksInfo.at(i).workingDirection = 1;
+            info.tracksInfo.at(i).indFirstWorkingPointFwd = indFirstSegmentNotWorked;
+            info.partiallyWorkedTrackIndexes.insert(i);
+            continue;
+        }
+        else if(indFirstSegmentNotWorked < indFirstSegmentWorked && indLastSegmentNotWorked < indLastSegmentWorked ){ // it is partially worked from the track end
+            info.tracksInfo.at(i).workedState = TRACK_PARTIALLY_WORKED;
+            info.tracksInfo.at(i).workingDirection = -1;
+            info.tracksInfo.at(i).indFirstWorkingPointRev = indLastSegmentNotWorked;
+            info.partiallyWorkedTrackIndexes.insert(i);
+            continue;
+        }
+        else{
+            info.tracksInfo.at(i).workedState = TRACK_PARTIALLY_WORKED; // it is partially worked from both sides
+            info.partiallyWorkedTrackIndexes.insert(i);
+            info.tracksInfo.at(i).indFirstWorkingPointFwd = indFirstSegmentNotWorked;
+            info.tracksInfo.at(i).indFirstWorkingPointRev = indLastSegmentNotWorked;
+            if( geometry::getGeometryLength(track.points, 0, indFirstSegmentNotWorked) > geometry::getGeometryLength(track.points, indLastSegmentNotWorked) )
+                info.tracksInfo.at(i).workingDirection = 2;
+            else
+                info.tracksInfo.at(i).workingDirection = -2;
+        }
     }
 
-    return ret;
+    return info;
 }
 
-bool InfieldBaseRoutesPlanner::getInverseFlagsBasedOnRemainingArea(const Subfield &subfield,
-                                                                   const std::set<size_t>& excludeTrackIndexes,
-                                                                   const std::vector<Machine> workinggroup,
-                                                                   const InfieldBaseRoutesPlanner::PlannerParameters &plannerParameters,
-                                                                   const ArolibGrid_t &remainingArea_map,
-                                                                   const std::map<MachineId_t, MachineDynamicInfo> *machineCurrentStates,
-                                                                   bool &inverseTrackOrder,
-                                                                   bool &inversePointsOrderStart)
+bool InfieldBaseRoutesPlanner::updateFirstTrackFromPartiallyWorkedTracks(const Subfield &subfield, TracksInfo &tracksInfo, const std::vector<Machine> workinggroup, const std::map<MachineId_t, Pose2D> &initRefPoses)
 {
-    if(!remainingArea_map.isAllocated())
+    if(tracksInfo.partiallyWorkedTrackIndexes.empty() || workinggroup.empty())
         return false;
 
-    double resolution = -1;
-    for(auto &track : subfield.tracks)
-        resolution = std::max( resolution, arolib::geometry::getMaxSampleDistance(track.points) );
+    std::set<size_t> assignedTracks;
+    for(auto& it_t : tracksInfo.indFirstTrack)
+        assignedTracks.insert(it_t.second);
 
-    Polygon boundary;
-    if(!geometry::offsetPolygon(subfield.boundary_inner, boundary, 0.1, true, 0))
-        boundary = subfield.boundary_inner;
+    std::multimap<double, size_t, std::greater<double>> lengthsMap;
+    std::multimap<double, size_t> tracksWithoutDir;
 
-    //get the first track that has a non-worked segment (in forward and inverse track points' order)
-    int indFirstTrackNotWorked_fwd = -1, indFirstTrackNotWorked_inv = -1;
-    for(int side = 0 ; side < 2 ; side ++){
-        int &indFirstTrackNotWorked = ( side == 0 ? indFirstTrackNotWorked_fwd : indFirstTrackNotWorked_inv );
-        for(size_t i = 0 ; i < subfield.tracks.size() ; ++i){
-            size_t ind_track = ( side == 0 ? i : subfield.tracks.size()-1-i );
-            if( excludeTrackIndexes.find(ind_track) != excludeTrackIndexes.end() )
-                continue;
-            auto points = subfield.tracks.at(ind_track).points;
-            if(points.size() < 2)
-                continue;
-            for(size_t j = 0 ; j+1 < points.size() ; ++j){
-                int worked = isWorked(boundary, points.at(j), points.at(j+1), subfield.tracks.at(ind_track).width, remainingArea_map, plannerParameters.bePreciseWithRemainingAreaMap);
-                if(worked == 0){
-                    indFirstTrackNotWorked = i;
-                    break;
-                }
-            }
-            if(indFirstTrackNotWorked >= 0)
-                break;
+    for(auto ind : tracksInfo.partiallyWorkedTrackIndexes){
+        if(assignedTracks.find(ind) != assignedTracks.end())
+            continue;
+
+        auto& info = tracksInfo.tracksInfo.at(ind);
+        double length = -1;
+        if(info.indFirstWorkingPointFwd >= 0)
+            length = std::max(length, geometry::getGeometryLength(subfield.tracks.at(ind).points, 0, info.indFirstWorkingPointFwd));
+        if(info.indFirstWorkingPointRev >= 0)
+            length = std::max(length, geometry::getGeometryLength(subfield.tracks.at(ind).points, info.indFirstWorkingPointRev, -1));
+        if(length < -1e-6){
+            tracksWithoutDir.insert( std::make_pair(geometry::getGeometryLength(subfield.tracks.at(ind).points), ind) );
+            continue;
         }
+        lengthsMap.insert( std::make_pair(length, ind) );
     }
-    if(indFirstTrackNotWorked_fwd < 0)// all worked
-        return false;
 
-    if(indFirstTrackNotWorked_fwd == 0 && indFirstTrackNotWorked_inv == 0)// all unworked
-        return false;
-
-
-    bool inFwdTrackOrder = (indFirstTrackNotWorked_fwd >= indFirstTrackNotWorked_inv);//was the field worked following the current tracks order?
-    bool inFwdPointsOrder;
-
-    int indFirstTrackNotWorked = inFwdTrackOrder ? indFirstTrackNotWorked_fwd : subfield.tracks.size()-1-indFirstTrackNotWorked_inv;
-
-    const auto firstTrack = subfield.tracks.at(indFirstTrackNotWorked);
-    std::vector<Point> points = firstTrack.points;//points of the FIRST unworked track (in the tracks order given by inFwdTrackOrder)
-
-
-    int indFirstUnworkedSegment_fwd = -1, indFirstUnworkedSegment_inv = -1;
-    bool somethingWorked = false;
-
-    for(int side = 0 ; side < 2 ; side ++){
-        int &indFirstUnworkedSegment = ( side == 0 ? indFirstUnworkedSegment_fwd : indFirstUnworkedSegment_inv );
-        for(size_t i = 0 ; i+1 < points.size() ; ++i){
-            size_t ind0 = ( side == 0 ? i : points.size()-1-i );
-            size_t ind1 = ( side == 0 ? ind0+1 :ind0-1);
-
-            Polygon segmentPoly = geometry::createRectangleFromLine( points.at(ind0), points.at(ind1), firstTrack.width );
-            segmentPoly.points.pop_back();
-            if( !geometry::in_polygon(segmentPoly.points, boundary, true) )//only check the segments that are completelly inside the inner boundary
-                continue;
-
-            if(isWorked(points.at(ind0), points.at(ind1), firstTrack.width, remainingArea_map, plannerParameters.bePreciseWithRemainingAreaMap))
-                somethingWorked = true;
-            else{
-                indFirstUnworkedSegment = i;
-                break;
-            }
+    for(auto& m : workinggroup){
+        if( initRefPoses.find(m.id) == initRefPoses.end() )
+            continue;
+        if(!lengthsMap.empty()){
+            tracksInfo.indFirstTrack[m.id] = lengthsMap.begin()->second;
+            lengthsMap.erase( lengthsMap.begin() );
+            continue;
         }
-    }
-
-    if(indFirstUnworkedSegment_fwd < 0 || indFirstUnworkedSegment_inv < 0)
-        return false;
-
-
-    if(somethingWorked){
-        double d_fwd = geometry::getGeometryLength(points, 0, indFirstUnworkedSegment_fwd);
-        double d_inv = geometry::getGeometryLength(points, points.size()-1-indFirstUnworkedSegment_inv, points.size()-1);
-        inFwdPointsOrder = d_inv < d_fwd;
-    }
-    else if(machineCurrentStates){//the complete track is not worked. make the decision based on machines' current position (i.e. the point closest to a machine)
-        inFwdPointsOrder = true;
-        double minDist = std::numeric_limits<double>::max();
-        for(auto& m : workinggroup){
-            if(m.isOfWorkingType(true)){
-                auto it_m = machineCurrentStates->find(m.id);
-                if(it_m != machineCurrentStates->end()){
-                    auto machineCurrentPosition = it_m->second.position;
-                    double distFwd = arolib::geometry::calc_dist(machineCurrentPosition, points.front());
-                    double distInv = arolib::geometry::calc_dist(machineCurrentPosition, points.back());
-                    if(minDist > distFwd){
-                        inFwdPointsOrder = true;
-                        minDist = distFwd;
-                    }
-                    if(minDist > distInv){
-                        inFwdPointsOrder = false;
-                        minDist = distInv;
-                    }
-                }
-            }
+        if(!tracksWithoutDir.empty()){
+            tracksInfo.indFirstTrack[m.id] = tracksWithoutDir.begin()->second;
+            tracksWithoutDir.erase( tracksWithoutDir.begin() );
+            continue;
         }
+        return false;
     }
-
-    inverseTrackOrder = !inFwdTrackOrder;
-    inversePointsOrderStart = !inFwdPointsOrder;
 
     return true;
 }
 
-bool InfieldBaseRoutesPlanner::getInverseFlagsBasedOnMachineLocation(const Subfield &subfield,
-                                                                     const std::set<size_t>& excludeTrackIndexes,
-                                                                     const std::vector<Machine> workinggroup,
-                                                                     const InfieldBaseRoutesPlanner::PlannerParameters &plannerParameters,
-                                                                     const std::map<MachineId_t, MachineDynamicInfo> *machineCurrentStates,
-                                                                     bool &inverseTrackOrder,
-                                                                     bool &inversePointsOrderStart)
+
+
+bool InfieldBaseRoutesPlanner::updateFirstTrackInfoFromMachinesNearPartiallyWorkedTracks(const Subfield &subfield,
+                                                                                         TracksInfo &tracksInfo,
+                                                                                         const std::vector<Machine> workinggroup,
+                                                                                         const std::map<MachineId_t, MachineDynamicInfo> &machineCurrentStates,
+                                                                                         const std::map<MachineId_t, Pose2D> &initRefPoses)
 {
-    if(subfield.tracks.empty())
-        return false;
 
-    int indFirstTrack = -1, indLastTrack = -1;
-    for(size_t i = 0 ; i < subfield.tracks.size() ; ++i ){
-        if(subfield.tracks.at(i).points.size() > 1
-                && excludeTrackIndexes.find(i) == excludeTrackIndexes.end()){
-            indFirstTrack = i;
-            break;
+    std::set<size_t> assignedTracks;
+    for(auto& it_t : tracksInfo.indFirstTrack)
+        assignedTracks.insert(it_t.second);
+
+    std::map<size_t, std::map<int, std::vector<Point>>> trackWorkedSegments;
+    for(auto trackInd : tracksInfo.partiallyWorkedTrackIndexes){
+        if( assignedTracks.find(trackInd) != assignedTracks.end() )
+            continue;
+
+        auto& track = subfield.tracks.at(trackInd);
+        auto& info = tracksInfo.tracksInfo.at(trackInd);
+        if(info.indFirstWorkingPointFwd >= 0){
+            auto& seg = trackWorkedSegments[trackInd][1];
+            seg.insert(seg.end(), track.points.begin(), track.points.begin()+info.indFirstWorkingPointFwd+1);
+        }
+        if(info.indFirstWorkingPointRev >= 0){
+            auto& seg = trackWorkedSegments[trackInd][-1];
+            size_t revInd = track.points.size() - 1 - info.indFirstWorkingPointRev;
+            seg.insert(seg.end(), track.points.rbegin(), track.points.rbegin()+revInd+1);
         }
     }
-    for(size_t i = 0 ; i < subfield.tracks.size() ; ++i ){
-        const size_t j = subfield.tracks.size()-1-i;
-        if(subfield.tracks.at(j).points.size() > 1
-                && excludeTrackIndexes.find(j) == excludeTrackIndexes.end()){
-            indLastTrack = j;
-            break;
+
+    std::multimap<double, MachineId_t> machineMinDistances;
+    std::map<MachineId_t, std::multimap<double, std::pair<size_t, int>>> machineDistances; // < machineId, < distance, < trackInd, direction > > >
+    std::set<MachineId_t> machinesToAssign;
+
+    for(auto& m : workinggroup){
+        if( tracksInfo.indFirstTrack.find(m.id) != tracksInfo.indFirstTrack.end() )
+            continue;
+
+        auto it_mdi = machineCurrentStates.find(m.id);
+        auto it_m = initRefPoses.find(m.id);
+
+        if(it_m == initRefPoses.end())
+            machinesToAssign.insert(m.id);
+
+        if(it_mdi == machineCurrentStates.end() && it_m == initRefPoses.end())
+            continue;
+
+        const Point* posRef = it_m != initRefPoses.end() ? &(it_m->second) : nullptr;
+        const Point* pos = it_mdi != machineCurrentStates.end() ? &(it_mdi->second.position) : nullptr;
+
+        auto& distances = machineDistances[m.id];
+
+        for(auto& track_it : trackWorkedSegments){
+            auto& track = subfield.tracks.at(track_it.first);
+            for(auto& seg_it : track_it.second){
+                auto& seg = seg_it.second;
+                double distToWorkedSegment = std::numeric_limits<double>::max(); //distance to the worked segment (to check if a point is close enough to the worked part of the track)
+                if(pos)
+                    distToWorkedSegment = geometry::calc_dist_to_linestring(seg, *pos);
+                if(posRef)
+                    distToWorkedSegment = std::min(distToWorkedSegment, geometry::calc_dist_to_linestring(seg, *posRef));
+                if(distToWorkedSegment > 0.6 * track.width)
+                    continue;
+                double distToFirstWorkingPoint = std::numeric_limits<double>::max(); //distance to first working point (i.e., last point of the worked segment - seg.back())
+                if(pos)
+                    distToFirstWorkingPoint = geometry::calc_dist(seg.back(), *pos);
+                if(posRef)
+                    distToFirstWorkingPoint = std::min(distToFirstWorkingPoint, geometry::calc_dist(seg.back(), *posRef));
+                if(distances.size() < machineCurrentStates.size() || distToFirstWorkingPoint <= distances.rbegin()->first)
+                    distances.insert( std::make_pair(distToFirstWorkingPoint, std::make_pair(track_it.first, seg_it.first)) );
+            }
         }
+
+        if(!distances.empty())
+            machineMinDistances.insert( std::make_pair(distances.begin()->first, m.id ) );
     }
-    if(indFirstTrack < 0 || indLastTrack < 0)
-        return false;
 
-    const auto& firstTrack = subfield.tracks.at(indFirstTrack);
-    const auto& lastTrack = subfield.tracks.at(indLastTrack);
+    while(!machineMinDistances.empty()){
+        auto machineId = machineMinDistances.begin()->second;
+        auto& distances = machineDistances.at(machineId);
+        auto trackInd = distances.begin()->second.first;
+        if(assignedTracks.find(trackInd) != assignedTracks.end()){
+            machineMinDistances.erase( machineMinDistances.begin() );
+            distances.erase( distances.begin() );
+            if(!distances.empty())
+                machineMinDistances.insert( std::make_pair(distances.begin()->first, machineId ) );
+            continue;
+        }
 
-    bool locationOK = false;
-    double minDist = std::numeric_limits<double>::max();
+        tracksInfo.indFirstTrack[machineId] = trackInd;
+        tracksInfo.tracksInfo.at(trackInd).workingDirection = distances.begin()->second.second;
+        assignedTracks.insert(trackInd);
+    }
+
+    for(auto mid : machinesToAssign){
+        if(tracksInfo.indFirstTrack.find(mid) == tracksInfo.indFirstTrack.end())
+            return false;
+    }
+
+    return true;
+
+}
+
+bool InfieldBaseRoutesPlanner::completeInitRefPosesFromMachinesLocations(const Subfield &subfield,
+                                                                         TracksInfo &tracksInfo,
+                                                                         const std::vector<Machine> workinggroup,
+                                                                         const std::map<MachineId_t, MachineDynamicInfo> &machineCurrentStates,
+                                                                         std::map<MachineId_t, Pose2D> &initRefPoses)
+{
+    std::set<size_t> assignedTracks;
+    for(auto& it_t : tracksInfo.indFirstTrack)
+        assignedTracks.insert(it_t.second);
 
     Polygon boundary;
     if( !geometry::offsetPolygon(subfield.boundary_outer, boundary, 0.1, true, 0) )
         boundary.points.clear();
 
-    if(machineCurrentStates){
-        for(auto& m : workinggroup){
+    std::multimap<double, MachineId_t> machineMinDistances;
+    std::map<MachineId_t, std::multimap<double, std::pair<size_t, Pose2D>>> machineDistances; // < machineId, < distance, < trackInd, pose > > >
+    std::set<MachineId_t> machinesToAssign;
 
-            if(m.isOfWorkingType(true)){
-                auto it_m = machineCurrentStates->find(m.id);
-                if(it_m == machineCurrentStates->end())
-                    continue;
-                auto machineCurrentPosition = it_m->second.position;
+    for(auto& m : workinggroup){
+        if( tracksInfo.indFirstTrack.find(m.id) != tracksInfo.indFirstTrack.end() )
+            continue;
 
-                if(!boundary.points.empty() && !geometry::in_polygon(machineCurrentPosition, boundary))
-                    continue;
+        auto it_mdi = machineCurrentStates.find(m.id);
+        auto it_m = initRefPoses.find(m.id);
 
-                locationOK = true;
+        if(it_m == initRefPoses.end())
+            machinesToAssign.insert(m.id);
 
-                double distFwd = arolib::geometry::calc_dist(machineCurrentPosition, firstTrack.points.front());
-                double distInv = arolib::geometry::calc_dist(machineCurrentPosition, firstTrack.points.back());
-                if(minDist > distFwd){
-                    inverseTrackOrder = false;
-                    inversePointsOrderStart = false;
-                    minDist = distFwd;
-                }
-                if(minDist > distInv){
-                    inverseTrackOrder = false;
-                    inversePointsOrderStart = true;
-                    minDist = distInv;
-                }
+        if(it_mdi == machineCurrentStates.end() && it_m == initRefPoses.end())
+            continue;
 
-                distFwd = arolib::geometry::calc_dist(machineCurrentPosition, lastTrack.points.front());
-                distInv = arolib::geometry::calc_dist(machineCurrentPosition, lastTrack.points.back());
-                if(minDist > distFwd){
-                    inverseTrackOrder = true;
-                    inversePointsOrderStart = false;
-                    minDist = distFwd;
-                }
-                if(minDist > distInv){
-                    inverseTrackOrder = true;
-                    inversePointsOrderStart = true;
-                    minDist = distInv;
-                }
+        Pose2D poseRef = ( it_m == initRefPoses.end() ? Pose2D(Point::invalidPoint()) : Pose2D(it_mdi->second.position, it_mdi->second.theta) );
+        Pose2D pose = ( it_mdi == machineCurrentStates.end() ? Pose2D(Point::invalidPoint()) : Pose2D(it_mdi->second.position, it_mdi->second.theta) );
+
+        if(!boundary.points.empty() && !geometry::in_polygon(pose, boundary))
+            continue;
+
+        double turningRad = std::max(0.0, m.getTurningRadius());
+        auto& distances = machineDistances[m.id];
+
+        for(size_t i = 0 ; i < subfield.tracks.size() ; ++i ){
+            if(tracksInfo.excludeTrackIndexes.find(i) != tracksInfo.excludeTrackIndexes.end())
+                continue;
+
+            if(assignedTracks.find(i) != assignedTracks.end())
+                continue;
+
+            auto& trackPts = subfield.tracks.at(i).points;
+            Pose2D poseFwd(trackPts.front(), geometry::get_angle(trackPts.front(), trackPts.at(1)));
+            Pose2D poseRev(trackPts.back(), geometry::get_angle(trackPts.back(), r_at(trackPts, 1)));
+
+            double distFwd = std::numeric_limits<double>::max();
+            double distRev = std::numeric_limits<double>::max();
+
+            if(pose.isValid()){
+                auto dTmp = geometry::calcDubinsPathLength(pose, poseFwd, turningRad);
+                if(dTmp > -1e-6)
+                    distFwd = std::min(distFwd, dTmp);
+                dTmp = geometry::calcDubinsPathLength(pose, poseRev, turningRad);
+                if(dTmp > -1e-6)
+                    distRev = std::min(distRev, dTmp);
             }
 
+            if(poseRef.isValid()){
+                auto dTmp = geometry::calcDubinsPathLength(poseRef, poseFwd, turningRad);
+                if(dTmp > -1e-6)
+                    distFwd = std::min(distFwd, dTmp);
+                dTmp = geometry::calcDubinsPathLength(poseRef, poseRev, turningRad);
+                if(dTmp > -1e-6)
+                    distRev = std::min(distRev, dTmp);
+            }
+
+            auto dist = std::min(distFwd, distRev);
+            if(dist > 0.6 * subfield.tracks.at(i).width)
+                continue;
+
+            if(distances.size() < workinggroup.size() || dist <= distances.rbegin()->first)
+                distances.insert( std::make_pair(dist, std::make_pair(i, distFwd > distRev ? poseRev : poseFwd )) );
         }
+
+        if(!distances.empty())
+            machineMinDistances.insert( std::make_pair(distances.begin()->first, m.id ) );
     }
 
-    return locationOK;
-}
-
-bool InfieldBaseRoutesPlanner::getInverseFlagsBasedOnReferencePoint(const Subfield &subfield,
-                                                                    const std::set<size_t> &excludeTrackIndexes,
-                                                                    const Pose2D &refPoint,
-                                                                    const std::vector<Machine> workinggroup,
-                                                                    const InfieldBaseRoutesPlanner::PlannerParameters &plannerParameters,
-                                                                    bool &inverseTrackOrder,
-                                                                    bool &inversePointsOrderStart)
-{
-    if(subfield.tracks.empty())
-        return false;
-
-    int indFirstTrack = -1, indLastTrack = -1;
-    for(size_t i = 0 ; i < subfield.tracks.size() ; ++i ){
-        if(subfield.tracks.at(i).points.size() > 1
-                && excludeTrackIndexes.find(i) == excludeTrackIndexes.end()){
-            indFirstTrack = i;
-            break;
+    while(!machineMinDistances.empty()){
+        auto machineId = machineMinDistances.begin()->second;
+        auto& distances = machineDistances.at(machineId);
+        auto trackInd = distances.begin()->second.first;
+        if(assignedTracks.find(trackInd) != assignedTracks.end()){
+            machineMinDistances.erase( machineMinDistances.begin() );
+            distances.erase( distances.begin() );
+            if(!distances.empty())
+                machineMinDistances.insert( std::make_pair(distances.begin()->first, machineId) );
+            continue;
         }
-    }
-    for(size_t i = 0 ; i < subfield.tracks.size() ; ++i ){
-        const size_t j = subfield.tracks.size()-1-i;
-        if(subfield.tracks.at(j).points.size() > 1
-                && excludeTrackIndexes.find(j) == excludeTrackIndexes.end()){
-            indLastTrack = j;
-            break;
-        }
-    }
-    if(indFirstTrack < 0 || indLastTrack < 0)
-        return false;
 
-    const auto& firstTrack = subfield.tracks.at(indFirstTrack).points;
-    const auto& lastTrack = subfield.tracks.at(indLastTrack).points;
+        initRefPoses[machineId] = distances.begin()->second.second;
+        assignedTracks.insert(trackInd);
+    }
 
-    double turningRad = 0;
-    Machine refMachine;
     for(auto& m : workinggroup){
-        if(m.isOfWorkingType(true) && turningRad < m.getTurningRadius()){
-            turningRad = m.getTurningRadius();
-            refMachine = m;
-        }
-    }
-
-    double turningRadConn = turningRad;
-    //double turningRadConn = subfield.headlands.hasCompleteHeadland() ? turningRad : 0; // using no turning rad for the connections when there are partial headlandsbecause it can be time expensive
-
-    bool foundConnection = false;
-    double minDist = std::numeric_limits<double>::max();
-
-//    //@note: at the moment, if the field has partial headlands, check for connections without an extended boundary
-//    Polygon boundary = subfield.boundary_outer;
-//    if(!subfield.headlands.hasCompleteHeadland())
-//        geometry::offsetPolygon(subfield.boundary_outer, boundary, 1.5*turningRad, true, 0);
-    Polygon boundary = m_tracksConnector->getExtendedLimitBoundary(subfield, turningRadConn);
-
-    auto connection = m_tracksConnector->getConnection(refMachine,
-                                                       refPoint,
-                                                       Pose2D( firstTrack.front(), geometry::get_angle( firstTrack.front(), firstTrack.at(1) ) ),
-                                                       turningRadConn,
-                                                       std::make_pair(-1, -1),
-                                                       boundary,
-                                                       subfield.boundary_inner,
-                                                       subfield.headlands);
-    if(!connection.empty()){
-        double connLength = geometry::getGeometryLength(connection);
-        if(connLength < minDist){
-            minDist = connLength;
-            inverseTrackOrder = false;
-            inversePointsOrderStart = false;
-            foundConnection = true;
-        }
-    }
-
-    connection = m_tracksConnector->getConnection(refMachine,
-                                                  refPoint,
-                                                  Pose2D( firstTrack.back(), geometry::get_angle( firstTrack.back(), r_at(firstTrack, 1) ) ),
-                                                  turningRadConn,
-                                                  std::make_pair(-1, -1),
-                                                  boundary,
-                                                  subfield.boundary_inner,
-                                                  subfield.headlands);
-    if(!connection.empty()){
-        double connLength = geometry::getGeometryLength(connection);
-        if(connLength < minDist){
-            minDist = connLength;
-            inverseTrackOrder = false;
-            inversePointsOrderStart = true;
-            foundConnection = true;
-        }
-    }
-
-
-    connection = m_tracksConnector->getConnection(refMachine,
-                                                  refPoint,
-                                                  Pose2D( lastTrack.front(), geometry::get_angle( lastTrack.front(), lastTrack.at(1) ) ),
-                                                  turningRadConn,
-                                                  std::make_pair(-1, -1),
-                                                  boundary,
-                                                  subfield.boundary_inner,
-                                                  subfield.headlands);
-    if(!connection.empty()){
-        double connLength = geometry::getGeometryLength(connection);
-        if(connLength < minDist){
-            minDist = connLength;
-            inverseTrackOrder = true;
-            inversePointsOrderStart = false;
-            foundConnection = true;
-        }
-    }
-
-    connection = m_tracksConnector->getConnection(refMachine,
-                                                  refPoint,
-                                                  Pose2D( lastTrack.back(), geometry::get_angle( lastTrack.back(), r_at(lastTrack, 1) ) ),
-                                                  turningRadConn,
-                                                  std::make_pair(-1, -1),
-                                                  boundary,
-                                                  subfield.boundary_inner,
-                                                  subfield.headlands);
-    if(!connection.empty()){
-        double connLength = geometry::getGeometryLength(connection);
-        if(connLength < minDist){
-            minDist = connLength;
-            inverseTrackOrder = true;
-            inversePointsOrderStart = true;
-            foundConnection = true;
-        }
-    }
-
-
-    if(!foundConnection){
-
-        minDist = arolib::geometry::calc_dist(refPoint, firstTrack.front());
-        inverseTrackOrder = false;
-        inversePointsOrderStart = false;
-
-        double dist = arolib::geometry::calc_dist(refPoint, firstTrack.back());
-        if(minDist > dist){
-            minDist = dist;
-            inverseTrackOrder = false;
-            inversePointsOrderStart = true;
-        }
-
-        dist = arolib::geometry::calc_dist(refPoint, lastTrack.front());
-        if(minDist > dist){
-            minDist = dist;
-            inverseTrackOrder = true;
-            inversePointsOrderStart = false;
-        }
-
-        dist = arolib::geometry::calc_dist(refPoint, lastTrack.back());
-        if(minDist > dist){
-            minDist = dist;
-            inverseTrackOrder = true;
-            inversePointsOrderStart = true;
-        }
+        if(initRefPoses.find(m.id) == initRefPoses.end())
+            return false;
     }
 
     return true;
 }
 
-
-bool InfieldBaseRoutesPlanner::isWorked(const Point &p0, const Point &p1, double width, const ArolibGrid_t &remainingAreaMap, bool bePrecise)
+std::pair<WorkedAreaAnalyst::WorkedState, float> InfieldBaseRoutesPlanner::isSegmentWorked(const Point &p0, const Point &p1, double width, WorkedAreaAnalyst &waa, bool bePrecise)
 {
-    if(!remainingAreaMap.isAllocated())
-        return false;
+    auto remainingAreaMap = waa.getWorkedAreaMap();
+    if(!remainingAreaMap || !remainingAreaMap->isAllocated())
+        return std::make_pair(WorkedAreaAnalyst::NOT_WORKED, 0.0);
 
-    bePrecise &= width > 1e-5;
-
-    bool errorTmp = true;
-    double value = 1;
-
-    if(bePrecise){
-        value = remainingAreaMap.getLineComputedValue(p0,
-                                                       p1,
-                                                       width,
-                                                       true,
-                                                       ArolibGrid_t::AVERAGE_TOTAL,
-                                                       &errorTmp);
-        return (errorTmp || value < m_thresholdIsWorked);
-    }
-
-    arolib::Point p0_1;
-    p0_1.x = 0.5*( p0.x + p1.x );
-    p0_1.y = 0.5*( p0.y + p1.y );
-    if(remainingAreaMap.hasValue(p0_1))
-        value = remainingAreaMap.getValue(p0_1, &errorTmp);
-    return (!errorTmp && value < m_thresholdIsWorked);
+    return waa.isSegmentWorked(p0, p1, width, bePrecise ? gridmap::SharedGridsManager::PRECISE : gridmap::SharedGridsManager::PRECISE_ONLY_IF_AVAILABLE);
 
 }
 
-int InfieldBaseRoutesPlanner::isWorked(const Polygon &boundary, const Point &p0, const Point &p1, double width, const ArolibGrid_t &remainingAreaMap, bool bePrecise)
+std::pair<WorkedAreaAnalyst::WorkedState, float> InfieldBaseRoutesPlanner::isSegmentWorked(const Polygon &boundary, const Point &p0, const Point &p1, double width, WorkedAreaAnalyst &waa, bool bePrecise)
 {
     if(width <= 0)
-        return -1;
+        return std::make_pair(WorkedAreaAnalyst::UNKNOWN, std::nan("1"));
 
-    if(!remainingAreaMap.isAllocated())
-        return 0;
+    auto remainingAreaMap = waa.getWorkedAreaMap();
+    if(!remainingAreaMap || !remainingAreaMap->isAllocated())
+        return std::make_pair(WorkedAreaAnalyst::NOT_WORKED, 0.0);
 
     if(boundary.points.empty())
-        return isWorked(p0, p1, width, remainingAreaMap, bePrecise);
+        return isSegmentWorked(p0, p1, width, waa, bePrecise);
 
-
-    Polygon segmentPoly = geometry::createRectangleFromLine( p0, p1, width );
-
-    size_t countPointsInside = 0;
-    for(size_t i = 0 ; i+1 < segmentPoly.points.size(); ++i)
-        countPointsInside += geometry::in_polygon(segmentPoly.points.at(i), boundary);
-
-    if(countPointsInside > 3 || (countPointsInside == 3 && !bePrecise))
-        return isWorked(p0, p1, width, remainingAreaMap, bePrecise);
-
-    if(!bePrecise)
-        return -1;
-
-    std::vector<Polygon> intersectionPolys = geometry::get_intersection(boundary, segmentPoly);
-
-    double areaComplete = geometry::calc_area(p0, p1, width);
-    double area = 0;
-    std::vector<double> areas(intersectionPolys.size());
-    for(size_t i = 0 ; i < intersectionPolys.size() ; ++i){
-        areas.at(i) = geometry::calc_area( intersectionPolys.at(i) );
-        area += areas.at(i);
-    }
-
-    if(areaComplete <= 0 || area / areaComplete < 0.5)
-        return -1;
-
-    double value = 0;
-    for(size_t i = 0 ; i < intersectionPolys.size() ; ++i){
-        if(areas.at(i) < 1e-3)
-            continue;
-        bool errorTmp;
-        double valueTmp = remainingAreaMap.getPolygonComputedValue(intersectionPolys.at(i),
-                                                                    ArolibGrid_t::AVERAGE_TOTAL,
-                                                                    bePrecise
-                                                                    &errorTmp);
-        if(errorTmp)
-            continue;
-        value += valueTmp * areas.at(i) / area;
-    }
-
-    return (value < m_thresholdIsWorked);
+    return waa.isSegmentWorked(boundary, p0, p1, width, bePrecise ? gridmap::SharedGridsManager::PRECISE : gridmap::SharedGridsManager::PRECISE_ONLY_IF_AVAILABLE);
 
 }
 
@@ -715,9 +787,7 @@ AroResp InfieldBaseRoutesPlanner::generateBaseRoutes(const Subfield &subfield,
                                                      const std::set<size_t> &excludeTrackIndexes,
                                                      const std::vector<Machine> &workinggroup,
                                                      const PlannerParameters &plannerParameters,
-                                                     bool inverseTrackOrder,
-                                                     bool inversePointsOrderStart,
-                                                     const Pose2D *initRefPose,
+                                                     const std::map<MachineId_t, Pose2D>& initRefPoses,
                                                      std::shared_ptr<IEdgeMassCalculator> edgeMassCalculator,
                                                      std::shared_ptr<IEdgeSpeedCalculator> edgeSpeedCalculator,
                                                      std::shared_ptr<IEdgeSpeedCalculator> edgeSpeedCalculatorTransit,
@@ -732,30 +802,56 @@ AroResp InfieldBaseRoutesPlanner::generateBaseRoutes(const Subfield &subfield,
         return aroResp;
 
     sbrp.setInfieldTrackSequencer(m_tracksSequencer);
-    sbrp.setInfieldTrackSequencerSettings(plannerParameters);
-    sbrp.setInverseTrackOrder(inverseTrackOrder);
-    sbrp.setFirstTrackInversePointOrder(inversePointsOrderStart);
     sbrp.setExcludeTrackIndexes(excludeTrackIndexes);
-    if(initRefPose)
-        sbrp.setInitRefPose(*initRefPose);
+
+    if(excludeTrackIndexes.empty() || !plannerParameters.limitStartToExtremaTracks)
+        sbrp.setInfieldTrackSequencerSettings(plannerParameters);
+    else{ // one or more tracks are workd -> remove condition to start from extrema tracks
+        ITrackSequencer::TrackSequencerSettings tmpSettings = plannerParameters;
+        tmpSettings.limitStartToExtremaTracks = false;
+        sbrp.setInfieldTrackSequencerSettings(tmpSettings);
+    }
+
+
+    if(!initRefPoses.empty())
+        sbrp.setInitRefPoses(initRefPoses);
+    else{
+        const std::vector<Point>* firstTrack = nullptr;
+        for(size_t i = 0 ; i < subfield.tracks.size() ; ++i ){
+            size_t track_ind = plannerParameters.inverseTrackOrder ? subfield.tracks.size()-1-i : i;
+            if(subfield.tracks.at(track_ind).points.size() > 1
+                    && excludeTrackIndexes.find(track_ind) == excludeTrackIndexes.end()){
+                firstTrack = &subfield.tracks.at(track_ind).points;
+                break;
+            }
+        }
+        if (!firstTrack)
+            return AroResp(1, "Error obtaining default first working track");
+
+        Pose2D refPose = plannerParameters.inversePointsOrder ?
+                           Pose2D(firstTrack->back(), geometry::get_angle(firstTrack->back(), r_at(*firstTrack, 1)))
+                         : Pose2D(firstTrack->front(), geometry::get_angle(firstTrack->front(), firstTrack->at(1)));
+
+        auto initRefPosesTmp = initRefPoses;
+        for (auto &m : workinggroup)
+            initRefPosesTmp[m.id] = refPose;
+
+        sbrp.setInitRefPoses(initRefPosesTmp);
+    }
 
     for (auto &m : workinggroup){
-        if(m.isOfWorkingType(true)){
-            aroResp = sbrp.addMachine(m);
-            if(aroResp.isError())
-                return aroResp;
-        }
+        aroResp = sbrp.addMachine(m);
+        if(aroResp.isError())
+            return aroResp;
     }
 
     for(auto &m : workinggroup){
-        if (m.isOfWorkingType(true)) {
-            logger().printOut(LogLevel::INFO, __FUNCTION__, "Added machine " + std::to_string(m.id) + " to the machine plan");
-            routes.push_back(Route());
-            aroResp = sbrp.getRoute(m.id, routes.back(), edgeMassCalculator, edgeSpeedCalculator, edgeSpeedCalculatorTransit);
-            routes.back().route_id = routes.size()-1;
-            if (aroResp.isError())
-                return AroResp(1, "Error obtaining machine route: " + aroResp.msg);
-        }
+        logger().printOut(LogLevel::INFO, __FUNCTION__, "Added machine " + std::to_string(m.id) + " to the machine plan");
+        routes.push_back(Route());
+        aroResp = sbrp.getRoute(m.id, routes.back(), edgeMassCalculator, edgeSpeedCalculator, edgeSpeedCalculatorTransit);
+        routes.back().route_id = routes.size()-1;
+        if (aroResp.isError())
+            return AroResp(1, "Error obtaining machine route: " + aroResp.msg);
     }
     logger().printOut(LogLevel::INFO, __FUNCTION__, std::to_string(routes.size()) + " routes were generated");
 
@@ -767,7 +863,7 @@ AroResp InfieldBaseRoutesPlanner::adjustBaseRoutes(std::vector<Route> &routes,
                                                    const Subfield &subfield,
                                                    const std::vector<Machine> &workinggroup,
                                                    std::shared_ptr<IEdgeMassCalculator> edgeMassCalculator,
-                                                   std::shared_ptr<const ArolibGrid_t> remainingAreaMap,
+                                                   WorkedAreaAnalyst &waa,
                                                    const PlannerParameters &plannerParameters)
 {
     std::map<MachineId_t, double> widths;//map containing the machine working widths (for easy access)
@@ -796,6 +892,7 @@ AroResp InfieldBaseRoutesPlanner::adjustBaseRoutes(std::vector<Route> &routes,
             break;
         }
 
+        auto remainingAreaMap = waa.getWorkedAreaMap();
         if(remainingAreaMap && remainingAreaMap->isAllocated()){
             bool somethingWorked = false;
 
@@ -809,10 +906,10 @@ AroResp InfieldBaseRoutesPlanner::adjustBaseRoutes(std::vector<Route> &routes,
                 auto& p1 = route.route_points.at(j+1);
                 if(p0.type != RoutePoint::TRACK_START && !p0.isOfTypeWorking_InTrack(true))
                     continue;
-                int worked = isWorked(boundary, p0, p1, it_width->second, *remainingAreaMap, plannerParameters.bePreciseWithRemainingAreaMap);
-                if( worked > 0 )
+                auto workedState = isSegmentWorked(boundary, p0, p1, it_width->second, waa, plannerParameters.bePreciseWithRemainingAreaMap).first;
+                if( workedState == WorkedAreaAnalyst::WORKED )
                     somethingWorked = true;
-                if( worked != 0)
+                if( workedState != WorkedAreaAnalyst::NOT_WORKED)
                     continue;
                 if(somethingWorked)
                     firstGoodIndexes.at(i).second = j;

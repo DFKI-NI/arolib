@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,21 +17,16 @@
 #ifndef AROLIB_IO_AROXMLINDOCUMENT_HPP
 #define AROLIB_IO_AROXMLINDOCUMENT_HPP
 
-#include <ostream>
-#include <fstream>
-#include <sstream>
-#include <functional>
-
-#include <boost/property_tree/xml_parser.hpp>
-#include <boost/property_tree/ptree.hpp>
 #include <boost/foreach.hpp>
-#include <boost/optional/optional.hpp>
-#include <boost/algorithm/string.hpp>
 
 #include "xmlindocument.hpp"
-#include "arolib/types/coordtransformer.hpp"
-#include "arolib/misc/base64Utility.hpp"
-#include "arolib/misc/tuple_helper.h"
+#include "arolib/types/field.hpp"
+#include "arolib/types/outfieldinfo.hpp"
+#include "arolib/types/machinedynamicinfo.hpp"
+#include "arolib/types/resourcepointstate.hpp"
+#include "arolib/types/route.hpp"
+#include "arolib/cartography/common.hpp"
+#include "arolib/planning/path_search/directedgraph.hpp"
 
 namespace arolib {
 namespace io {
@@ -294,6 +289,22 @@ public:
      * @return True on success.
      */
     bool read( const ReadHandler & base, std::map<MachineId_t, MachineDynamicInfo>& dynamicInfo );
+
+    /**
+     * @brief Read state for a resource point from the given base handler.
+     * @param base Base handler.
+     * @param [out] state ResourcePointState read from the base handler
+     * @return True on success.
+     */
+    bool read( const ReadHandler & base, std::pair<ResourcePointId_t, ResourcePointState> &state );
+
+    /**
+     * @brief Read a map of resource point states from the given base handler.
+     * @param base Base handler.
+     * @param [out] states Map of ResourcePointStates read from the base handler
+     * @return True on success.
+     */
+    bool read( const ReadHandler & base, std::map<ResourcePointId_t, ResourcePointState>& states );
 
 
     /**
@@ -743,6 +754,7 @@ public:
      * @param [out] configParameters Read configuration parameters (as string map)
      * @param [out] outFieldInfo Read OutFieldInfo
      * @param [out] machinesDynamicInfo Read MachineDynamicInfo
+     * @param [out] resourcePointStates Read Resource-point states
      * @param [out] gridmaps Read gridmaps
      * @param coordinatesType_out Projection type for the target coordinates
      * @param parentTags Parent tags to reach the location of the data to be read
@@ -755,6 +767,7 @@ public:
                                    std::map<std::string, std::map<std::string, std::string> > &configParameters,
                                    OutFieldInfo &outFieldInfo,
                                    std::map<MachineId_t, MachineDynamicInfo>& machinesDynamicInfo,
+                                   std::map<ResourcePointId_t, ResourcePointState>& resourcePointStates,
                                    std::map<std::string, ArolibGrid_t> &gridmaps,
                                    Point::ProjectionType coordinatesType_out = Point::UTM,
                                    const std::vector<std::string>& parentTags = {},
@@ -767,6 +780,7 @@ public:
      * @param [out] configParameters Read configuration parameters (as string map)
      * @param [out] outFieldInfo Read OutFieldInfo
      * @param [out] machinesDynamicInfo Read MachineDynamicInfo
+     * @param [out] resourcePointStates Read Resource-point states
      * @param [out] gridmaps Read gridmaps
      * @param coordinatesType_out Projection type for the target coordinates
      * @param parentTags Parent tags to reach the location of the data to be read
@@ -778,70 +792,11 @@ public:
                                    std::map<std::string, std::map<std::string, std::string> > &configParameters,
                                    OutFieldInfo &outFieldInfo,
                                    std::map<MachineId_t, MachineDynamicInfo>& machinesDynamicInfo,
+                                   std::map<ResourcePointId_t, ResourcePointState>& resourcePointStates,
                                    std::map<std::string, ArolibGrid_t>& gridmaps,
                                    Point::ProjectionType coordinatesType_out = Point::UTM,
                                    const std::vector<std::string>& parentTags = {},
                                    LogLevel logLevel = LogLevel::INFO);
-
-    /**
-     * @brief Read plan parameters from a (Arolib-formatted) XML file.
-     * @param filename Filename
-     * @param [out] field Read field
-     * @param [out] workingGroup Read working group (machines)
-     * @param [out] configParameters Read configuration parameters (as string map)
-     * @param [out] outFieldInfo Read OutFieldInfo
-     * @param [out] machinesDynamicInfo Read MachineDynamicInfo
-     * @param [out] yieldmap_tifBase64 Read yieldmap (base64-encoded)
-     * @param [out] drynessmap_tifBase64 Read drynessmap (base64-encoded)
-     * @param [out] soilmap_tifBase64 Read soilmap (base64-encoded)
-     * @param [out] remainingAreaMap_tifBase64 Read remaining-area map (base64-encoded)
-     * @param coordinatesType_out Projection type for the target coordinates
-     * @param parentTags Parent tags to reach the location of the data to be read
-     * @param logLevel Log level
-     * @return True on success
-     */
-    static bool readPlanParameters(const std::string& filename,
-                                   Field& field,
-                                   std::vector<Machine>& workingGroup,
-                                   std::map<std::string, std::map<std::string, std::string> > &configParameters,
-                                   OutFieldInfo &outFieldInfo,
-                                   std::map<MachineId_t, MachineDynamicInfo>& machinesDynamicInfo,
-                                   std::string &yieldmap_tifBase64,
-                                   std::string &drynessmap_tifBase64,
-                                   std::string &soilmap_tifBase64,
-                                   std::string &remainingAreaMap_tifBase64,
-                                   Point::ProjectionType coordinatesType_out = Point::UTM,
-                                   const std::vector<std::string>& parentTags = {},
-                                   LogLevel logLevel = LogLevel::INFO);
-
-    /**
-     * @brief Read plan parameters from a (Arolib-formatted) XML file.
-     * @param filename Filename
-     * @param [out] workingGroup Read working group (machines)
-     * @param [out] configParameters Read configuration parameters (as string map)
-     * @param [out] outFieldInfo Read OutFieldInfo
-     * @param [out] machinesDynamicInfo Read MachineDynamicInfo
-     * @param [out] yieldmap_tifBase64 Read yieldmap (base64-encoded)
-     * @param [out] drynessmap_tifBase64 Read drynessmap (base64-encoded)
-     * @param [out] soilmap_tifBase64 Read soilmap (base64-encoded)
-     * @param [out] remainingAreaMap_tifBase64 Read remaining-area map (base64-encoded)
-     * @param coordinatesType_out Projection type for the target coordinates
-     * @param parentTags Parent tags to reach the location of the data to be read
-     * @param logLevel Log level
-     * @return True on success
-     */
-    static bool readPlanParameters( const std::string& filename,
-                                    std::vector<Machine>& workingGroup,
-                                    std::map<std::string, std::map<std::string, std::string> > &configParameters,
-                                    OutFieldInfo &outFieldInfo,
-                                    std::map<MachineId_t, MachineDynamicInfo>& machinesDynamicInfo,
-                                    std::string &yieldmap_tifBase64,
-                                    std::string &drynessmap_tifBase64,
-                                    std::string &soilmap_tifBase64,
-                                    std::string &remainingAreaMap_tifBase64,
-                                    Point::ProjectionType coordinatesType_out = Point::UTM,
-                                    const std::vector<std::string>& parentTags = {},
-                                    LogLevel logLevel = LogLevel::INFO);
 
     /**
      * @brief Read a routes from a (Arolib-formatted) XML file.
@@ -855,36 +810,6 @@ public:
      */
     static bool readPlan( const std::string &filename,
                           std::map<int, std::vector<Route> > &routes,
-                          bool syncRoutes = true,
-                          Point::ProjectionType coordinatesType_out = Point::UTM,
-                          const std::vector<std::string>& parentTags = {},
-                          LogLevel logLevel = LogLevel::INFO );
-
-
-    /**
-     * @brief Read plan data from a (Arolib-formatted) XML file.
-     * @param filename Filename
-     * @param [out] field Read field
-     * @param [out] workingGroup Read working group (machines)
-     * @param [out] routes Read routes
-     * @param [out] yieldmap_tifBase64 Read yieldmap (base64-encoded)
-     * @param [out] drynessmap_tifBase64 Read drynessmap (base64-encoded)
-     * @param [out] soilmap_tifBase64 Read soilmap (base64-encoded)
-     * @param [out] remainingAreaMap_tifBase64 Read remaining-area map (base64-encoded)
-     * @param syncRoutes Should the routes's base timestamp be synchronized so that all have the same one?
-     * @param coordinatesType_out Projection type for the target coordinates
-     * @param parentTags Parent tags to reach the location of the data to be read
-     * @param logLevel Log level
-     * @return True on success
-     */
-    static bool readPlan( const std::string &filename,
-                          Field& field,
-                          std::vector<Machine>& workingGroup,
-                          std::map<int, std::vector<Route> > &routes,
-                          std::string &yieldmap_tifBase64,
-                          std::string &drynessmap_tifBase64,
-                          std::string &soilmap_tifBase64,
-                          std::string &remainingAreaMap_tifBase64,
                           bool syncRoutes = true,
                           Point::ProjectionType coordinatesType_out = Point::UTM,
                           const std::vector<std::string>& parentTags = {},

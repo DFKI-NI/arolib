@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,13 @@
 */
  
 #include "arolib/io/arokmlindocument.hpp"
+
+
+#include <boost/property_tree/xml_parser.hpp>
+
+#include "arolib/types/coordtransformer.hpp"
+#include "arolib/geometry/geometry_helper.hpp"
+
 
 namespace arolib {
 namespace io {
@@ -862,6 +869,9 @@ bool AroKMLInDocument::readFromDescription(ResourcePoint &pt, const std::string 
             }
             else if(key == "defaultUnloadingTimePerKg"){
                 pt.defaultUnloadingTimePerKg = string2double(value);
+            }
+            else if(key == "massCapacity"){
+                pt.massCapacity = string2double(value);
             }
             else if(key == getTag(pt.resourceTypes)){
                 pt.resourceTypes.clear();

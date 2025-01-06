@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,10 +17,7 @@
 #ifndef _AROLIB_TRACKSEQUENCERSPIRAL_HPP
 #define _AROLIB_TRACKSEQUENCERSPIRAL_HPP
 
-#include <map>
-
 #include "arolib/planning/track_sequencing/tracksequencer.hpp"
-#include "arolib/geometry/geometry_helper.hpp"
 
 namespace arolib {
 
@@ -71,8 +68,8 @@ namespace arolib {
       virtual AroResp computeSequences(const Subfield &subfield,
                                        const std::vector<Machine>& machines,
                                        const TrackSequencerSettings& settings,
-                                       std::map<MachineId_t, std::vector<ITrackSequencer::TrackInfo>>& sequences,
-                                       const Pose2D* initRefPose = nullptr,
+                                       Sequences_t& sequences,
+                                       const std::map<MachineId_t, Pose2D>& initRefPoses = {},
                                        const std::set<size_t>& excludeTrackIndexes = {}) override;
 
       /**

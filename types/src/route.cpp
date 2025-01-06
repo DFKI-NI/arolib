@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,8 +13,16 @@
  * See the License for the specific language governing permissions and
  * limitations under the License
 */
- 
+
+#include <algorithm>
+#include <stdexcept>
+#include <ctime>
+
 #include "arolib/types/route.hpp"
+#include "arolib/types/linestring.hpp"
+#include "arolib/types/track.hpp"
+#include "arolib/types/coordtransformer.hpp"
+#include "arolib/misc/datetime.hpp"
 
 
 namespace arolib{

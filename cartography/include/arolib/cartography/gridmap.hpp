@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,39 +19,11 @@
 #define _AROLIB_GRIDMAP_HPP_
 
 #include <type_traits>
-#include <string>
-#include <sys/stat.h>
-#include <math.h>
-#include <limits>
-#include <iostream>
-#include <fstream>
-#include <sstream>
-#include <memory>
-#include <future>
 #include <functional>
-#include <exception>
 
-#include <boost/geometry/geometry.hpp>
-#include <boost/geometry/geometries/point_xy.hpp>
-#include <boost/geometry/geometries/polygon.hpp>
-#include <boost/algorithm/string.hpp>
-
-#include "cellsrange.hpp"
-#include "cellsrangeset.hpp"
 #include "gridmap_layout.hpp"
 #include "arolib/types/units.hpp"
-#include "arolib/types/field.hpp"
-#include "arolib/types/coordtransformer.hpp"
-#include "arolib/geometry/geometry_helper.hpp"
-#include "arolib/misc/loggingcomponent.h"
 #include "arolib/misc/has_operator_helper.hpp"
-
-#include <gdal/gdal_priv.h>
-#include <gdal/ogr_spatialref.h>
-#include <gdal/gdalwarper.h>
-
-#include <png++/image.hpp>
-#include <png++/rgb_pixel.hpp>
 
 namespace arolib {
 
@@ -175,6 +147,12 @@ public:
     Gridmap(const Gridmap<T>& other);
 
     /**
+     * Move constructor.
+     * @param other Other gridmap.
+     */
+    Gridmap(Gridmap<T>&& other);
+
+    /**
      * Destructor.
      */
     virtual ~Gridmap();
@@ -188,6 +166,12 @@ public:
     * @param other Other grid.
     */
     virtual Gridmap<T>& operator=(const Gridmap<T>& other);
+
+    /**
+    * Move assignment
+    * @param other Other grid.
+    */
+    virtual Gridmap<T>& operator=(Gridmap<T>&& other);
 
     /**
     * Operator ==.
@@ -1089,8 +1073,7 @@ protected:
 
 protected:
     GridmapLayout m_layout; /**< Contains the geometric layout parameters of the gridmap */
-    TStore** m_grid; /**< Values' matrix */
-    bool  m_allocated;  /**< Has the space for the matrix been allocated? (i.e. does a grid already exist?) */
+    TStore** m_grid = nullptr; /**< Values' matrix */
     Unit m_units = Unit::UNIT_CUSTOM; /**< Gridmap units */
     bool m_computeInMultiThread = true; /**< Make computations in multiple threads? */
 };

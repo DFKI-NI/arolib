@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,6 @@
  
 #ifndef _AROLIB_ROUTE_POINT_HPP
 #define _AROLIB_ROUTE_POINT_HPP
-
-#include <vector>
-#include <set>
 
 #include "point.hpp"
 #include "machine.hpp"
@@ -248,6 +245,16 @@ namespace arolib
       * @return Index of the next route point whose type is equal to any of the given types. If no route-point was found, returns route_points.size().
       */
     static size_t getNextIndByType(const std::vector<RoutePoint> &route_points, const std::set<RoutePointType> &types, size_t ind0 = 0, int indn = -1);
+
+    /**
+      * @brief Get the index of the previous route point that has any of the given types
+      * @param route_points Route points
+      * @param types Types to be compared
+      * @param types Start index (inclusive). The comparison will start from this index. If < 0 -> start from last point
+      * @param indn Stop index (inclusive). The comparison will stop from this index.
+      * @return Index of the next route point whose type is equal to any of the given types. If no route-point was found, returns route_points.size().
+      */
+    static size_t getPrevIndByType(const std::vector<RoutePoint> &route_points, const std::set<RoutePointType> &types, int ind0 = -1, size_t indn = 0);
 
     /**
       * @brief Copies the basic working values (bunker mass/volume, worked mass/volume) from another point

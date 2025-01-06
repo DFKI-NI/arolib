@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,9 +17,7 @@
 #ifndef AROLIB_DIRECTED_GRAPH__H
 #define AROLIB_DIRECTED_GRAPH__H
 
-#include <iostream>
-#include <fstream>
-#include <tuple>
+#include <ostream>
 #include <unordered_map>
 #include <functional>
 
@@ -27,15 +25,13 @@
 #include <boost/graph/copy.hpp>
 #include <boost/graph/adjacency_list.hpp>
 
-#include <arolib/geometry/geometry_helper.hpp>
-#include "arolib/cartography/common.hpp"
-#include "arolib/types/coordtransformer.hpp"
-#include "arolib/types/outfieldinfo.hpp"
 #include "arolib/misc/loggingcomponent.h"
 #include "arolib/types/route.hpp"
+#include "arolib/types/outfieldinfo.hpp"
 
 
-using boost::geometry::append;
+
+//using boost::geometry::append;
 
 namespace arolib{
 
@@ -354,7 +350,7 @@ public:
      * @param sep Character used as value separator in the CSV file
      * @return True on success
      */
-    bool saveVisitSchedule(const std::string& filename = "/tmp/graph_visit_schedule.csv", char sep = ';') const;
+    bool saveVisitSchedule(const std::string& filename, char sep = ';') const;
 
     /**
      * @brief Saves the information of of the graph vertices in a given file (CSV)
@@ -362,7 +358,7 @@ public:
      * @param sep Character used as value separator in the CSV file
      * @return True on success
      */
-    bool saveVerticesInfo(const std::string& filename = "/tmp/graph_vertices.csv", char sep = ';') const;
+    bool saveVerticesInfo(const std::string& filename, char sep = ';') const;
 
     /**
      * @brief Add an overrun to an edge

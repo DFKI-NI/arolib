@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,8 @@
 */
  
 #include "arolib/planning/simpleBaseRoutesPlanner.hpp"
+
+#include "arolib/planning/routeassembler.hpp"
 #include "arolib/geometry/geometry_helper.hpp"
 
 namespace arolib{
@@ -23,7 +25,6 @@ SimpleBaseRoutesPlanner::SimpleBaseRoutesPlanner(const LogLevel &logLevel) :
     m_has_subfield (false),
     m_has_machine (false)
 {
-
     m_track_sequencer = std::make_shared<SimpleTrackSequencer>();
     m_track_sequencer->logger().setParent(loggerPtr());
 }
@@ -55,20 +56,20 @@ AroResp SimpleBaseRoutesPlanner::plan(std::shared_ptr<IEdgeMassCalculator> edgeM
     if(!m_has_subfield || !m_has_machine)
         return AroResp(1, "Subfield or machines missing");
 
-    Pose2D initRefPose = getInitRefPoseForSequencer();
-    if(!initRefPose.isValid())
-        return AroResp(1, "Error obtaining initial reference point for sequencer");
-
     std::map<MachineId_t, std::vector<ITrackSequencer::TrackInfo>> sequences;
 
-    auto aroResp = m_track_sequencer->computeSequences(m_subfield, m_machines, m_track_sequencer_settings, sequences, &initRefPose, m_excludeTrackIndexes);
+    auto aroResp = m_track_sequencer->computeSequences(m_subfield,
+                                                       m_machines,
+                                                       m_track_sequencer_settings,
+                                                       sequences,
+                                                       m_initRefPoses,
+                                                       m_excludeTrackIndexes);
     if(aroResp.isError())
         return AroResp(1, "Error obtaining tracks' sequence: " + aroResp.msg);
 
     logger().printOut(LogLevel::DEBUG, __FUNCTION__, "Sequence computed!");
 
-    std::map< MachineId_t, RouteAssembler* > routeAssemblers;
-    std::vector< RouteAssembler > routeAss_v;//for some reason, the routeAssemblers.at() tries to call the RouteAssembler constructur. this is a workarround
+    std::map< MachineId_t, RouteAssembler > routeAssemblers;
     int route_id = 0;
     for(auto& it_m : sequences){
         const auto & machineId = it_m.first;
@@ -79,15 +80,13 @@ AroResp SimpleBaseRoutesPlanner::plan(std::shared_ptr<IEdgeMassCalculator> edgeM
             return AroResp(1, "Sequence obtained for a non-existing machine");
         const Machine& machine = it_m2->second;
 
-        routeAss_v.push_back( RouteAssembler(machine, route_id++, RoutePoint::getDefaultRPType(machine), logger().logLevel()) );
-        routeAssemblers[it_m.first] = &(routeAss_v.back());
-
-        RouteAssembler& routeAss = *( routeAssemblers.at(machineId) );
+        RouteAssembler& routeAss = routeAssemblers.insert( std::make_pair(it_m.first, RouteAssembler(machine, route_id++, RoutePoint::getDefaultRPType(machine), logger().logLevel())) ).first->second;
         routeAss.logger().setParent(loggerPtr());
         routeAss.setMassCalculator(edgeMassCalculator);
         routeAss.setWorkingSpeedCalculator(edgeSpeedCalculator);
         routeAss.setTransitSpeedCalculator(edgeSpeedCalculatorTransit);
-        routeAss.setTracksConnectionsMap( m_track_sequencer->getPathsMap() );
+        if(m_tracks_connector) routeAss.setTracksConnector(m_tracks_connector);
+        if(m_reuse_sequencer_connections) routeAss.setTracksConnectionsMapManager( m_track_sequencer->getPathsMapManager() );
     }
 
     double limBoundaryDist_turningRadFactor = 0.1;//@todo we should either put this as a setting of the planner or simple not allow transit outside the subfield boundary
@@ -107,7 +106,7 @@ AroResp SimpleBaseRoutesPlanner::plan(std::shared_ptr<IEdgeMassCalculator> edgeM
         const Machine& machine = m_machinesMap[machineId];
 
         //get and initialize the route assembler for this machine/route
-        RouteAssembler& routeAss = *( routeAssemblers.at(machineId) );
+        RouteAssembler& routeAss = routeAssemblers.at(machineId);
 
 //        const Polygon *limitBoundary = &m_subfield.boundary_outer;//limit boundary used for inter-track connections
 //        if(limBoundaryDist_turningRadFactor > 1e-9){
@@ -151,38 +150,6 @@ AroResp SimpleBaseRoutesPlanner::plan(std::shared_ptr<IEdgeMassCalculator> edgeM
     }
 
     return AroResp::ok();
-}
-
-Pose2D SimpleBaseRoutesPlanner::getInitRefPoseForSequencer()
-{
-    if(m_initRefPose.isValid())
-        return m_initRefPose;
-
-    int ind0 = -1;
-    for(size_t i = 0 ; i < m_subfield.tracks.size() ; ++i){
-        if( m_excludeTrackIndexes.find(i) == m_excludeTrackIndexes.end() ){
-            ind0 = i;
-            break;
-        }
-    }
-    if(ind0 < 0)
-        return Pose2D(Point::invalidPoint(), 0);
-
-    int indn;
-    for(int i = m_subfield.tracks.size() - 1 ; i >= ind0 ; --i){
-        if( m_excludeTrackIndexes.find(i) == m_excludeTrackIndexes.end() ){
-            indn = i;
-            break;
-        }
-    }
-
-    auto& track = m_tracks_in_reverse ? m_subfield.tracks.at(indn).points : m_subfield.tracks.at(ind0).points;
-    if(m_first_track_inverse)
-        return Pose2D( track.back(),
-                       geometry::get_angle( track.back(), r_at(track,1) ) );
-    return Pose2D( track.front(),
-                   geometry::get_angle( track.front(), track.at(1)) );
-
 }
 
 AroResp SimpleBaseRoutesPlanner::getRoute(int machine_id,

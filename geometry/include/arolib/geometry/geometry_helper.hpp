@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,25 +17,10 @@
 #ifndef AROLIB_GEOMETRY_HELPER_HPP
 #define AROLIB_GEOMETRY_HELPER_HPP
 
-#include <string>
-#include <iostream>
-#include <vector>
-#include <fstream>
-#include <limits.h>
-#include <stdexcept>
-#include <functional>
-
-#include "boost_geometries_wrapper.hpp"
-#include "3rdParty/clipper/clipper.hpp"
-
 #include "arolib/types/polygon.hpp"
 #include "arolib/types/linestring.hpp"
 #include "arolib/types/pose2D.hpp"
 #include "arolib/types/route_point.hpp"
-#include "arolib/types/coordtransformer.hpp"
-#include "arolib/types/units.hpp"
-#include "arolib/misc/basicconversions.hpp"
-#include "arolib/misc/container_helper.h"
 
 namespace arolib{
 
@@ -141,23 +126,23 @@ double calc_area(const std::vector<PolygonWithHoles>& polys);
 void correct_angle(double &ang, bool inDeg = false, bool onlyPositive = false);
 
 /**
- * @brief Gets the angle between a line and the horizontal axis
+ * @brief Gets the angle between a line/vector and the horizontal axis (i.e., between vectors [(0,0),(1,0)] and [p0,p1])
  * @param p0 First point of the line
  * @param p1 Second point of the line
  * @param inDeg If set to true, returns the angle in degrees, otherwise in Radians
- * @param limit If set to true, returns angles between [-pi/2,pi/2], otherwise between [-pi,pi]
+ * @param asLines If set to true, the inputs are considered as lines without direction and the returned angle corresponds to the minimum angle formd by them (angles between [-pi/2,pi/2]), otherwise the vectors directions are considered returning angles between [-pi,pi]
  * @return angle
  */
-double get_angle(const Point& p0, const Point& p1, bool inDeg = false, bool limit = false);
+double get_angle(const Point& p0, const Point& p1, bool inDeg = false, bool asLines = false);
 
 /**
- * @brief Gets the angle between two vectors
- * @param p1_0 First point of the first vector
- * @param p1_1 Second point of the first vector
- * @param p2_0 First point of the second vector
- * @param p2_1 Second point of the second vector
+ * @brief Gets the angle between two vectors or lines
+ * @param p1_0 First point of the first vector / line
+ * @param p1_1 Second point of the first vector / line
+ * @param p2_0 First point of the second vector / line
+ * @param p2_1 Second point of the second vector / line
  * @param inDeg If set to true, returns the angle in degrees, otherwise in Radians
- * @param limit If set to true, returns angles between [-pi/2,pi/2], otherwise between [-pi,pi]
+ * @param asLines If set to true, the inputs are considered as lines without direction and the returned angle corresponds to the minimum angle formd by them (angles between [-pi/2,pi/2]), otherwise the vectors directions are considered returning angles between [-pi,pi]
  * @return angle
  */
 double get_angle(const Point& p1_0,
@@ -165,22 +150,22 @@ double get_angle(const Point& p1_0,
                  const Point& p2_0,
                  const Point& p2_1,
                  bool inDeg = false,
-                 bool limit = false);
+                 bool asLines = false);
 
 /**
- * @brief Gets the angle between the vectors [pivot, p1] and [pivot, p2]
+ * @brief Gets the angle between the vectors/lines [pivot, p1] and [pivot, p2]
  * @param p1 Point of the first vector
  * @param pivot Pivot point (common to the 2 vectors)
  * @param p2 Point of the second vector
  * @param inDeg If set to true, returns the angle in degrees, otherwise in Radians
- * @param limit If set to true, returns angles between [-pi/2,pi/2], otherwise between [-pi,pi]
+ * @param asLines If set to true, the inputs are considered as lines without direction and the returned angle corresponds to the minimum angle formd by them (angles between [-pi/2,pi/2]), otherwise the vectors directions are considered returning angles between [-pi,pi]
  * @return angle
  */
 double get_angle(const Point& p1,
                  const Point& pivot,
                  const Point& p2,
                  bool inDeg = false,
-                 bool limit = false);
+                 bool asLines = false);
 
 /**
  * @brief Computes the bearing from a line/vector
@@ -190,6 +175,21 @@ double get_angle(const Point& p1,
  * @return bearing
  */
 double get_bearing(const Point& p0, const Point& p1, bool inUTM);
+
+/**
+ * @brief Computes the pose coresponding to the bisection of the angle between 2 vectors [pivot, p1] and [pivot, p2]
+ * @param p1 Point of the first vector
+ * @param pivot Pivot point (common to the 2 vectors)
+ * @param p2 Point of the second vector
+ * @param inDeg If set to true, returns the angle in degrees, otherwise in Radians
+ * @param bisectPositiveAngle If set to true, the angle to be bisected is the positive angle between (0, 2*pi] the 2 vectors
+ * @return Pose (located at the pivot)
+ */
+Pose2D getAngleBisectionPose(const Point& p1,
+                             const Point& pivot,
+                             const Point& p2,
+                             bool inDeg = false,
+                             bool bisectPositiveAngle = false);
 
 /**
  * @brief Computes the vector normal to a given line/vector
@@ -244,6 +244,16 @@ bool getParallelVector(const Point &p0, const Point &p1, double &dX, double &dY,
  */
 bool getParallelVector(const Point &p0, const Point &p1, Point&vec, const double length = 1);
 
+/**
+ * @brief Get the entry/exit pose of linestring
+ * @param ls Linestring
+ * @param entry If true, it will return the entry pose, otherwise the exit pose
+ * @param inForwardSequence Flag stating whether the linestring direction corresponds to the points sequence or reversed
+ * @return Pose (invalid point on failure)
+ */
+template< typename T,
+          typename = typename std::enable_if< std::is_base_of<Point, T>::value, void >::type >
+Pose2D getLinestringEntryExitPose (const std::vector<T>& ls, bool entry, bool inForwardSequence = 0);
 
 /**
  * @brief Computes the centroid of a line/segment
@@ -284,7 +294,7 @@ double calc_distance(const Point& v, const Point& w, const Point& p);
  * @param p1 Second point of the line.
  * @param p Given point.
  * @param infinite The line is taken as an infinite line.
- * @param abs Return the absolute value. If set to false and the point is not in the direction of the nom vectors, the resulting distanc will be negative.
+ * @param abs Return the absolute value. If set to false and the point is not in the direction of the nom vectors, the resulting distance will be negative.
  * @return Distance between point p and the line
  */
 double calc_dist_to_line(const Point& p0,

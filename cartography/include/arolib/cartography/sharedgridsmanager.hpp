@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,8 @@
 #include <memory>
 #include <mutex>
 
-#include "arolib/misc/randomgeneration.hpp"
+#include "arolib/types/point.hpp"
+#include "arolib/cartography/common.hpp"
 #include "arolib/cartography/gridcellsinfomanager.hpp"
 
 namespace arolib {
@@ -63,6 +64,12 @@ public:
      * @return True on success
      */
     virtual bool setCellsInfoManager(std::shared_ptr<gridmap::GridCellsInfoManager> cim, bool removeGrids = true);
+
+    /**
+     * @brief Get the shared CellsInfoManager
+     * @return CellsInfoManager
+     */
+    virtual std::shared_ptr<gridmap::GridCellsInfoManager> getCellsInfoManager() const;
 
     /**
      * @brief Check if a gridgridmap exists

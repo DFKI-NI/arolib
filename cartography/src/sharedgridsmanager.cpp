@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -60,6 +60,11 @@ bool SharedGridsManager::setCellsInfoManager(std::shared_ptr<gridmap::GridCellsI
         }
     }
     return ok;
+}
+
+std::shared_ptr<GridCellsInfoManager> SharedGridsManager::getCellsInfoManager() const
+{
+    return m_cellsInfoManager;
 }
 
 bool SharedGridsManager::hasGrid(const std::string &name)
@@ -179,7 +184,7 @@ bool SharedGridsManager::getCellsInfoUnderLine(const std::string &gridName, cons
                 return true;
         }
         else
-            logger().printWarning(__FUNCTION__, "Error with grid registratio in GridCellsInfoManager");
+            logger().printWarning(__FUNCTION__, "Error with grid registration in GridCellsInfoManager");
     }
 
     edge.precise = (precise == PreciseCalculationOption::PRECISE);

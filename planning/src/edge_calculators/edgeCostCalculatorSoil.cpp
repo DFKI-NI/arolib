@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ namespace arolib{
 
 
 const std::string ECC_soilOptimization1::SoilMapName = "SOIL";
+const std::string ECC_soilOptimization1::DivenMassMapName = "DRIVEN_MASS";
 const std::set<DirectedGraph::EdgeType> ECC_soilOptimization1::m_noSoilCostTypes = { DirectedGraph::FAP_TO_RP,
                                                                                      DirectedGraph::RP_TO_FAP,
                                                                                      DirectedGraph::FAP_TO_FAP,
@@ -95,58 +96,17 @@ ECC_soilOptimization1::ECC_soilOptimization1(const ECC_soilOptimization1::CostCo
 
 }
 
-void ECC_soilOptimization1::generateInternalParameters(DirectedGraph::Graph& graph)
+void ECC_soilOptimization1::generateInternalParameters(DirectedGraph::Graph& graph, const std::vector<Machine> &machines)
 {
-    std::lock_guard<std::mutex> lg(m_mutex);
-
-    m_edgeSoilCosts.clear();
-
-    if( !m_gridsManager.hasGrid(SoilMapName) ){
+    if( !m_gridsManager.hasGrid(SoilMapName) )
         logger().printWarning(__FUNCTION__, "No soil-cost mas hap been set.");
-        return;
-    }
 
-    m_soilValuesKey = DirectedGraph::edge_property::getNewCustomValueKey();
+    double maxWidth = -1;
+    for(auto& m : machines)
+        maxWidth = std::max(maxWidth, m.width);
 
-    std::unordered_map<std::string, double> revEdges;
-    for(DirectedGraph::edge_iter ed = edges(graph); ed.first != ed.second; ed.first++){
-        DirectedGraph::edge_property& edge_prop = graph[*ed.first];
-        auto edgeStr = edge2string(*ed.first);
-
-        auto it_revEdge = revEdges.find(edgeStr);
-        if(it_revEdge != revEdges.end()){
-            edge_prop.customValues[m_soilValuesKey] = it_revEdge->second;
-            continue;
-        }
-
-        double soilCost = 0;
-
-        if ( m_noSoilCostTypes.find(edge_prop.edge_type) == m_noSoilCostTypes.end() ){
-
-            std::vector<gridmap::GridmapLayout::GridCellOverlap> cellsInfo;
-            double width = std::max(0.0, edge_prop.defWidth);
-            double distance = arolib::geometry::calc_dist(edge_prop.p0, edge_prop.p1);
-            double area = distance * width;
-
-            if(area > 1e-9){
-                m_gridsManager.getCellsInfoUnderLine(SoilMapName, edge_prop.p0, edge_prop.p1, width, m_mapPrecision, cellsInfo);
-
-                bool errorTmp;
-                soilCost = m_gridsManager.getGrid(SoilMapName)->getCellsComputedValue(cellsInfo,
-                                                                                      ArolibGrid_t::AVERAGE_TOTAL,
-                                                                                      area,
-                                                                                      false,
-                                                                                      &errorTmp );
-                if(errorTmp)
-                    soilCost = 0;
-            }
-        }
-
-        edge_prop.customValues[m_soilValuesKey] = soilCost;
-
-        if(edge_prop.bidirectional)
-            revEdges[edge2string(edge_prop.revEdge)] = soilCost;
-    }
+    generateInternalParametersForMap(graph, SoilMapName, m_soilValuesKey, m_edgeSoilCosts, maxWidth);
+    generateInternalParametersForMap(graph, DivenMassMapName, m_drivenMassValuesKey, m_edgeDrivenMass, maxWidth);
 }
 
 double ECC_soilOptimization1::calcCost(const Machine &machine, const Point &p1, const Point &p2, double time, double waitingTime, double bunkerMass, const std::vector<DirectedGraph::overroll_property> &overruns)
@@ -272,6 +232,18 @@ bool ECC_soilOptimization1::setSoilCostMap(std::shared_ptr<const ArolibGrid_t> m
     return m_gridsManager.addGrid(SoilMapName, map, true);
 }
 
+bool ECC_soilOptimization1::setDrivenMassMap(std::shared_ptr<const ArolibGrid_t> map)
+{
+    if(!map || !map->isAllocated()){
+        if(m_gridsManager.hasGrid(DivenMassMapName) && !m_gridsManager.removeGrid(DivenMassMapName)){
+            logger().printError(__FUNCTION__, "Error removing driven-mass map from grids manager");
+            //return false;
+        }
+        return true;
+    }
+    return m_gridsManager.addGrid(DivenMassMapName, map, true);
+}
+
 void ECC_soilOptimization1::setMapComputationPrecision(gridmap::SharedGridsManager::PreciseCalculationOption precise)
 {
     m_mapPrecision = precise;
@@ -286,6 +258,61 @@ void ECC_soilOptimization1::parseAndAppendOtherParametersToStringMap(std::map<st
 {
     auto tmp = m_costCoefficients.parseToStringMap();
     strMap.insert( tmp.begin(), tmp.end() );
+}
+
+void ECC_soilOptimization1::generateInternalParametersForMap(DirectedGraph::Graph &graph, const std::string &mapName, int &valuesKey, std::unordered_map<std::string, double> &valuesMap, double width)
+{
+    std::lock_guard<std::mutex> lg(m_mutex);
+
+    valuesMap.clear();
+
+    if( !m_gridsManager.hasGrid(mapName) || !m_gridsManager.getGrid(mapName)->isAllocated() )
+        return;
+
+    auto gridmap = m_gridsManager.getGrid(mapName);
+
+    valuesKey = DirectedGraph::edge_property::getNewCustomValueKey();
+
+    std::unordered_map<std::string, double> revEdges;
+    for(DirectedGraph::edge_iter ed = edges(graph); ed.first != ed.second; ed.first++){
+        DirectedGraph::edge_property& edge_prop = graph[*ed.first];
+        auto edgeStr = edge2string(*ed.first);
+
+        auto it_revEdge = revEdges.find(edgeStr);
+        if(it_revEdge != revEdges.end()){
+            edge_prop.customValues[valuesKey] = it_revEdge->second;
+            continue;
+        }
+
+        double value = 0;
+
+        if ( m_noSoilCostTypes.find(edge_prop.edge_type) == m_noSoilCostTypes.end() ){
+
+            std::vector<gridmap::GridmapLayout::GridCellOverlap> cellsInfo;
+            double edgeWidth = std::max(0.0, width > 1e-9 ? width : edge_prop.defWidth);
+            double distance = arolib::geometry::calc_dist(edge_prop.p0, edge_prop.p1);
+            double area = distance * edgeWidth;
+
+            if(area > 1e-9){
+                m_gridsManager.getCellsInfoUnderLine(mapName, edge_prop.p0, edge_prop.p1, edgeWidth, m_mapPrecision, cellsInfo);
+
+                bool errorTmp;
+                value = gridmap->getCellsComputedValue(cellsInfo,
+                                                          ArolibGrid_t::AVERAGE_TOTAL,
+                                                          area,
+                                                          false,
+                                                          &errorTmp );
+                if(errorTmp)
+                    value = 0;
+            }
+        }
+
+        edge_prop.customValues[valuesKey] = value;
+
+        if(edge_prop.bidirectional)
+            revEdges[edge2string(edge_prop.revEdge)] = value;
+    }
+
 }
 
 double ECC_soilOptimization1::getSoilCost(const std::string &edgeStr, const Point &p1, const Point &p2, double width)
@@ -347,6 +374,63 @@ double ECC_soilOptimization1::getSoilCost(const DirectedGraph::edge_property &ed
 
 }
 
+double ECC_soilOptimization1::getDrivenMass(const std::string &edgeStr, const Point &p1, const Point &p2, double width)
+{
+    if( !edgeStr.empty() ){
+        auto it_edge = m_edgeDrivenMass.find(edgeStr);
+        if(it_edge != m_edgeDrivenMass.end())
+            return it_edge->second;
+    }
+
+    //return 0;
+
+    double area = arolib::geometry::calc_dist(p1, p2) * width;
+
+    if( area > 1e-9 && m_gridsManager.hasGrid(DivenMassMapName) ){
+        std::vector<gridmap::GridmapLayout::GridCellOverlap> cellsInfo;
+        m_gridsManager.getCellsInfoUnderLine(DivenMassMapName, p1, p2, width, m_mapPrecision, cellsInfo);
+
+        bool errorTmp;
+        double mass = m_gridsManager.getGrid(DivenMassMapName)->getCellsComputedValue(cellsInfo,
+                                                                                      ArolibGrid_t::AVERAGE_TOTAL,
+                                                                                      area,
+                                                                                      false,
+                                                                                      &errorTmp );
+        if(!errorTmp)
+            return mass;
+    }
+    return 0;
+
+}
+
+double ECC_soilOptimization1::getDrivenMass(const DirectedGraph::edge_property &edge_prop, double width)
+{
+    const auto it_value = edge_prop.customValues.find(m_drivenMassValuesKey);
+    if( it_value != edge_prop.customValues.end() )
+        return it_value->second;
+
+    double drivenMass = 0;
+    double area = arolib::geometry::calc_dist(edge_prop.p0, edge_prop.p1) * width;
+
+    if( area > 1e-9 && m_gridsManager.hasGrid(DivenMassMapName) ){
+        std::vector<gridmap::GridmapLayout::GridCellOverlap> cellsInfo;
+        m_gridsManager.getCellsInfoUnderLine(DivenMassMapName, edge_prop.p0, edge_prop.p1, width, m_mapPrecision, cellsInfo);
+
+        bool errorTmp;
+        drivenMass = m_gridsManager.getGrid(DivenMassMapName)->getCellsComputedValue(cellsInfo,
+                                                                                     ArolibGrid_t::AVERAGE_TOTAL,
+                                                                                     area,
+                                                                                     false,
+                                                                                     &errorTmp );
+
+        if(errorTmp)
+            drivenMass = 0;
+    }
+
+    return drivenMass;
+
+}
+
 double ECC_soilOptimization1::calc_cost(const Machine& machine, const std::string &edgeStr, const DirectedGraph::edge_property &edge_prop, double time, double waitingTime, double mass, const std::vector<DirectedGraph::overroll_property> &overruns)
 {
     std::lock_guard<std::mutex> lg(m_mutex);
@@ -380,11 +464,13 @@ double ECC_soilOptimization1::calc_cost(const Machine& machine, const std::strin
         k_overall = m_costCoefficients.K_outside;
     }
     else{
+//        weight_sum = getDrivenMass(edgeStr, edge_prop.p0, edge_prop.p1, machine.width > 1e-9 ? machine.width : edge_prop.defWidth);
+        weight_sum = getDrivenMass(edge_prop, machine.width > 1e-9 ? machine.width : edge_prop.defWidth);
         for (auto &o : overruns)
             weight_sum += o.weight;
         weight_sum *= m_costCoefficients.K_prevWeights;  // influence of previous overruns is reduced
 
-        //soilCost = getSoilCost(edgeStr, edge_prop.p0, edge_prop.p1, edge_prop.defWidth);
+        //soilCost = getSoilCost(edgeStr, edge_prop.p0, edge_prop.p1, machine.width > 1e-9 ? machine.width : edge_prop.defWidth);
         soilCost = getSoilCost(edge_prop);
     }
 

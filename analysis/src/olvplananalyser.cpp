@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,11 @@
 */
  
 #include "arolib/analysis/olvplananalyser.hpp"
+
+#include <fstream>
+
+#include "arolib/geometry/geometry_helper.hpp"
+
 namespace arolib {
 
 using namespace arolib::geometry;
@@ -96,10 +101,10 @@ bool OlvPlanAnalyser::saveResults_CSV(const std::string &filename) const
     of << std::fixed;
 
     for(auto &it_sf : m_analysisResult){
-        of << "+ Subfield " << it_sf.first << std::endl;
+        of << "+ Subfield " << it_sf.first << "\n";
         for(auto &it_m : it_sf.second){
             const AnalysisResult& results = it_m.second;
-            of << sep << "+ Machine " << it_m.first << std::endl;
+            of << sep << "+ Machine " << it_m.first << "\n";
 
             of << sep << sep << sep
                << "r1" << sep << "r2" << sep << "r1-r2" << sep
@@ -107,7 +112,7 @@ bool OlvPlanAnalyser::saveResults_CSV(const std::string &filename) const
                << "r1" << sep << "r2" << sep << "r1-r2" << sep
                << "r1" << sep << "r2" << sep << "r1-r2" << sep
                << "r1" << sep << "r2" << sep << "r1-r2" << sep
-               << std::endl << std::endl;
+               << "\n\n";
 
 //            of << sep << sep << "SEGMENTS RESULTS" << sep
 //               << "Init" << sep << sep << sep
@@ -115,7 +120,7 @@ bool OlvPlanAnalyser::saveResults_CSV(const std::string &filename) const
 //               << "Field" << sep  << sep << sep
 //               << "Headland" << sep  << sep << sep
 //               << "Infield" << sep  << sep << sep
-//               << std::endl;
+//               << "\n";
 
 //            of << sep << sep << "Duration [s]" << sep;
 //            addSegmentResultsToCSV(of, results, FieldSegmentAnalysisResult::DURATION);
@@ -147,13 +152,13 @@ bool OlvPlanAnalyser::saveResults_CSV(const std::string &filename) const
 //            of << sep << sep << "Mass/Distance avg [Kg/m]" << sep;
 //            addSegmentResultsToCSV(of, results, FieldSegmentAnalysisResult::MASS_PER_DISTANCE);
 
-//            of << std::endl;
+//            of << "\n";
 
-//            of << sep << sep << "INFIELD SUB-SEGMENTS RESULTS" << std::endl << std::endl;
+//            of << sep << sep << "INFIELD SUB-SEGMENTS RESULTS\n\n";
 //            of << sep << sep << "GENERAL" << sep
 //               << "Infield" << sep << sep << sep
 //               << "Headland" << sep << sep << sep
-//               << std::endl;
+//               << "\n";
 
 //            of << sep << sep << "# tracks" << sep
 //                             << results.infieldAnalysis_1.infieldSubSegments.size() << sep
@@ -161,7 +166,7 @@ bool OlvPlanAnalyser::saveResults_CSV(const std::string &filename) const
 //                             << (int)results.infieldAnalysis_1.infieldSubSegments.size() - results.infieldAnalysis_2.infieldSubSegments.size() << sep
 //                             << results.infieldAnalysis_1.headlandSubSegments.size() << sep
 //                             << results.infieldAnalysis_2.headlandSubSegments.size() << sep
-//                             << (int)results.infieldAnalysis_1.headlandSubSegments.size() - results.infieldAnalysis_2.headlandSubSegments.size() << std::endl;
+//                             << (int)results.infieldAnalysis_1.headlandSubSegments.size() - results.infieldAnalysis_2.headlandSubSegments.size() << "\n";
 
 //            of << sep << sep << "Duration total [s]" << sep;
 //            addInfieldSubsegmentResultsToCSV(of, results, InfieldAnalysisResult::InfieldSegmentsAnalysisResult::DURATION_TOTAL);
@@ -196,12 +201,12 @@ bool OlvPlanAnalyser::saveResults_CSV(const std::string &filename) const
 //            of << sep << sep << "Speed avg [m/s]" << sep;
 //            addInfieldSubsegmentResultsToCSV(of, results, InfieldAnalysisResult::InfieldSegmentsAnalysisResult::SPEED_AVG);
 
-//            of << std::endl;
+//            of << "\n";
 
 //            of << sep << sep << "INFIELD TRACKS" << sep
 //               << "Infield" << sep << sep << sep
 //               << "Headland" << sep << sep << sep
-//               << std::endl;
+//               << "\n";
 
 //            size_t maxSize = std::max( results.infieldAnalysis_2.infieldSubSegments.size() ,
 //                                       std::max( results.infieldAnalysis_1.infieldSubSegments.size() ,
@@ -209,7 +214,7 @@ bool OlvPlanAnalyser::saveResults_CSV(const std::string &filename) const
 //                                                               results.infieldAnalysis_1.headlandSubSegments.size() ) ) );
 //            for(size_t i = 0; i < maxSize; ++i){
 
-//                of << sep << sep << i+1 << std::endl;
+//                of << sep << sep << i+1 << "\n";
 
 //                of << sep << sep << "Duration [s]" << sep;
 //                addInfieldSubsegmentResultsToCSV(of, results, i, FieldSegmentAnalysisResult::DURATION);
@@ -242,7 +247,7 @@ bool OlvPlanAnalyser::saveResults_CSV(const std::string &filename) const
 //                addInfieldSubsegmentResultsToCSV(of, results, i, FieldSegmentAnalysisResult::MASS_PER_DISTANCE);
 //            }
 
-            of << sep << "- Machine " << it_m.first << std::endl;
+            of << sep << "- Machine " << it_m.first << "\n";
         }
         of << "- Subfield " << it_sf.first << std::endl;
     }

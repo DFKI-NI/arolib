@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,9 +15,9 @@
 */
  
 #include <boost/test/unit_test.hpp>
-#include "arolib/geometry/geometry.hpp"
+
+#include "arolib/geometry/geometry_helper.hpp"
 #include "arolib/types/polygon.hpp"
-#include "arolib/types/point.hpp"
 
 BOOST_AUTO_TEST_SUITE(test_polygon)
 BOOST_AUTO_TEST_CASE(test_intersection_line_polygon)

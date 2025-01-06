@@ -1,5 +1,5 @@
 /*
- * Copyright 2023  DFKI GmbH
+ * Copyright 2021-2025 DFKI GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,8 +15,9 @@
 */
  
 #include "arolib/planning/olvPlan.hpp"
+
 #include "arolib/planning/path_search/graphhelper.hpp"
-#include "arolib/planning/path_search/astar.hpp"
+#include "arolib/misc/filesystem_helper.h"
 
 namespace arolib{
 
@@ -369,7 +370,18 @@ bool OLVPlan::planOverload(DirectedGraph::Graph &graph,
                 logger().printOut(LogLevel::ERROR, __FUNCTION__, "plan_cost is NAN (planPathToHarvester)!");
         }
 
-        if(indBestPlan < 0 || m_state.plan_cost < best_state.plan_cost){
+        bool better = indBestPlan < 0;
+
+        if(!better){
+            //check if the current plan costs are (significantly) lower/higher than the ones from the curren best plan
+            double cost_diff = m_state.plan_cost - best_state.plan_cost;
+            if( std::fabs(cost_diff) > 1e-5 )
+                better = cost_diff < 0;
+            else // the difference between the costs of the plans is not significant -> check which plans finishes first
+                better = m_state.olv_time < m_state.olv_time;
+        }
+
+        if(better){
             indBestPlan = indResVt;
             best_state = m_state;
             graph_minCost = graph_tmp;
@@ -1103,7 +1115,7 @@ bool OLVPlan::planPathToAdjacentPoint(DirectedGraph::Graph &graph,
     }
 
     m_state.olv_last_vt = adjVertexInfo.first;
-    plan.adjustAccessPoints(false);
+    plan.adjustAccessPointsFromLast(false);
     updateState(plan, graph, LOC_HARVESTER_IN);
 
     return true;
@@ -1424,7 +1436,7 @@ bool OLVPlan::planPathToAdjacentPoint_2(DirectedGraph::Graph &graph,
     //m_state.olv_last_vt = best_adjacent_vt;
     m_state.olv_last_vt = switching_vt;
 
-    plan.adjustAccessPoints(false);
+    plan.adjustAccessPointsFromLast(false);
 
     updateState(plan, graph, LOC_HARVESTER_IN);
 
@@ -1551,7 +1563,7 @@ bool OLVPlan::planPathToSwitchingPoint(DirectedGraph::Graph &graph,
 
     m_state.olv_last_vt = switching_vt;
 
-    plan.adjustAccessPoints(false);
+    plan.adjustAccessPointsFromLast(false);
     updateState(plan, graph, LOC_HARVESTER_IN);
     return true;
 }
@@ -1744,9 +1756,9 @@ bool OLVPlan::planPathToResource(DirectedGraph::Graph &graph,
 
     //@todo we donnot know if the resource point is inside or outside the field
     if(plan.route_points_.size() > 1 && r_at(plan.route_points_, 1).isFieldAccess() )
-        plan.adjustAccessPoints(true);
+        plan.adjustAccessPointsFromLast(true);
     else
-        plan.adjustAccessPoints(false);
+        plan.adjustAccessPointsFromLast(false);
 
     //remove first point (if it exists already)
     if(!plan.route_points_.empty()){
@@ -1846,7 +1858,7 @@ bool OLVPlan::planPathToExitPoint(DirectedGraph::Graph &graph, AstarPlan &plan, 
     }
 
     m_state.olv_last_vt = fap_vt;
-    plan.adjustAccessPoints(true);
+    plan.adjustAccessPointsFromLast(true);
     updateState(plan, graph, LOC_EXIT);
 
     removeSpikePointsFromTransitRoute();
@@ -1960,7 +1972,7 @@ bool OLVPlan::planOverloadingPath_behind(DirectedGraph::Graph &graph, Route &har
                 min_cost = astar.getPlan().plan_cost_total;
                 bestAdj = adj;
                 bestAdjFound = true;
-                best_plan.adjustAccessPoints(false);
+                best_plan.adjustAccessPointsFromLast(false);
                 best_plan = astar.getPlan();
             }
             if(bestAdjFound){//replace last route point and add cost, overrun and visiting period
@@ -3489,7 +3501,7 @@ bool OLVPlan::updateCurrentVertexWithClosest(DirectedGraph::Graph &graph, const 
         rad = 1;
 
     DirectedGraph::Graph::VertexFilterFct isVtValid = [this, graphLoc, &route_points, &rad](const DirectedGraph::vertex_t &, const DirectedGraph::vertex_property &v_prop)->bool{
-        if(v_prop.route_point.time_stamp >= 0 && m_state.olv_time < v_prop.route_point.time_stamp )//not valid
+        if(v_prop.route_point.time_stamp >= 0 && m_state.olv_time < v_prop.route_point.time_stamp+1e-6 )//not valid
             return false;
         if(v_prop.graph_location != DirectedGraph::vertex_property::DEFAULT && v_prop.graph_location != graphLoc )//not valid
             return false;

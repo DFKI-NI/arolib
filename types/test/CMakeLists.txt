@@ -1,6 +1,6 @@
 # Add new test suites to this list
 ##################################
-set(test_suits test_mock test_machine test_route test_coordtransformer test_headland)
+set(test_suits test_mock test_machine test_route test_coordtransformer test_headland test_hashValues)
 ##################################
 
 set(test_module unittest_${AROLIB_LIB_NAME})
