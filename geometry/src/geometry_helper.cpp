@@ -2052,8 +2052,9 @@ Point create_line(const Point &p0, double length, double angle, bool inDegrees)
         return p1;
     }
 
-    p1.x = p0.x + length / std::cos(angle);
-    p1.y = p0.y + length / std::sin(angle);
+    p1.x = p0.x + length * std::cos(angle);
+    p1.y = p0.y + length * std::sin(angle);
+
     return p1;
 
 }
